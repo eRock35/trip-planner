@@ -258,22 +258,16 @@
       say((err && err.message) || 'That didn’t work.', true);
     });
   }
-  // No email service on this project, so a reset cannot arrive as a link.
-  // This flags the account for the admin, who issues a temporary password.
+  // A reset arrives as an emailed link now. It is handled once for the whole
+  // domain at strongtechnicalconsulting.com/reset, because one account covers
+  // every app and there should be one page to get right. Nobody has to ask an
+  // admin to get back into their own account any more.
   document.getElementById('forgot').addEventListener('click', function(){
     var u = document.getElementById('u').value.trim();
-    if (!u){ say('Enter your email first, then tap this again.', true); return; }
-    say('Sending…');
-    fetch('/api/auth/reset-request', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ email: u })
-    }).then(function(){
-      // Deliberately the same message whether or not that account exists.
-      say('If that email has an account, the admin has been asked to reset it. ' +
-          'If you have Face ID set up on this device, you can sign in with it now and change your password yourself.');
-    }).catch(function(){
-      say('Couldn’t send that request — try again.', true);
-    });
+    var to = 'https://www.strongtechnicalconsulting.com/reset';
+    // Carry the address across so they do not type it twice.
+    if (u) to += '?email=' + encodeURIComponent(u);
+    window.location.href = to;
   });
 
   document.getElementById('pwBtn').addEventListener('click', submitPassword);

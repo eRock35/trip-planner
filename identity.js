@@ -214,8 +214,24 @@ function accessLevel(user, appKey) {
   return typeof level === 'string' && level ? level : (level === true ? 'member' : null);
 }
 
+/** A pending ask for access, or null. Presence of `requests[appKey]` with no
+ *  decision is what the notifier reports and the admin panel lists. */
+function pendingRequest(user, appKey) {
+  const r = user && user.requests && user.requests[appKey];
+  if (!r || typeof r !== 'object') return null;
+  return r.state === 'denied' ? null : r;
+}
+
 /** True when the user holds ANY access to the app, or a specific level. */
 function hasAccess(user, appKey, level = null) {
+  if (!user) return false;
+  // The owner does not ask himself for permission. `absent means no` is the
+  // right default for a stranger who just registered; applying it to the
+  // person who runs the whole domain just invents a chore. The flag lives on
+  // the account rather than in each service's environment, so it travels with
+  // the identity and is visible on the dashboard instead of being config
+  // five services have to agree about.
+  if (user.admin === true) return true;
   const got = accessLevel(user, appKey);
   if (!got) return false;
   return level ? got === level : true;
@@ -426,13 +442,19 @@ function create(opts) {
         await log('register.duplicate', req, { uid, email, ok: false });
         return res.status(409).json({ error: 'That address already has an account. Sign in instead.' });
       }
-      await store.set(USERS, uid, {
+      const record = {
         email,
         password: makeHash(password),
         createdAt: new Date().toISOString(),
         lastSeenAt: new Date().toISOString(),
         createdBy: appName,
-      });
+      };
+      // Whoever registers with the configured owner address is the owner. Set
+      // here so a fresh deployment produces a working admin without anyone
+      // hand-editing the database.
+      const owner = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+      if (owner && email === owner) record.admin = true;
+      await store.set(USERS, uid, record);
       issueSession(res, req, uid, 'password');
       await log('register', req, { uid, email });
       res.json({ ok: true, email });
@@ -470,6 +492,8 @@ function create(opts) {
         uid: req.user.id,
         via: req.user.via,
         access: req.user.access || {},
+        requests: req.user.requests || {},
+        admin: req.user.admin === true,
         createdAt: req.user.createdAt || null,
       });
     });
@@ -501,6 +525,29 @@ function create(opts) {
       res.json({ ok: true });
     });
 
+    // Ask for access to THIS app. There is no app key in the body on purpose:
+    // you can only ask for the app you are actually on, so there is nothing to
+    // forge. Re-asking is allowed and refreshes the timestamp, which is what
+    // makes the notifier mention it again.
+    expressApp.post(`${mountPath}/access/request`, async (req, res) => {
+      const s = session(req);
+      if (!s) return res.status(401).json({ error: 'Sign in first.' });
+      const user = await getUser(s.uid);
+      if (!user) return res.status(401).json({ error: 'Sign in first.' });
+      if (hasAccess(user, appName)) {
+        return res.status(400).json({ error: 'You already have access to this one.' });
+      }
+      const requests = { ...(user.requests || {}) };
+      requests[appName] = {
+        at: new Date().toISOString(),
+        note: String((req.body || {}).note || '').slice(0, 300),
+        state: 'pending',
+      };
+      await store.set(USERS, s.uid, { ...user, requests });
+      await log('access.requested', req, { uid: s.uid, email: user.email, detail: appName });
+      res.json({ ok: true, requested: appName });
+    });
+
     passkeys.mount(expressApp);
   }
 
@@ -521,11 +568,33 @@ function create(opts) {
       const user = await getUser(uid);
       if (!user) throw Object.assign(new Error('No such account.'), { status: 404 });
       const access = { ...(user.access || {}) };
-      if (level) access[appKey] = String(level);
-      else delete access[appKey];
-      await store.set(USERS, uid, { ...user, access });
+      const requests = { ...(user.requests || {}) };
+      if (level) {
+        access[appKey] = String(level);
+        // They asked and got it - the ask is answered, so drop it rather than
+        // leaving a pending request beside the access it was asking for.
+        delete requests[appKey];
+      } else {
+        delete access[appKey];
+      }
+      await store.set(USERS, uid, { ...user, access, requests });
       return access;
     },
+
+    /** Turn an ask down without granting. Keeps the record so the notifier
+     *  stops mentioning it and the panel stops listing it; a fresh ask from
+     *  the same person overwrites this and is reported again. */
+    async denyRequest(uid, appKey) {
+      const user = await getUser(uid);
+      if (!user) throw Object.assign(new Error('No such account.'), { status: 404 });
+      const requests = { ...(user.requests || {}) };
+      if (!requests[appKey]) throw Object.assign(new Error('No such request.'), { status: 404 });
+      requests[appKey] = { ...requests[appKey], state: 'denied', decidedAt: new Date().toISOString() };
+      await store.set(USERS, uid, { ...user, requests });
+      return requests;
+    },
+
+    pendingRequest,
     log,
     recordUsage,
     meter,
@@ -536,4 +605,4 @@ function create(opts) {
   };
 }
 
-module.exports = { create, priceOf, PRICES, uidFor, makeHash, matches, accessLevel, hasAccess, USERS, EVENTS, USAGE, COOKIE, MIN_PASSWORD };
+module.exports = { create, priceOf, PRICES, uidFor, makeHash, matches, accessLevel, hasAccess, pendingRequest, USERS, EVENTS, USAGE, COOKIE, MIN_PASSWORD };
