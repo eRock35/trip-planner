@@ -209,6 +209,18 @@ function parseCookies(req) {
 /** The cookie is set on the PARENT domain so every subdomain sees it. Locally
  *  (127.0.0.1, or any host that is not under the base domain) it falls back to
  *  a host-only cookie, which is what makes this testable off Cloud Run. */
+/** Where someone sends money. Checkout is built once, on dataviz, and the
+ *  balance it tops up is shared, so every app points at the same place rather
+ *  than growing its own Stripe integration. TOP_UP_URL overrides it; without
+ *  a base domain there is nowhere sensible to guess, so the 402 carries no
+ *  link rather than a broken one. */
+function topUpUrl() {
+  const explicit = String(process.env.TOP_UP_URL || '').trim();
+  if (explicit) return explicit;
+  const base = String(process.env.PASSKEY_RP_ID || '').trim();
+  return base ? `https://dataviz.${base}/?topup=1` : null;
+}
+
 function cookieDomain(req, baseDomain) {
   const host = String(req.hostname || '');
   if (!baseDomain) return null;
@@ -427,6 +439,10 @@ function create(opts) {
     return res.status(402).json({
       error: 'You have used your credit.',
       detail: `Your $${b.allowanceUsd.toFixed(2)} of credit is spent. Top up to keep going — it works across every app.`,
+      // Telling someone to top up without saying where is a dead end. Checkout
+      // lives on one app for everyone, so every other app's 402 has to carry
+      // the way there.
+      topUpUrl: topUpUrl(),
       budget: { allowanceUsd: b.allowanceUsd, spentUsd: b.spentUsd, remainingUsd: 0 },
     });
   }

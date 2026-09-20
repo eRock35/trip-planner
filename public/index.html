@@ -1190,6 +1190,17 @@
         renderChat();
         return;
       }
+      // Out of credit. The shared allowance is spent on every app at once, so
+      // the answer is not "wait" - it is a link to the one page that sells
+      // more, which the server hands back rather than each app hardcoding it.
+      if (res.status === 402) {
+        var out = await res.json().catch(function () { return {}; });
+        setStatus(chatStatus, out.detail || "You have used your credit.", "error");
+        entry.answer = (out.detail || "You have used your credit.") +
+          (out.topUpUrl ? "\n\n[Top up](" + out.topUpUrl + ")" : "");
+        renderChat();
+        return;
+      }
       var data = await res.json().catch(function () { return {}; });
       // The server's headers are already gone by the time it knows how the
       // request went, so a failure arrives as a 200 carrying { error }.

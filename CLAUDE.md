@@ -112,6 +112,24 @@ checks the trip owner's approval with `accounts.isApprovedUid()`. There are
 exactly two call sites (trip chat, and `runWatchCheck`); all three paths to
 them are gated.
 
+### The shared account can grant AI access here (2026-09-20)
+
+This app kept its own `aiAccess` flag from when it was the only gate, and the
+domain-wide admin panel grew a second one (`access['trip-planner']` on the
+shared identity record). They never spoke, so **a grant made in the shared
+panel did nothing here** — the visible symptom was the owner's own second
+address being told to request permission for an app he runs, on an account
+the dashboard already listed as having access.
+
+`grantedByIdentity()` fixes the direction that matters: identity can say
+**yes** — the owner flag, or a `trip-planner` grant — and this app's own
+`aiAccess === 'approved'` still stands on its own. Identity deliberately
+cannot say **no**, so nothing that worked before stops working.
+
+`ownerMaySpend()` is the same question for the hourly watch sweep, which asks
+by uid rather than by request. Without it a watch owned by someone the shared
+panel approved would be skipped every hour with nothing saying why.
+
 The admin is whichever account registers with the email in `ADMIN_EMAIL`. That
 account starts approved and is the only one that can see `/api/admin/*` — which
 returns **404**, not 403, to everyone else, so the admin surface isn't

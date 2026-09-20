@@ -69,34 +69,62 @@ const identity = identityLib.create({
   mountPath: '/api/auth',
 });
 
+/** Does the SHARED account already say this person may spend tokens?
+ *
+ *  This app had its own aiAccess flag from when it was the only gate, and the
+ *  two stopped agreeing the moment access could also be granted from the
+ *  domain-wide admin panel: a grant made there did nothing here. The visible
+ *  symptom was the owner's own second address being told to request
+ *  permission for an app he runs, on an account the dashboard listed as
+ *  already having it.
+ *
+ *  So identity wins where it says yes. It cannot say no: this app's own
+ *  approval still stands on its own, so nothing that worked before stops. */
+function grantedByIdentity(user) {
+  return identityLib.hasAccess(user, 'trip-planner');
+}
+
 /** Identity says who; this app's own record says what they may do here.
  *  `uid` is kept alongside `id` because every route in this file reads
  *  req.user.uid, and renaming it would touch ownership checks on live data. */
 async function attachProfile(req, _res, next) {
   if (req.user) {
     req.user.uid = req.user.id;
+    // hasAccess is true for the owner whatever the access map says, so this
+    // covers both "is the owner" and "was granted trip-planner".
+    const shared = grantedByIdentity(req.user);
+    const owner = req.user.admin === true;
     const own = await db.collection('users').doc(req.user.id).get().catch(() => null);
     if (own && own.exists) {
       const d = own.data();
-      req.user.aiAccess = d.aiAccess || 'none';
-      req.user.isAdmin = !!d.isAdmin;
+      req.user.aiAccess = shared ? 'approved' : (d.aiAccess || 'none');
+      req.user.isAdmin = owner || !!d.isAdmin;
       req.user.mustChangePassword = !!d.mustChangePassword;
       req.user.displayName = d.displayName || req.user.email;
     } else {
       // First sight of this account on this app. Give it a record so the
       // admin panel can see it and grant AI access.
-      req.user.aiAccess = 'none';
-      req.user.isAdmin = ADMIN_EMAIL && req.user.email === ADMIN_EMAIL;
+      req.user.isAdmin = owner || Boolean(ADMIN_EMAIL && req.user.email === ADMIN_EMAIL);
+      req.user.aiAccess = (shared || req.user.isAdmin) ? 'approved' : 'none';
       await db.collection('users').doc(req.user.id).set({
         email: req.user.email,
-        aiAccess: req.user.isAdmin ? 'approved' : 'none',
-        isAdmin: !!req.user.isAdmin,
+        aiAccess: req.user.aiAccess,
+        isAdmin: req.user.isAdmin,
         createdAt: new Date().toISOString(),
       }, { merge: true }).catch(() => {});
-      if (req.user.isAdmin) req.user.aiAccess = 'approved';
     }
   }
   next();
+}
+
+/** The cron sweep's version of the same question, by uid rather than request.
+ *  Without this, a watch owned by someone the shared panel approved would be
+ *  skipped every hour with no sign of why. */
+async function ownerMaySpend(uid) {
+  if (!uid) return false;
+  if (await accounts.isApprovedUid(uid)) return true;
+  const shared = await identityStore.store.get('users', uid).catch(() => null);
+  return grantedByIdentity(shared ? { id: uid, ...shared } : null);
 }
 
 // Registered before identity.mount so it wins /api/auth/me: the page needs
@@ -767,7 +795,7 @@ app.post('/api/cron/check-watches', requireLoginOrCron, async (req, res) => {
       // watch would be billing Erik's key every hour.
       const ownerId = tripDoc.data().ownerId;
       if (!approvalCache.has(ownerId)) {
-        approvalCache.set(ownerId, ownerId ? await accounts.isApprovedUid(ownerId) : false);
+        approvalCache.set(ownerId, await ownerMaySpend(ownerId));
       }
       if (!approvalCache.get(ownerId)) {
         skippedUnapproved += 1;
