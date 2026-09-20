@@ -598,12 +598,24 @@
     var entry = { question: text, answer: null, askedAt: new Date().toISOString() };
     qaDocs.push(entry);
     renderChat();
+    // No timeout here previously meant a hung or very slow request left the
+    // bubble reading "Waiting for a reply..." forever with no visible error.
+    var timeoutMs = 60000;
+    var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timer = controller ? setTimeout(function () { controller.abort(); }, timeoutMs) : null;
     try {
       var res = await fetch("/api/trips/" + currentTripId + "/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: text })
+        body: JSON.stringify({ question: text }),
+        signal: controller ? controller.signal : undefined
       });
-      if (res.status === 401) { chatStatus.textContent = "Please log in to use chat."; chatStatus.className = "chat-status error"; return; }
+      if (res.status === 401) {
+        chatStatus.textContent = "Please log in to use chat.";
+        chatStatus.className = "chat-status error";
+        entry.answer = "Please log in to use chat.";
+        renderChat();
+        return;
+      }
       var data = await res.json();
       if (!res.ok) throw new Error(data.error || "failed");
       entry.answer = data.answer;
@@ -613,9 +625,17 @@
       chatText.value = "";
       autoGrowChatText();
     } catch (e) {
-      chatStatus.textContent = "Couldn't send that — try again.";
+      var timedOut = e && e.name === "AbortError";
+      chatStatus.textContent = timedOut
+        ? "That's taking too long — try again in a moment."
+        : "Couldn't send that — try again.";
       chatStatus.className = "chat-status error";
+      entry.answer = timedOut
+        ? "⚠️ No reply after a minute — try again."
+        : "⚠️ Couldn't reach the server — try again.";
+      renderChat();
     } finally {
+      if (timer) clearTimeout(timer);
       chatSend.disabled = false;
     }
   });
