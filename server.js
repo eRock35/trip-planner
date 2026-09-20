@@ -2,14 +2,14 @@ const express = require('express');
 const path = require('path');
 const { Firestore } = require('@google-cloud/firestore');
 const Anthropic = require('@anthropic-ai/sdk');
-const { createPasskeyAuth } = require('./auth');
+const { createAccounts } = require('./accounts');
 
 const PORT = process.env.PORT || 8080;
 const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'metal-celerity-236019';
 const FIRESTORE_DB = process.env.FIRESTORE_DATABASE_ID || 'trip-planner';
-const SITE_LOGIN_USERNAME = process.env.SITE_LOGIN_USERNAME || '';
-const SITE_LOGIN_PASSWORD = process.env.SITE_LOGIN_PASSWORD || '';
 const SESSION_SECRET = process.env.SESSION_SECRET || '';
+// The one account allowed to approve AI access. Set at deploy time.
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
 const anthropic = new Anthropic(); // reads ANTHROPIC_API_KEY from env
@@ -19,76 +19,57 @@ const app = express();
 app.use(express.json());
 
 // ---------------------------------------------------------------------------
-// Auth - auth.js and login.html are the same file as santa-rosa-beach-trip
-// (Face ID / Touch ID via WebAuthn, password fallback), but the GATE SHAPE
-// is different: this app is public to browse, same split college-football-app
-// uses and for the same reason. Anyone can load the page and view trips; only
-// routes that spend Anthropic tokens or write data require login. See
-// requireLogin's call sites below - it's applied per-route, not globally.
+// Auth. This app is multi-user: anyone can register, every signed-in user
+// gets the free features, and anything that spends Anthropic tokens needs
+// aiAccess === 'approved', which only the admin grants. See accounts.js.
+//
+// Note the deliberate change from the old single-account shape: trips are no
+// longer publicly browsable. They belong to a user now, so an open GET would
+// leak one person's trips to another. Every /api/trips* route below requires
+// a session and is scoped by ownerId.
 // ---------------------------------------------------------------------------
-function passwordOk(req) {
-  if (!SITE_LOGIN_USERNAME || !SITE_LOGIN_PASSWORD) return false;
-  const header = req.headers.authorization || '';
-  const [scheme, encoded] = header.split(' ');
-  if (scheme !== 'Basic' || !encoded) return false;
-  const decoded = Buffer.from(encoded, 'base64').toString('utf8');
-  const sep = decoded.indexOf(':');
-  return decoded.slice(0, sep) === SITE_LOGIN_USERNAME && decoded.slice(sep + 1) === SITE_LOGIN_PASSWORD;
-}
-
-function requirePassword(req, res, next) {
-  if (passwordOk(req)) return next();
-  if (req.body && typeof req.body.password === 'string' && SITE_LOGIN_PASSWORD &&
-      req.body.password === SITE_LOGIN_PASSWORD) {
-    return next();
-  }
-  return res.status(401).json({ error: 'password required' });
-}
-
-const passkeyAuth = createPasskeyAuth({
+const accounts = createAccounts({
   db,
-  collection: 'webauthn-credentials',
-  rpName: 'Trip Planner',
   sessionSecret: SESSION_SECRET,
-  userName: SITE_LOGIN_USERNAME || 'erik',
-  passwordGate: requirePassword,
-  verifyGate: (req, res, next) => {
-    if (passkeyAuth.hasSession(req) || passwordOk(req)) return next();
-    return res.status(401).json({ error: 'not signed in' });
-  },
+  rpName: 'Trip Planner',
+  adminEmail: ADMIN_EMAIL,
 });
+
+const { requireLogin, requireAiAccess } = accounts;
 
 app.get('/healthz', (req, res) => res.status(200).send('ok'));
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
-passkeyAuth.mount(app);
 
-app.post('/api/auth/password', (req, res) => {
-  const { username, password } = req.body || {};
-  if (!SITE_LOGIN_USERNAME || !SITE_LOGIN_PASSWORD) {
-    return res.status(500).json({ error: 'Server login is not configured.' });
-  }
-  if (username !== SITE_LOGIN_USERNAME || password !== SITE_LOGIN_PASSWORD) {
-    return res.status(401).json({ error: 'invalid credentials' });
-  }
-  passkeyAuth.issueSession(res);
-  res.json({ ok: true });
-});
-
-// A scheduled batch-check run authenticates with the cron secret instead of
-// a session - see requireLoginOrCron below, used only on that one route.
-function requireLogin(req, res, next) {
-  if (!SITE_LOGIN_USERNAME || !SITE_LOGIN_PASSWORD) {
-    return res.status(500).json({ error: 'Server login is not configured.' });
-  }
-  if (passkeyAuth.hasSession(req) || passwordOk(req)) return next();
-  if ((req.get('Accept') || '').indexOf('text/html') !== -1) return res.redirect('/login');
-  return res.status(401).json({ error: 'not signed in' });
-}
+// Every request gets req.user (or null) before any gate runs.
+app.use(accounts.attachUser);
+accounts.mount(app);
 
 function requireLoginOrCron(req, res, next) {
   const key = req.get('X-Cron-Key');
-  if (CRON_SECRET && key && key === CRON_SECRET) return next();
+  if (CRON_SECRET && key && key === CRON_SECRET) {
+    req.isCron = true;
+    return next();
+  }
   return requireLogin(req, res, next);
+}
+
+// Loads the trip and refuses unless it belongs to the caller. Every route that
+// touches a specific trip goes through this - that is what keeps one user's
+// trips invisible to another. 404 rather than 403 on someone else's trip, so
+// the API doesn't confirm that an id exists.
+async function loadOwnedTrip(req, res) {
+  const ref = db.collection('trips').doc(req.params.id);
+  const doc = await ref.get();
+  if (!doc.exists) {
+    res.status(404).json({ error: 'Trip not found.' });
+    return null;
+  }
+  const data = doc.data();
+  if (!req.user || data.ownerId !== req.user.uid) {
+    res.status(404).json({ error: 'Trip not found.' });
+    return null;
+  }
+  return { ref, doc, data };
 }
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -111,9 +92,11 @@ function tripSummary(id, data) {
   };
 }
 
-app.get('/api/trips', async (req, res) => {
+app.get('/api/trips', requireLogin, async (req, res) => {
   try {
-    const snap = await db.collection('trips').orderBy('updatedAt', 'desc').limit(100).get();
+    const snap = await db.collection('trips')
+      .where('ownerId', '==', req.user.uid)
+      .orderBy('updatedAt', 'desc').limit(100).get();
     res.json(snap.docs.map((d) => tripSummary(d.id, d.data())));
   } catch (err) {
     console.error('GET /api/trips', err);
@@ -133,6 +116,7 @@ app.post('/api/trips', requireLogin, async (req, res) => {
       notes: typeof notes === 'string' ? notes.slice(0, 4000) : '',
       status: 'planning',
       days: [],
+      ownerId: req.user.uid,
       createdAt: now,
       updatedAt: now,
       lockedAt: null,
@@ -145,11 +129,11 @@ app.post('/api/trips', requireLogin, async (req, res) => {
   }
 });
 
-app.get('/api/trips/:id', async (req, res) => {
+app.get('/api/trips/:id', requireLogin, async (req, res) => {
   try {
-    const doc = await db.collection('trips').doc(req.params.id).get();
-    if (!doc.exists) return res.status(404).json({ error: 'Trip not found.' });
-    res.json({ id: doc.id, ...doc.data() });
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    res.json({ id: owned.doc.id, ...owned.data });
   } catch (err) {
     console.error('GET /api/trips/:id', err);
     res.status(500).json({ error: 'Failed to load trip.' });
@@ -164,10 +148,9 @@ app.patch('/api/trips/:id', requireLogin, async (req, res) => {
     if (typeof destination === 'string') patch.destination = destination.slice(0, 200);
     if (typeof dateRange === 'string') patch.dateRange = dateRange.slice(0, 120);
     if (typeof notes === 'string') patch.notes = notes.slice(0, 4000);
-    const ref = db.collection('trips').doc(req.params.id);
-    const doc = await ref.get();
-    if (!doc.exists) return res.status(404).json({ error: 'Trip not found.' });
-    await ref.update(patch);
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    await owned.ref.update(patch);
     res.json({ ok: true });
   } catch (err) {
     console.error('PATCH /api/trips/:id', err);
@@ -177,7 +160,9 @@ app.patch('/api/trips/:id', requireLogin, async (req, res) => {
 
 app.delete('/api/trips/:id', requireLogin, async (req, res) => {
   try {
-    await db.collection('trips').doc(req.params.id).delete();
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    await owned.ref.delete();
     res.json({ ok: true });
   } catch (err) {
     console.error('DELETE /api/trips/:id', err);
@@ -192,11 +177,10 @@ app.delete('/api/trips/:id', requireLogin, async (req, res) => {
 // own thing" mechanism - see CLAUDE.md.
 app.post('/api/trips/:id/lock', requireLogin, async (req, res) => {
   try {
-    const ref = db.collection('trips').doc(req.params.id);
-    const doc = await ref.get();
-    if (!doc.exists) return res.status(404).json({ error: 'Trip not found.' });
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
     const now = new Date().toISOString();
-    await ref.update({ status: 'locked', lockedAt: now, updatedAt: now });
+    await owned.ref.update({ status: 'locked', lockedAt: now, updatedAt: now });
     res.json({ ok: true });
   } catch (err) {
     console.error('POST /api/trips/:id/lock', err);
@@ -206,10 +190,9 @@ app.post('/api/trips/:id/lock', requireLogin, async (req, res) => {
 
 app.post('/api/trips/:id/unlock', requireLogin, async (req, res) => {
   try {
-    const ref = db.collection('trips').doc(req.params.id);
-    const doc = await ref.get();
-    if (!doc.exists) return res.status(404).json({ error: 'Trip not found.' });
-    await ref.update({ status: 'planning', lockedAt: null, updatedAt: new Date().toISOString() });
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    await owned.ref.update({ status: 'planning', lockedAt: null, updatedAt: new Date().toISOString() });
     res.json({ ok: true });
   } catch (err) {
     console.error('POST /api/trips/:id/unlock', err);
@@ -256,9 +239,11 @@ const SCHEDULE_TOOL = {
   },
 };
 
-app.get('/api/trips/:id/messages', async (req, res) => {
+app.get('/api/trips/:id/messages', requireLogin, async (req, res) => {
   try {
-    const snap = await db.collection('trips').doc(req.params.id).collection('messages')
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    const snap = await owned.ref.collection('messages')
       .orderBy('askedAt', 'asc').limit(200).get();
     res.json(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
   } catch (err) {
@@ -267,15 +252,15 @@ app.get('/api/trips/:id/messages', async (req, res) => {
   }
 });
 
-app.post('/api/trips/:id/chat', requireLogin, async (req, res) => {
+app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, async (req, res) => {
   try {
     const { question } = req.body || {};
     if (!question) return res.status(400).json({ error: 'question is required.' });
 
-    const tripRef = db.collection('trips').doc(req.params.id);
-    const tripDoc = await tripRef.get();
-    if (!tripDoc.exists) return res.status(404).json({ error: 'Trip not found.' });
-    const trip = tripDoc.data();
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    const tripRef = owned.ref;
+    const trip = owned.data;
 
     const systemPrompt =
       'You are helping research and plan a trip: "' + (trip.name || 'Untitled trip') + '"' +
@@ -338,10 +323,9 @@ app.post('/api/trips/:id/schedule/apply', requireLogin, async (req, res) => {
     if (!Array.isArray(days) || !days.length) {
       return res.status(400).json({ error: 'days array is required.' });
     }
-    const ref = db.collection('trips').doc(req.params.id);
-    const doc = await ref.get();
-    if (!doc.exists) return res.status(404).json({ error: 'Trip not found.' });
-    await ref.update({ days, updatedAt: new Date().toISOString() });
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    await owned.ref.update({ days, updatedAt: new Date().toISOString() });
     res.json({ ok: true });
   } catch (err) {
     console.error('POST /api/trips/:id/schedule/apply', err);
@@ -385,9 +369,11 @@ async function runWatchCheck(tripData, watchDoc) {
   return text;
 }
 
-app.get('/api/trips/:id/watches', async (req, res) => {
+app.get('/api/trips/:id/watches', requireLogin, async (req, res) => {
   try {
-    const snap = await db.collection('trips').doc(req.params.id).collection('watches')
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    const snap = await owned.ref.collection('watches')
       .orderBy('createdAt', 'asc').get();
     res.json(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
   } catch (err) {
@@ -400,10 +386,10 @@ app.post('/api/trips/:id/watches', requireLogin, async (req, res) => {
   try {
     const { kind, label, criteria, url, intervalHours } = req.body || {};
     if (!label) return res.status(400).json({ error: 'label is required.' });
-    const tripDoc = await db.collection('trips').doc(req.params.id).get();
-    if (!tripDoc.exists) return res.status(404).json({ error: 'Trip not found.' });
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
     const now = new Date().toISOString();
-    const ref = await tripDoc.ref.collection('watches').add({
+    const ref = await owned.ref.collection('watches').add({
       kind: ['flight', 'hotel', 'airbnb', 'other'].includes(kind) ? kind : 'other',
       label: String(label).slice(0, 200),
       criteria: typeof criteria === 'string' ? criteria.slice(0, 500) : '',
@@ -429,7 +415,9 @@ app.patch('/api/trips/:id/watches/:watchId', requireLogin, async (req, res) => {
     if (typeof criteria === 'string') patch.criteria = criteria.slice(0, 500);
     if (typeof url === 'string') patch.url = url.slice(0, 500);
     if (Number.isFinite(intervalHours) && intervalHours >= 1) patch.intervalHours = Math.min(intervalHours, 24 * 14);
-    const ref = db.collection('trips').doc(req.params.id).collection('watches').doc(req.params.watchId);
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    const ref = owned.ref.collection('watches').doc(req.params.watchId);
     const doc = await ref.get();
     if (!doc.exists) return res.status(404).json({ error: 'Watch not found.' });
     await ref.update(patch);
@@ -442,7 +430,9 @@ app.patch('/api/trips/:id/watches/:watchId', requireLogin, async (req, res) => {
 
 app.delete('/api/trips/:id/watches/:watchId', requireLogin, async (req, res) => {
   try {
-    await db.collection('trips').doc(req.params.id).collection('watches').doc(req.params.watchId).delete();
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    await owned.ref.collection('watches').doc(req.params.watchId).delete();
     res.json({ ok: true });
   } catch (err) {
     console.error('DELETE /api/trips/:id/watches/:watchId', err);
@@ -450,13 +440,13 @@ app.delete('/api/trips/:id/watches/:watchId', requireLogin, async (req, res) => 
   }
 });
 
-app.post('/api/trips/:id/watches/:watchId/check', requireLogin, async (req, res) => {
+app.post('/api/trips/:id/watches/:watchId/check', requireLogin, requireAiAccess, async (req, res) => {
   try {
-    const tripDoc = await db.collection('trips').doc(req.params.id).get();
-    if (!tripDoc.exists) return res.status(404).json({ error: 'Trip not found.' });
-    const watchDoc = await tripDoc.ref.collection('watches').doc(req.params.watchId).get();
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    const watchDoc = await owned.ref.collection('watches').doc(req.params.watchId).get();
     if (!watchDoc.exists) return res.status(404).json({ error: 'Watch not found.' });
-    const result = await runWatchCheck(tripDoc.data(), watchDoc);
+    const result = await runWatchCheck(owned.data, watchDoc);
     res.json({ ok: true, result });
   } catch (err) {
     console.error('POST /api/trips/:id/watches/:watchId/check', err);
@@ -477,10 +467,26 @@ app.post('/api/cron/check-watches', requireLoginOrCron, async (req, res) => {
     const tripsSnap = await db.collection('trips').where('status', '==', 'planning').get();
     const now = Date.now();
     let checked = 0;
+    let skippedUnapproved = 0;
     const results = [];
+    // Owner -> approved? cached per run, so N trips for one owner is one read.
+    const approvalCache = new Map();
 
     for (const tripDoc of tripsSnap.docs) {
       if (checked >= MAX_CHECKS_PER_RUN) break;
+
+      // A watch check spends an Anthropic call, so the trip's owner must hold
+      // approved AI access. Without this, anyone who signed up and added a
+      // watch would be billing Erik's key every hour.
+      const ownerId = tripDoc.data().ownerId;
+      if (!approvalCache.has(ownerId)) {
+        approvalCache.set(ownerId, ownerId ? await accounts.isApprovedUid(ownerId) : false);
+      }
+      if (!approvalCache.get(ownerId)) {
+        skippedUnapproved += 1;
+        continue;
+      }
+
       const watchesSnap = await tripDoc.ref.collection('watches').get();
       for (const watchDoc of watchesSnap.docs) {
         if (checked >= MAX_CHECKS_PER_RUN) break;
@@ -498,8 +504,9 @@ app.post('/api/cron/check-watches', requireLoginOrCron, async (req, res) => {
       }
     }
 
-    await db.collection('control').doc('watch-cron').set({ lastRunAt: new Date().toISOString(), checked }, { merge: true });
-    res.json({ checked, results });
+    await db.collection('control').doc('watch-cron').set(
+      { lastRunAt: new Date().toISOString(), checked, skippedUnapproved }, { merge: true });
+    res.json({ checked, skippedUnapproved, results });
   } catch (err) {
     console.error('POST /api/cron/check-watches', err);
     res.status(500).json({ error: 'Batch check failed.' });

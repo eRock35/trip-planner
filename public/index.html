@@ -131,6 +131,16 @@
   .authbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 4px; }
   .authbar-text { font-size: 12.5px; color: var(--label-3); }
   .authbar-btn { font: inherit; font-size: 12.5px; font-weight: 600; color: var(--tint); background: none; border: none; padding: 4px 2px; cursor: pointer; }
+  .ai-banner { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:10px 14px; margin:0 0 14px; border-radius:10px;
+    background:rgba(234,179,8,0.10); border:1px solid rgba(234,179,8,0.35); font-size:13.5px; }
+  .admin-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.08); }
+  .admin-row .who { flex:1 1 200px; min-width:0; }
+  .admin-row .who b { display:block; }
+  .admin-row .note { font-size:12.5px; opacity:0.7; margin-top:2px; overflow-wrap:anywhere; }
+  .pill { font-size:11px; text-transform:uppercase; letter-spacing:0.04em;
+    padding:2px 8px; border-radius:999px; background:rgba(255,255,255,0.10); }
 </style>
 </head>
 <body>
@@ -138,7 +148,19 @@
 
   <div class="authbar">
     <span class="authbar-text" id="authBarText"></span>
+    <button type="button" class="authbar-btn" id="adminBtn" hidden>Requests</button>
     <button type="button" class="authbar-btn" id="authBarBtn"></button>
+  </div>
+
+  <div class="ai-banner" id="aiBanner" hidden>
+    <span id="aiBannerText"></span>
+    <button type="button" class="authbar-btn" id="aiRequestBtn" hidden>Request access</button>
+  </div>
+
+  <div id="adminPanel" hidden>
+    <div class="title-block"><h1>AI access requests</h1></div>
+    <p class="muted" id="adminHint">Approving someone lets them spend Anthropic tokens on your key.</p>
+    <div id="adminList"></div>
   </div>
 
   <div id="view-trips">
@@ -280,17 +302,141 @@
   var authBarBtn = document.getElementById("authBarBtn");
   var isSignedIn = false;
 
+  var me = null;
+  var adminBtn = document.getElementById("adminBtn");
+  var aiBanner = document.getElementById("aiBanner");
+  var aiBannerText = document.getElementById("aiBannerText");
+  var aiRequestBtn = document.getElementById("aiRequestBtn");
+  var adminPanel = document.getElementById("adminPanel");
+
+  // Anyone can sign up and use the planner. Anything that calls Claude needs
+  // aiAccess === "approved", granted by hand — so the banner explains where
+  // the user stands instead of letting chat fail with a bare 403.
+  var AI_COPY = {
+    none:     ["AI research is off for your account — ask for access to use chat and price watches.", true],
+    pending:  ["Your AI access request is waiting to be reviewed.", false],
+    denied:   ["Your request for AI access wasn't approved.", false],
+    approved: ["", false]
+  };
+
   function renderAuthBar() {
-    authBarText.textContent = isSignedIn ? "Signed in" : "Browsing — log in to save";
-    authBarBtn.textContent = isSignedIn ? "Log out" : "Log in";
+    if (!isSignedIn) {
+      authBarText.textContent = "Not signed in";
+      authBarBtn.textContent = "Log in";
+      adminBtn.hidden = true;
+      aiBanner.hidden = true;
+      return;
+    }
+    authBarText.textContent = "Signed in as " + (me && me.displayName ? me.displayName : "you");
+    authBarBtn.textContent = "Log out";
+    adminBtn.hidden = !(me && me.isAdmin);
+
+    var state = (me && me.aiAccess) || "none";
+    var copy = AI_COPY[state] || AI_COPY.none;
+    if (state === "approved") {
+      aiBanner.hidden = true;
+    } else {
+      aiBanner.hidden = false;
+      aiBannerText.textContent = copy[0];
+      aiRequestBtn.hidden = !copy[1];
+    }
   }
+
+  function aiReady() { return !!(me && me.aiAccess === "approved"); }
+
   async function refreshAuthStatus() {
     try {
-      var res = await fetch("/api/auth/status");
+      var res = await fetch("/api/auth/me");
       var data = await res.json();
       isSignedIn = !!(data && data.signedIn);
-    } catch (e) { isSignedIn = false; }
+      me = (data && data.user) || null;
+    } catch (e) { isSignedIn = false; me = null; }
     renderAuthBar();
+  }
+
+  aiRequestBtn.addEventListener("click", async function () {
+    var note = window.prompt("Anything you want to say about why you need AI research? (optional)") || "";
+    aiRequestBtn.disabled = true;
+    try {
+      var r = await fetch("/api/ai-access/request", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note: note })
+      });
+      if (!r.ok) throw new Error("failed");
+      if (me) me.aiAccess = "pending";
+      renderAuthBar();
+    } catch (e) {
+      aiBannerText.textContent = "Couldn't send that request — try again.";
+    }
+    aiRequestBtn.disabled = false;
+  });
+
+  adminBtn.addEventListener("click", function () {
+    adminPanel.hidden = !adminPanel.hidden;
+    if (!adminPanel.hidden) loadAdmin();
+  });
+
+  async function loadAdmin() {
+    var list = document.getElementById("adminList");
+    list.textContent = "Loading…";
+    try {
+      var r = await fetch("/api/admin/users");
+      if (!r.ok) throw new Error("failed");
+      var users = await r.json();
+      list.innerHTML = "";
+      if (!users.length) { list.textContent = "Nobody has registered yet."; return; }
+      users.forEach(function (u) {
+        var row = document.createElement("div");
+        row.className = "admin-row";
+
+        var who = document.createElement("div");
+        who.className = "who";
+        var b = document.createElement("b");
+        b.textContent = u.displayName || u.email;
+        who.appendChild(b);
+        var em = document.createElement("span");
+        em.className = "note";
+        em.textContent = u.email;
+        who.appendChild(em);
+        if (u.aiNote) {
+          var n = document.createElement("div");
+          n.className = "note";
+          n.textContent = "“" + u.aiNote + "”";
+          who.appendChild(n);
+        }
+        row.appendChild(who);
+
+        var pill = document.createElement("span");
+        pill.className = "pill";
+        pill.textContent = u.aiAccess;
+        row.appendChild(pill);
+
+        if (!u.isAdmin) {
+          [["Approve", "approved"], ["Deny", "denied"]].forEach(function (pair) {
+            if (u.aiAccess === pair[1]) return;
+            var btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "authbar-btn";
+            btn.textContent = pair[0];
+            btn.addEventListener("click", async function () {
+              btn.disabled = true;
+              try {
+                var rr = await fetch("/api/admin/ai-access", {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ userId: u.id, decision: pair[1] })
+                });
+                if (!rr.ok) throw new Error("failed");
+                loadAdmin();
+              } catch (e) { btn.disabled = false; }
+            });
+            row.appendChild(btn);
+          });
+        }
+        list.appendChild(row);
+      });
+    } catch (e) {
+      list.textContent = "Couldn't load requests.";
+    }
   }
   authBarBtn.addEventListener("click", async function () {
     if (isSignedIn) {
@@ -307,6 +453,19 @@
   function showAuthRequired(statusEl) {
     if (!statusEl) { location.href = "/login"; return; }
     statusEl.textContent = "Please log in to save changes.";
+    statusEl.className = "chat-status error";
+  }
+
+  // A 403 here means "signed in, but AI isn't approved for you" — a different
+  // problem from not being logged in, so say so rather than sending them to
+  // a login page they're already past.
+  function showAiRequired(statusEl) {
+    refreshAuthStatus();
+    if (!statusEl) return;
+    var state = (me && me.aiAccess) || "none";
+    statusEl.textContent = state === "pending"
+      ? "Your AI access request is still being reviewed."
+      : "AI research isn't enabled for your account yet — request access at the top of the page.";
     statusEl.className = "chat-status error";
   }
 
@@ -609,6 +768,10 @@
         body: JSON.stringify({ question: text }),
         signal: controller ? controller.signal : undefined
       });
+      if (res.status === 403) {
+        showAiRequired(chatStatus);
+        return;
+      }
       if (res.status === 401) {
         chatStatus.textContent = "Please log in to use chat.";
         chatStatus.className = "chat-status error";
@@ -672,7 +835,11 @@
         checkBtn.textContent = "Checking…";
         try {
           var res = await fetch("/api/trips/" + currentTripId + "/watches/" + w.id + "/check", { method: "POST" });
-          if (res.status === 401) { showAuthRequired(document.getElementById("wStatus")); checkBtn.disabled = false; checkBtn.textContent = "Check now"; return; }
+          if (res.status === 403 || res.status === 401) {
+            if (res.status === 403) showAiRequired(document.getElementById("wStatus"));
+            else showAuthRequired(document.getElementById("wStatus"));
+            checkBtn.disabled = false; checkBtn.textContent = "Check now"; return;
+          }
           if (!res.ok) throw new Error();
           await refreshWatches();
         } catch (e) {

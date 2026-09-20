@@ -52,6 +52,7 @@
   .status{min-height:1.2em; font-size:13px; color:var(--label-2); text-align:center; margin-top:12px;}
   .status.error{color:var(--red);}
   #pwBlock[hidden]{display:none;}
+  .hint { font-size: 12.5px; opacity: 0.65; margin: 8px 0 0; }
 </style>
 </head>
 <body>
@@ -65,14 +66,20 @@
       <div class="divider" id="divider" hidden>or</div>
 
       <div id="pwBlock">
-        <label for="u">Username</label>
-        <input id="u" autocomplete="username" autocapitalize="none" autocorrect="off" />
+        <div id="nameRow" hidden>
+          <label for="n">Your name</label>
+          <input id="n" autocomplete="name" />
+        </div>
+        <label for="u">Email</label>
+        <input id="u" type="email" autocomplete="username" autocapitalize="none" autocorrect="off" />
         <label for="p">Password</label>
         <input id="p" type="password" autocomplete="current-password" />
         <button class="primary" id="pwBtn">Sign in</button>
+        <p class="hint" id="pwHint" hidden>At least 10 characters.</p>
       </div>
 
-      <button class="linkish" id="showPw" hidden>Use password instead</button>
+      <button class="linkish" id="showPw" hidden>Use email instead</button>
+      <button class="linkish" id="toggleMode">Need an account? Create one</button>
       <div class="status" id="status"></div>
     </div>
   </div>
@@ -107,8 +114,10 @@
   var supported = !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.get);
 
   // Show the Face ID button only if a passkey actually exists on this domain.
-  fetch('/api/auth/status').then(function(r){ return r.json(); }).then(function(s){
-    if (supported && s.passkeyRegistered){
+  // Offer Face ID only if some passkey exists for this host; the credential
+  // itself identifies which account is signing in.
+  fetch('/api/auth/passkey/available').then(function(r){ return r.json(); }).then(function(s){
+    if (supported && s.available){
       faceBtn.hidden = false;
       divider.hidden = false;
       pwBlock.hidden = true;
@@ -158,19 +167,51 @@
       });
   });
 
+  // One form, two modes. Registering is open to anyone; AI features are
+  // requested separately from inside the app and approved by hand.
+  var registering = false;
+  var nameRow = document.getElementById('nameRow');
+  var pwHint = document.getElementById('pwHint');
+  var pwBtn = document.getElementById('pwBtn');
+  var toggleMode = document.getElementById('toggleMode');
+
+  function applyMode(){
+    nameRow.hidden = !registering;
+    pwHint.hidden = !registering;
+    pwBtn.textContent = registering ? 'Create account' : 'Sign in';
+    toggleMode.textContent = registering
+      ? 'Already have an account? Sign in'
+      : 'Need an account? Create one';
+    document.getElementById('p').setAttribute(
+      'autocomplete', registering ? 'new-password' : 'current-password');
+    say('');
+  }
+  toggleMode.addEventListener('click', function(){
+    registering = !registering;
+    pwBlock.hidden = false;
+    showPw.hidden = true;
+    applyMode();
+  });
+  applyMode();
+
   function submitPassword(){
     var u = document.getElementById('u').value.trim();
     var p = document.getElementById('p').value;
-    if (!u || !p){ say('Enter your username and password.', true); return; }
-    say('Signing in…');
-    fetch('/api/auth/password', {
+    if (!u || !p){ say('Enter your email and password.', true); return; }
+    if (registering && p.length < 10){ say('Password must be at least 10 characters.', true); return; }
+    say(registering ? 'Creating your account…' : 'Signing in…');
+    pwBtn.disabled = true;
+    var body = registering
+      ? { email:u, password:p, displayName: document.getElementById('n').value.trim() }
+      : { email:u, password:p };
+    fetch(registering ? '/api/auth/register' : '/api/auth/login', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({username:u, password:p})
+      body: JSON.stringify(body)
     }).then(function(r){
-      if (!r.ok) throw new Error('bad');
-      return r.json();
-    }).then(go).catch(function(){
-      say('That username or password didn’t work.', true);
+      return r.json().then(function(d){ if (!r.ok) throw new Error(d.error || 'failed'); return d; });
+    }).then(go).catch(function(err){
+      pwBtn.disabled = false;
+      say((err && err.message) || 'That didn’t work.', true);
     });
   }
   document.getElementById('pwBtn').addEventListener('click', submitPassword);

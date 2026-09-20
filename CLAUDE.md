@@ -61,28 +61,50 @@ need it.
 - `control/watch-cron` — single doc, `{lastRunAt, checked}` from the most
   recent batch run.
 
-## Sign-in: public browse, gated writes
+## Sign-in: open registration, approval-gated AI
 
-Unlike `santa-rosa-beach-trip` (whole app gated, because of real family PII),
-this app is **public to browse** — same split `college-football-app` uses,
-and for the same reason: letting anyone view/play costs nothing, but any
-route that spends an Anthropic call or writes data does cost money, so
-*those* routes require login. `requireLogin` is applied per-route in
-`server.js`, not as a blanket `app.use(requireLogin)` — see the auth section
-comment there for the exact list. Public: `GET /api/trips`, `GET
-/api/trips/:id`, `GET /api/trips/:id/messages`, `GET /api/trips/:id/watches`,
-static file serving, and the `/api/auth/*` routes themselves. Gated: every
-create/update/delete/lock/unlock/chat/apply/watch-check route.
-`/api/cron/check-watches` is separately on `requireLoginOrCron` (session or
-the cron secret), unaffected by this split.
+**This app is multi-user.** Anyone can register (email + password, at least 10
+characters); a passkey can be added afterwards from inside the app for Face ID.
+Accounts live in `users/<uid>`, where `uid` is the base64url of the lowercased
+email — deterministic, so `create()` fails on a duplicate rather than needing a
+uniqueness index Firestore doesn't have.
 
-`auth.js` already exposes `GET /api/auth/status` (`{signedIn,
-passkeyRegistered}`) and `POST /api/auth/logout` — `public/index.html` polls
-status on load to render a small "Log in" / "Log out" bar at the top, and
-every mutating fetch call checks for a `401` response and points the user at
-`/login` via `showAuthRequired()` instead of failing silently. Keep both of
-those in sync if you add a new mutating route: gate it server-side with
-`requireLogin`, and handle its `401` client-side the same way.
+The access model is Erik's explicit call, and the reason matters:
+
+- **Everyone who signs up gets the free features immediately** — create trips,
+  edit them, add and schedule watches, lock and unlock. None of that costs
+  anything.
+- **Anything that calls Claude requires `aiAccess === 'approved'`**, which only
+  the admin grants by hand. A user asks via `POST /api/ai-access/request` (with
+  an optional note); the admin sees pending requests in the app and approves or
+  denies. States: `none` → `pending` → `approved` | `denied`.
+
+Without that second gate, any stranger who found the URL could run Sonnet 5
+with web search on Erik's API key. **Never put an Anthropic call behind
+`requireLogin` alone** — it goes behind `requireAiAccess`, and the cron sweep
+checks the trip owner's approval with `accounts.isApprovedUid()`. There are
+exactly two call sites (trip chat, and `runWatchCheck`); all three paths to
+them are gated.
+
+The admin is whichever account registers with the email in `ADMIN_EMAIL`. That
+account starts approved and is the only one that can see `/api/admin/*` — which
+returns **404**, not 403, to everyone else, so the admin surface isn't
+advertised.
+
+### Trips are no longer publicly browsable
+
+The old single-account version let anyone view trips, on the reasoning that
+reads cost nothing. That no longer holds: trips belong to a user now, so an
+open GET would leak one person's trips to another. Every `/api/trips*` route
+requires a session and goes through `loadOwnedTrip()`, which 404s (not 403s) on
+someone else's trip so the API won't confirm an id exists.
+
+`accounts.js` is this app's own auth module. **`auth.js` was deliberately left
+alone** — it is shared verbatim with `santa-rosa-beach-trip` and
+`college-football-app`, and both are still single-account. Don't fork it here;
+this app outgrew it.
+
+Needs a composite index on `trips`: `ownerId ASC, updatedAt DESC`.
 
 ## Chat can draft or edit the itinerary
 
@@ -136,9 +158,11 @@ Cloud Run Admin API v2). See `college-football-app`'s
   `trip-planner-cron-secret`. `ANTHROPIC_API_KEY` is shared across all three
   apps, same as always.
 - Env vars: `GOOGLE_CLOUD_PROJECT`, `FIRESTORE_DATABASE_ID=trip-planner`,
-  `SITE_LOGIN_USERNAME`, `SITE_LOGIN_PASSWORD`, `SESSION_SECRET` (any long
-  random string, used to sign session/challenge cookies — generate one at
-  deploy time, don't hardcode it), `CRON_SECRET`.
+  `SESSION_SECRET` (any long random string, signs session/challenge cookies),
+  `CRON_SECRET`, `ADMIN_EMAIL` (secret `trip-planner-admin-email`).
+  `SITE_LOGIN_USERNAME` / `SITE_LOGIN_PASSWORD` are **dead** since the move to
+  multi-user — nothing reads them. They're still mounted on the service; drop
+  them (and their secrets) on a future deploy.
 - No custom domain, same reasoning as `santa-rosa-beach-trip`: the default
   `*.run.app` URL doesn't publish a dedicated cert to public Certificate
   Transparency logs the way a custom domain mapping would.
