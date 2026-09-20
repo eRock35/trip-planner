@@ -44,10 +44,20 @@ need it.
 - Firestore, **Native mode**, database `trip-planner` in `us-central1` (not
   `(default)` — see the same note in `santa-rosa-beach-trip`'s CLAUDE.md for
   why: that project's `(default)` database is legacy Datastore mode).
-- `webauthn-credentials/<id>` — passkey public keys; `auth.js` and
-  `login.html` are copied verbatim from `santa-rosa-beach-trip` (Face ID /
-  Touch ID sign-in, password fallback). Keep them in sync if that pattern
-  changes there.
+- `webauthn-credentials/<id>` — passkey public keys. Written by
+  `accounts.js`, which carries a `uid` naming the account and an `rpID`
+  naming the host it was registered on.
+
+  **`auth.js` in this repo is dead code** — nothing requires it; `server.js`
+  loads `accounts.js` only. It is the single-account module copied from
+  `santa-rosa-beach-trip`, left behind when this app went multi-user. Safe to
+  delete; don't extend it, and don't read it as describing how this app
+  signs people in.
+
+  The old "keep it in sync with `college-football-app`" instruction no longer
+  holds either: that app's `auth.js` forked on 2026-09-20 when it gained
+  per-email accounts and a research allowlist of its own. The three apps'
+  auth is now independent by design, not by accident.
 - `trips/<id>` — `{name, destination, dateRange, notes, status
   ("planning"|"locked"), days, createdAt, updatedAt, lockedAt}`. `days` is
   the itinerary once one exists — same shape as `santa-rosa-beach-trip`'s
