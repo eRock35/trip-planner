@@ -1,272 +1,509 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Trip Planner</title>
+<meta name="description" content="Research, plan and watch prices for upcoming trips — lock one in when it's booked.">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F2F2F7">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Trips">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
 <style>
   :root {
-    --bg: #F2F2F7; --card: #FFFFFF; --fill: rgba(120,120,128,0.12); --fill-2: rgba(120,120,128,0.16);
+    color-scheme: light dark;
+    --bg: #F2F2F7; --card: #FFFFFF; --fill: rgba(120,120,128,0.12); --fill-2: rgba(120,120,128,0.18);
     --label: #000000; --label-2: rgba(60,60,67,0.6); --label-3: rgba(60,60,67,0.4);
-    --sep: rgba(60,60,67,0.29);
-    --tint: #007AFF; --red: #FF3B30; --orange: #FF9500; --green: #34C759;
+    --sep: rgba(60,60,67,0.24);
+    --tint: #007AFF; --tint-soft: rgba(0,122,255,0.12); --red: #FF3B30; --orange: #FF9500; --green: #34C759;
+    --bar: rgba(249,249,249,0.82); --bar-border: rgba(0,0,0,0.12);
     --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 10px 24px rgba(0,0,0,0.06);
+    --sheet-shadow: 0 -8px 40px rgba(0,0,0,0.18);
+    --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px);
+    --nav-h: 44px; --tab-h: 50px; --kb: 0px;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #000000; --card: #1C1C1E; --fill: rgba(120,120,128,0.24); --fill-2: rgba(120,120,128,0.32);
       --label: #FFFFFF; --label-2: rgba(235,235,245,0.6); --label-3: rgba(235,235,245,0.4);
-      --sep: rgba(84,84,88,0.65);
-      --tint: #0A84FF; --red: #FF453A; --orange: #FF9F0A; --green: #32D74B;
+      --sep: rgba(84,84,88,0.6);
+      --tint: #0A84FF; --tint-soft: rgba(10,132,255,0.18); --red: #FF453A; --orange: #FF9F0A; --green: #32D74B;
+      --bar: rgba(22,22,24,0.78); --bar-border: rgba(255,255,255,0.12);
       --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 10px 24px rgba(0,0,0,0.45);
+      --sheet-shadow: 0 -8px 40px rgba(0,0,0,0.6);
     }
   }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body {
-    background: var(--bg); color: var(--label); margin: 0; min-height: 100%;
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
-    padding-inline: 16px; padding-block: 20px 100px; -webkit-font-smoothing: antialiased;
+  :root[data-theme="dark"] {
+    --bg: #000000; --card: #1C1C1E; --fill: rgba(120,120,128,0.24); --fill-2: rgba(120,120,128,0.32);
+    --label: #FFFFFF; --label-2: rgba(235,235,245,0.6); --label-3: rgba(235,235,245,0.4);
+    --sep: rgba(84,84,88,0.6);
+    --tint: #0A84FF; --tint-soft: rgba(10,132,255,0.18); --red: #FF453A; --orange: #FF9F0A; --green: #32D74B;
+    --bar: rgba(22,22,24,0.78); --bar-border: rgba(255,255,255,0.12);
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 10px 24px rgba(0,0,0,0.45);
+    --sheet-shadow: 0 -8px 40px rgba(0,0,0,0.6);
   }
-  .wrap { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
-  .title-block { padding: 4px 4px 0; display: flex; align-items: center; justify-content: space-between; }
-  .eyebrow { font-size: 13px; font-weight: 600; color: var(--tint); text-transform: uppercase; letter-spacing: 0.02em; margin: 0 0 2px; }
-  h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin: 0; line-height: 1.1; }
-  .icon-btn {
-    width: 36px; height: 36px; border-radius: 50%; border: none; background: var(--fill); color: var(--tint);
-    font-size: 18px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
-  }
-  .back-btn { background: none; border: none; color: var(--tint); font: inherit; font-size: 15px; font-weight: 600; padding: 4px 0; cursor: pointer; display: flex; align-items: center; gap: 4px; }
-  .section-header { font-size: 13px; font-weight: 600; color: var(--label-2); text-transform: uppercase; letter-spacing: 0.02em; margin: 0 4px 8px; }
-  .card { background: var(--card); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; }
-  .card-pad { padding: 16px 18px; }
-  p { margin: 0 0 8px; font-size: 15px; line-height: 1.45; }
-  p:last-child { margin-bottom: 0; }
-  .muted { color: var(--label-2); font-size: 13px !important; }
-  input, textarea {
-    width: 100%; font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 10px;
-    border: 1px solid var(--sep); background: var(--fill); color: var(--label);
-  }
-  label { display: block; font-size: 13px; color: var(--label-2); margin: 0 2px 4px; }
-  .field { margin-bottom: 12px; }
-  .btn { font: inherit; font-weight: 600; font-size: 15px; border: none; border-radius: 12px; padding: 12px 16px; cursor: pointer; }
-  .btn-primary { background: var(--tint); color: #fff; width: 100%; }
-  .btn-primary:disabled { opacity: 0.5; }
-  .btn-ghost { background: var(--fill); color: var(--label); }
-  .btn-danger { background: none; color: var(--red); }
 
-  /* Trip list */
-  .trip-card { display: block; width: 100%; text-align: left; background: var(--card); border: none; border-radius: 16px; box-shadow: var(--shadow); padding: 14px 16px; cursor: pointer; }
-  .trip-card + .trip-card { margin-top: 10px; }
-  .trip-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
-  .trip-card h3 { margin: 0; font-size: 17px; font-weight: 700; }
-  .trip-card .dest { font-size: 13.5px; color: var(--label-2); }
-  .badge { display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; border-radius: 999px; padding: 3px 9px; flex: 0 0 auto; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { height: 100%; }
+  body {
+    background: var(--bg); color: var(--label); margin: 0; min-height: 100dvh;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 16px; line-height: 1.4; -webkit-font-smoothing: antialiased; overscroll-behavior-y: none;
+    padding: calc(var(--sat) + var(--nav-h)) 0 calc(var(--sab) + 24px);
+    touch-action: manipulation;
+  }
+  body.has-tabs { padding-bottom: calc(var(--sab) + var(--tab-h) + 24px); }
+  body.has-composer { padding-bottom: calc(var(--sab) + var(--tab-h) + 88px); }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; -webkit-user-select: none; user-select: none; }
+  [hidden] { display: none !important; }
+  a { color: var(--tint); }
+
+  /* ---------- Nav bar (compact, always present) ---------- */
+  .navbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 40;
+    padding-top: var(--sat); height: calc(var(--sat) + var(--nav-h));
+    background: var(--bar); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid transparent; transition: border-color 0.2s;
+    -webkit-user-select: none; user-select: none;
+  }
+  .navbar.is-stuck { border-bottom-color: var(--bar-border); }
+  .navbar-inner { max-width: 680px; margin: 0 auto; height: var(--nav-h); display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 8px; }
+  .nav-title { grid-column: 2; font-size: 17px; font-weight: 600; text-align: center; opacity: 0; transform: translateY(4px); transition: opacity 0.18s, transform 0.18s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55vw; }
+  .navbar.is-stuck .nav-title { opacity: 1; transform: none; }
+  .nav-left { grid-column: 1; justify-self: start; display: flex; align-items: center; }
+  .nav-right { grid-column: 3; justify-self: end; display: flex; align-items: center; gap: 2px; }
+  .nav-btn { background: none; border: none; color: var(--tint); min-width: 44px; min-height: 44px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 2px; font-size: 17px; font-weight: 400; border-radius: 12px; }
+  .nav-btn:active { opacity: 0.5; }
+  .nav-btn svg { width: 24px; height: 24px; }
+  .nav-btn .chev { width: 12px; height: 20px; margin-left: -4px; }
+  .nav-btn.icon { padding: 0; width: 44px; }
+
+  /* ---------- Layout ---------- */
+  .wrap { max-width: 680px; margin: 0 auto; padding: 0 16px; }
+  .large-title { padding: 6px 4px 14px; }
+  .eyebrow { font-size: 13px; font-weight: 600; color: var(--tint); text-transform: uppercase; letter-spacing: 0.02em; margin: 0 0 2px; }
+  h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; margin: 0; line-height: 1.12; text-wrap: balance; overflow-wrap: anywhere; }
+  .title-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+  .subtitle { color: var(--label-2); font-size: 15px; margin: 4px 0 0; }
+  .section-header { font-size: 13px; font-weight: 600; color: var(--label-2); text-transform: uppercase; letter-spacing: 0.02em; margin: 18px 16px 8px; }
+  .section-header:first-child { margin-top: 0; }
+  .card { background: var(--card); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; }
+  .card-pad { padding: 16px; }
+  p { margin: 0 0 8px; font-size: 16px; line-height: 1.45; }
+  p:last-child { margin-bottom: 0; }
+  .muted { color: var(--label-2); font-size: 14px; }
+  .stack { display: flex; flex-direction: column; gap: 14px; }
+
+  /* Inset grouped list */
+  .list { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 11px 16px; width: 100%; text-align: left; background: none; border: none; color: inherit; position: relative; }
+  .row + .row::before, .row-sep::before { content: ""; position: absolute; left: 16px; right: 0; top: 0; height: 1px; background: var(--sep); }
+  .row:active { background: var(--fill); }
+  .row-main { flex: 1 1 auto; min-width: 0; }
+  .row-title { font-size: 17px; font-weight: 500; line-height: 1.3; }
+  .row-sub { font-size: 14px; color: var(--label-2); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row-chevron { width: 8px; height: 14px; color: var(--label-3); flex: 0 0 auto; }
+  .row .badge { margin-left: auto; }
+  .badge { display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; border-radius: 999px; padding: 4px 9px; flex: 0 0 auto; white-space: nowrap; }
   .badge.planning { background: var(--fill); color: var(--label-2); }
   .badge.locked { background: var(--green); color: #04280f; }
-  .empty-state { text-align: center; color: var(--label-3); font-size: 14px; padding: 40px 20px; }
 
-  /* Segmented control */
-  .tabbar { position: relative; display: flex; justify-content: space-between; background: var(--fill); border-radius: 10px; padding: 2px; }
-  .tab-thumb { position: absolute; top: 2px; bottom: 2px; left: 2px; width: 0; background: var(--card); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.15); transition: left 0.28s cubic-bezier(0.4,0,0.2,1), width 0.28s cubic-bezier(0.4,0,0.2,1); z-index: 0; }
-  .tabbar button { position: relative; z-index: 1; flex: 0 1 auto; white-space: nowrap; font: inherit; font-weight: 600; font-size: 12px; background: transparent; color: var(--label-2); border: none; border-radius: 8px; padding: 8px 10px; cursor: pointer; text-align: center; }
-  .tabbar button[aria-selected="true"] { color: var(--label); }
-  .tabpanel[hidden] { display: none; }
-  .tabpanel { display: flex; flex-direction: column; gap: 16px; }
+  /* Callouts + states */
+  .callout { display: flex; gap: 12px; align-items: flex-start; background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 14px 16px; margin-bottom: 14px; }
+  .callout-icon { width: 30px; height: 30px; border-radius: 50%; background: var(--orange); color: #3a2200; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; font-weight: 800; }
+  .callout-body { flex: 1 1 auto; min-width: 0; font-size: 15px; line-height: 1.4; }
+  .callout-body b { display: block; margin-bottom: 2px; }
+  .link-btn { background: none; border: none; color: var(--tint); font-weight: 600; font-size: 15px; padding: 6px 0 0; min-height: 32px; }
+  .empty { text-align: center; color: var(--label-2); font-size: 15px; padding: 40px 20px 32px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .empty svg { width: 44px; height: 44px; color: var(--label-3); margin-bottom: 4px; }
+  .empty b { color: var(--label); font-size: 17px; font-weight: 600; }
+  .empty .btn { margin-top: 8px; width: auto; min-width: 200px; }
+  .skeleton { border-radius: 16px; height: 68px; background: linear-gradient(90deg, var(--fill) 25%, var(--fill-2) 50%, var(--fill) 75%); background-size: 200% 100%; animation: shimmer 1.3s infinite; }
+  .skeleton + .skeleton { margin-top: 10px; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+
+  /* Forms */
+  .form { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+  .field { position: relative; padding: 10px 16px 12px; }
+  .field + .field::before { content: ""; position: absolute; left: 16px; right: 0; top: 0; height: 1px; background: var(--sep); }
+  .field label { display: block; font-size: 13px; color: var(--label-2); margin-bottom: 4px; }
+  .field input, .field textarea, .field select { width: 100%; min-height: 32px; padding: 4px 0; border: none; background: transparent; font-size: 17px; outline: none; border-radius: 0; -webkit-appearance: none; appearance: none; }
+  .field textarea { resize: none; line-height: 1.4; }
+  .field select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238E8E93' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 10l4 4 4-4'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0 center; padding-right: 24px; }
+  .field input::placeholder, .field textarea::placeholder { color: var(--label-3); }
+  .field:focus-within label { color: var(--tint); }
+  .form-note { font-size: 13px; color: var(--label-2); margin: 8px 16px 0; line-height: 1.4; }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: 600; font-size: 17px; border: none; border-radius: 14px; min-height: 50px; padding: 12px 18px; width: 100%; transition: transform 0.12s ease, opacity 0.12s; }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.45; transform: none; }
+  .btn-primary { background: var(--tint); color: #fff; }
+  .btn-secondary { background: var(--fill); color: var(--tint); }
+  .btn-danger { background: var(--fill); color: var(--red); }
+  .btn-plain { background: none; color: var(--tint); min-height: 44px; }
+  .btn-sm { min-height: 36px; font-size: 15px; padding: 6px 14px; width: auto; border-radius: 10px; }
+  .btn svg { width: 20px; height: 20px; }
+  .status { font-size: 13px; color: var(--label-2); min-height: 1.3em; padding: 6px 4px 0; text-align: center; }
+  .status.error { color: var(--red); }
+  .status.ok { color: var(--green); }
+
+  /* ---------- Bottom tab bar ---------- */
+  .tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    background: var(--bar); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
+    border-top: 1px solid var(--bar-border); padding: 0 0 var(--sab);
+    transition: transform 0.2s ease; -webkit-user-select: none; user-select: none;
+  }
+  .tabbar-inner { max-width: 680px; margin: 0 auto; display: flex; height: var(--tab-h); }
+  .tab { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; background: none; border: none; color: var(--label-2); font-size: 10px; font-weight: 500; padding: 4px 0 2px; letter-spacing: 0.01em; }
+  .tab svg { width: 26px; height: 26px; }
+  .tab[aria-selected="true"] { color: var(--tint); }
+  .tab:active { opacity: 0.6; }
+  body.kb-open .tabbar { transform: translateY(110%); }
+  .tabpanel { display: flex; flex-direction: column; gap: 14px; }
+
+  /* ---------- Trip view ---------- */
+  .trip-head { padding: 6px 4px 12px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .trip-head h1 { font-size: 28px; }
 
   /* Chat */
-  .chat-log { display: flex; flex-direction: column; gap: 10px; min-height: 100px; max-height: 55vh; overflow-y: auto; padding: 4px 2px; }
-  .chat-empty { text-align: center; color: var(--label-3); font-size: 13.5px; padding: 24px 16px; }
+  .chat-log { display: flex; flex-direction: column; gap: 6px; min-height: 40vh; padding: 2px 0; }
   .msg-row { display: flex; }
   .msg-row.q { justify-content: flex-end; }
   .msg-row.a { justify-content: flex-start; }
-  .bubble { max-width: 85%; padding: 9px 13px; border-radius: 18px; font-size: 14.5px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
-  .msg-row.q .bubble { background: var(--tint); color: #fff; border-bottom-right-radius: 4px; }
-  .msg-row.a .bubble { background: var(--fill); color: var(--label); border-bottom-left-radius: 4px; }
-  .msg-row.a .bubble.pending { color: var(--label-2); font-style: italic; }
-  .bubble.proposed-change { background: var(--card); border: 1.5px solid var(--tint); max-width: 90%; padding: 12px 14px; }
-  .pc-summary { font-size: 14px; line-height: 1.4; margin-bottom: 10px; }
+  .bubble { max-width: 84%; padding: 9px 13px; border-radius: 18px; font-size: 16px; line-height: 1.38; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+  .msg-row.q .bubble { background: var(--tint); color: #fff; border-bottom-right-radius: 5px; }
+  .msg-row.a .bubble { background: var(--card); color: var(--label); border-bottom-left-radius: 5px; box-shadow: var(--shadow); }
+  .bubble p { font-size: inherit; margin: 0 0 8px; }
+  .bubble p:last-child { margin: 0; }
+  .bubble code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.9em; background: var(--fill); border-radius: 5px; padding: 1px 5px; }
+  .bubble pre { background: var(--fill); border-radius: 10px; padding: 10px 12px; overflow-x: auto; margin: 6px 0; }
+  .bubble pre code { background: none; padding: 0; }
+  .typing { display: inline-flex; gap: 4px; align-items: center; height: 20px; padding: 0 2px; }
+  .typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--label-3); animation: blink 1.2s infinite ease-in-out; }
+  .typing i:nth-child(2) { animation-delay: 0.15s; } .typing i:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: 0.3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
+  .proposed { max-width: 92%; background: var(--card); border: 1.5px solid var(--tint); border-radius: 16px; padding: 12px 14px; box-shadow: var(--shadow); }
+  .pc-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--tint); margin-bottom: 4px; }
+  .pc-summary { font-size: 15px; line-height: 1.4; margin-bottom: 10px; }
   .pc-actions { display: flex; gap: 8px; }
-  .pc-apply, .pc-discard { font: inherit; font-weight: 600; font-size: 13px; border: none; border-radius: 8px; padding: 7px 14px; cursor: pointer; }
-  .pc-apply { background: var(--tint); color: #fff; }
-  .pc-discard { background: var(--fill); color: var(--label); }
-  .chat-input-row { display: flex; gap: 8px; align-items: flex-end; background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 10px; }
-  .chat-input-row textarea { flex: 1 1 auto; min-height: 22px; max-height: 100px; padding: 6px 10px; border: none; border-radius: 14px; resize: none; }
-  .chat-input-row textarea:focus { outline: 2px solid var(--tint); }
-  .chat-send { flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%; border: none; cursor: pointer; background: var(--tint); color: #fff; font-size: 16px; display: flex; align-items: center; justify-content: center; }
-  .chat-send:disabled { opacity: 0.4; }
-  .chat-status { font-size: 12px; color: var(--label-2); min-height: 1.2em; padding: 0 4px; }
-  .chat-status.error { color: var(--red); }
-  .chat-status.ok { color: var(--green); }
+  .pc-actions .btn { min-height: 40px; font-size: 15px; border-radius: 10px; }
+  .chat-empty { padding: 20px 8px; }
+  .prompt-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .chip { background: var(--card); box-shadow: var(--shadow); border: none; border-radius: 999px; padding: 9px 14px; font-size: 14px; font-weight: 500; color: var(--tint); min-height: 38px; }
+  .chip:active { background: var(--fill); }
 
-  /* Day cards (itinerary) */
-  .day-list { display: flex; flex-direction: column; gap: 10px; }
-  .day { background: var(--card); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
-  .day-head { display: flex; align-items: center; gap: 12px; padding: 13px 16px; cursor: pointer; background: none; border: none; width: 100%; text-align: left; font: inherit; color: inherit; }
-  .day-num { font-weight: 700; font-size: 13px; background: var(--tint); color: #fff; border-radius: 50%; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+  .composer {
+    position: fixed; left: 0; right: 0; bottom: calc(var(--tab-h) + var(--sab)); z-index: 41;
+    background: var(--bar); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
+    border-top: 1px solid var(--bar-border); transition: bottom 0.15s ease;
+  }
+  body.kb-open .composer { bottom: var(--kb); border-bottom: 1px solid var(--bar-border); }
+  .composer-inner { max-width: 680px; margin: 0 auto; padding: 8px 12px; display: flex; gap: 8px; align-items: flex-end; }
+  .composer textarea { flex: 1 1 auto; min-height: 38px; max-height: 128px; padding: 8px 14px; border: 1px solid var(--sep); border-radius: 19px; background: var(--card); resize: none; font-size: 16px; line-height: 1.35; outline: none; }
+  .composer textarea:focus { border-color: var(--tint); }
+  .send { flex: 0 0 auto; width: 38px; height: 38px; border-radius: 50%; border: none; background: var(--tint); color: #fff; display: flex; align-items: center; justify-content: center; transition: transform 0.12s, opacity 0.12s; }
+  .send:active { transform: scale(0.92); }
+  .send:disabled { opacity: 0.35; }
+  .send svg { width: 20px; height: 20px; }
+  .composer-status { max-width: 680px; margin: 0 auto; padding: 0 16px 6px; font-size: 12.5px; color: var(--label-2); min-height: 0; }
+  .composer-status:empty { display: none; }
+  .composer-status.error { color: var(--red); }
+  .composer-status.ok { color: var(--green); }
+
+  /* Itinerary */
+  .day { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+  .day.is-today { box-shadow: 0 0 0 2px var(--tint), var(--shadow); }
+  .day.is-past { opacity: 0.6; }
+  .day-head { display: flex; align-items: center; gap: 12px; padding: 13px 16px; background: none; border: none; width: 100%; text-align: left; min-height: 56px; }
+  .day-head:active { background: var(--fill); }
+  .day-num { font-weight: 700; font-size: 13px; background: var(--tint); color: #fff; border-radius: 50%; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+  .day.is-past .day-num { background: var(--label-3); }
   .day-head-text { flex: 1 1 auto; min-width: 0; }
-  .day-head-text h3 { margin: 0; font-size: 15px; font-weight: 600; }
-  .day-date { color: var(--label-2); font-size: 12.5px; }
-  .day-chevron { flex: 0 0 auto; color: var(--label-3); font-size: 13px; transition: transform 0.25s; }
+  .day-head-text h3 { margin: 0; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .day-date { color: var(--label-2); font-size: 13px; }
+  .today-pill { font-size: 10px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; background: var(--tint); color: #fff; border-radius: 999px; padding: 2px 8px; }
+  .day-chevron { flex: 0 0 auto; color: var(--label-3); width: 14px; height: 14px; transition: transform 0.25s; }
   .day.is-open .day-chevron { transform: rotate(90deg); }
   .day-body { padding: 0 16px 14px; }
-  .blocks { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 7px; }
-  .blocks li { display: grid; grid-template-columns: 110px 1fr; gap: 10px; font-size: 14px; align-items: baseline; }
-  .b-time { color: var(--tint); font-weight: 600; font-size: 12.5px; }
-  .day-tip { border-top: 1px solid var(--sep); padding-top: 10px; font-size: 12.5px; color: var(--label-2); line-height: 1.4; }
-  @media (max-width: 480px) { .blocks li { grid-template-columns: 1fr; gap: 1px; } }
+  .blocks { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+  .blocks li { display: grid; grid-template-columns: 1fr; gap: 1px; font-size: 15px; }
+  .b-time { color: var(--tint); font-weight: 600; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .day-tip { border-top: 1px solid var(--sep); padding-top: 10px; font-size: 13.5px; color: var(--label-2); line-height: 1.4; }
+  @media (min-width: 560px) { .blocks li { grid-template-columns: 120px 1fr; gap: 10px; align-items: baseline; } }
 
   /* Watches */
-  .watch-card { background: var(--card); border-radius: 14px; box-shadow: var(--shadow); padding: 14px 16px; }
-  .watch-card + .watch-card { margin-top: 10px; }
-  .watch-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
-  .watch-label { font-weight: 600; font-size: 15px; }
-  .watch-kind { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: var(--label-2); background: var(--fill); border-radius: 999px; padding: 2px 8px; }
-  .watch-criteria { font-size: 13px; color: var(--label-2); margin-bottom: 8px; }
-  .watch-result { font-size: 13.5px; line-height: 1.4; background: var(--fill); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
-  .watch-meta { font-size: 11.5px; color: var(--label-3); }
-  .watch-actions { display: flex; gap: 8px; margin-top: 10px; }
-  .watch-actions button { font: inherit; font-size: 12.5px; font-weight: 600; border: none; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
-  .watch-check-btn { background: var(--tint); color: #fff; }
-  .watch-remove-btn { background: none; color: var(--red); }
+  .watch { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 14px 16px; }
+  .watch-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 2px; }
+  .watch-label { font-weight: 600; font-size: 17px; line-height: 1.3; overflow-wrap: anywhere; }
+  .watch-kind { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--label-2); background: var(--fill); border-radius: 999px; padding: 4px 9px; flex: 0 0 auto; }
+  .watch-criteria { font-size: 15px; color: var(--label-2); margin-bottom: 10px; }
+  .watch-result { font-size: 15px; line-height: 1.4; background: var(--fill); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; white-space: pre-wrap; -webkit-user-select: text; user-select: text; }
+  .watch-none { font-size: 14px; color: var(--label-3); margin-bottom: 8px; }
+  .watch-meta { font-size: 13px; color: var(--label-3); }
+  .watch-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+  .watch-actions .btn-plain { margin-left: auto; color: var(--red); min-height: 36px; }
+  .watch-actions a { font-size: 14px; font-weight: 600; text-decoration: none; }
 
-  footer { text-align: center; color: var(--label-3); font-size: 12px; padding-top: 4px; }
-  [hidden] { display: none !important; }
+  /* Details */
+  .actions { display: flex; flex-direction: column; gap: 10px; }
 
-  .authbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 4px; }
-  .authbar-text { font-size: 12.5px; color: var(--label-3); }
-  .authbar-btn { font: inherit; font-size: 12.5px; font-weight: 600; color: var(--tint); background: none; border: none; padding: 4px 2px; cursor: pointer; }
-  .ai-banner { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-    padding:10px 14px; margin:0 0 14px; border-radius:10px;
-    background:rgba(234,179,8,0.10); border:1px solid rgba(234,179,8,0.35); font-size:13.5px; }
-  .admin-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-    padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.08); }
-  .admin-row .who { flex:1 1 200px; min-width:0; }
-  .admin-row .who b { display:block; }
-  .admin-row .note { font-size:12.5px; opacity:0.7; margin-top:2px; overflow-wrap:anywhere; }
-  .pill { font-size:11px; text-transform:uppercase; letter-spacing:0.04em;
-    padding:2px 8px; border-radius:999px; background:rgba(255,255,255,0.10); }
+  /* Admin */
+  .admin-row { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; position: relative; }
+  .admin-row + .admin-row::before { content: ""; position: absolute; left: 16px; right: 0; top: 0; height: 1px; background: var(--sep); }
+  .admin-who b { display: block; font-size: 16px; }
+  .admin-who .note { font-size: 13px; color: var(--label-2); overflow-wrap: anywhere; margin-top: 2px; }
+  .admin-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .pill { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 3px 8px; border-radius: 999px; background: var(--fill); color: var(--label-2); }
+  .pill.approved { background: var(--green); color: #04280f; }
+  .pill.pending { background: var(--orange); color: #3a2200; }
+  .temp-pw { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 15px; background: var(--fill); border-radius: 10px; padding: 8px 10px; -webkit-user-select: all; user-select: all; overflow-wrap: anywhere; }
+
+  /* ---------- Sheets ---------- */
+  .sheet-backdrop { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,0.4); display: flex; align-items: flex-end; justify-content: center; animation: fade 0.18s ease; }
+  .sheet-backdrop.closing { animation: fade 0.18s ease reverse forwards; }
+  @keyframes fade { from { opacity: 0; } }
+  .sheet { background: var(--bg); width: 100%; max-width: 680px; border-radius: 20px 20px 0 0; max-height: calc(100dvh - var(--sat) - 12px); overflow-y: auto; box-shadow: var(--sheet-shadow); padding: 6px 16px calc(20px + var(--sab)); animation: rise 0.28s cubic-bezier(0.2,0.9,0.3,1); outline: none; -webkit-overflow-scrolling: touch; }
+  .sheet-backdrop.closing .sheet { animation: rise 0.18s ease-in reverse forwards; }
+  @keyframes rise { from { transform: translateY(40px); opacity: 0; } }
+  .grabber { width: 36px; height: 5px; border-radius: 3px; background: var(--label-3); margin: 6px auto 12px; opacity: 0.6; }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
+  .sheet-head h2 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+  .sheet-close { width: 32px; height: 32px; border-radius: 50%; background: var(--fill); border: none; color: var(--label-2); display: flex; align-items: center; justify-content: center; }
+  .sheet-close svg { width: 14px; height: 14px; }
+  .sheet .stack { gap: 12px; }
+  .sheet-msg { font-size: 15px; color: var(--label-2); text-align: center; padding: 4px 8px 14px; line-height: 1.4; }
+  .sheet-msg b { color: var(--label); display: block; font-size: 17px; margin-bottom: 4px; }
+  .sheet .actions .btn-danger { background: var(--card); }
+  .sheet .actions .btn-secondary { background: var(--card); color: var(--tint); }
+  @media (min-width: 768px) {
+    .sheet-backdrop { align-items: center; padding: 24px; }
+    .sheet { border-radius: 20px; max-width: 480px; max-height: 88vh; padding-bottom: 20px; }
+    .grabber { display: none; }
+  }
+
+  /* Toast */
+  .toast { position: fixed; top: calc(var(--sat) + 10px); left: 50%; transform: translate(-50%, -20px); z-index: 70; background: var(--card); color: var(--label); box-shadow: var(--shadow), 0 0 0 1px var(--bar-border); border-radius: 999px; padding: 10px 18px; font-size: 15px; font-weight: 500; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; max-width: calc(100% - 32px); text-align: center; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  footer { text-align: center; color: var(--label-3); font-size: 12.5px; padding: 28px 16px 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
 
-  <div class="authbar">
-    <span class="authbar-text" id="authBarText"></span>
-    <button type="button" class="authbar-btn" id="pwChangeBtn" hidden>Password</button>
-    <button type="button" class="authbar-btn" id="adminBtn" hidden>Requests</button>
-    <button type="button" class="authbar-btn" id="authBarBtn"></button>
-  </div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8.5 8.5 0 0 1-12.6 7.4L3.5 20.5l1.2-4.4A8.5 8.5 0 1 1 21 12z"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.75"/><path d="M12 11v5.5M12 7.8v.3"/></symbol>
+    <symbol id="i-person" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c0-3.6 3.4-6 7.5-6s7.5 2.4 7.5 6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-chev-l" viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2L2 10l8 8"/></symbol>
+    <symbol id="i-chev-r" viewBox="0 0 8 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 1.5L6.5 7l-5 5.5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2 2l10 10M12 2L2 12"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 12l6-6 6 6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l5 5L20 6"/></symbol>
+    <symbol id="i-plane" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 13.5L3 11l1.5-1.5 7.5 1 5-5a2 2 0 0 1 3 3l-5 5 1 7.5L14.5 22.5l-2.5-7.5-3.5 3.5v3l-1.5 1.5-1.5-4-4-1.5L3 16h3l3.5-3.5z"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></symbol>
+  </defs>
+</svg>
 
-  <div class="ai-banner" id="aiBanner" hidden>
-    <span id="aiBannerText"></span>
-    <button type="button" class="authbar-btn" id="aiRequestBtn" hidden>Request access</button>
+<header class="navbar" id="navbar">
+  <div class="navbar-inner">
+    <div class="nav-left">
+      <button type="button" class="nav-btn" id="backBtn" hidden><svg class="chev"><use href="#i-chev-l"/></svg>Trips</button>
+      <button type="button" class="nav-btn icon" id="accountBtn" aria-label="Account"><svg><use href="#i-person"/></svg></button>
+    </div>
+    <div class="nav-title" id="navTitle">Your Trips</div>
+    <div class="nav-right">
+      <button type="button" class="nav-btn icon" id="newTripBtn" aria-label="New trip"><svg><use href="#i-plus"/></svg></button>
+    </div>
   </div>
+</header>
 
-  <div id="adminPanel" hidden>
-    <div class="title-block"><h1>AI access requests</h1></div>
-    <p class="muted" id="adminHint">Approving someone lets them spend Anthropic tokens on your key.</p>
-    <div id="adminList"></div>
-  </div>
+<main class="wrap">
 
   <div id="view-trips">
-    <div class="title-block">
-      <div>
-        <p class="eyebrow">Trip Planner</p>
-        <h1>Your Trips</h1>
-      </div>
-      <button type="button" class="icon-btn" id="newTripBtn" aria-label="New trip">+</button>
+    <div class="large-title" id="lt-trips">
+      <p class="eyebrow">Trip Planner</p>
+      <h1>Your Trips</h1>
     </div>
 
-    <div id="newTripForm" class="card card-pad" hidden>
-      <div class="field"><label for="ntName">Trip name</label><input id="ntName" placeholder="e.g. Spring break somewhere warm" /></div>
-      <div class="field"><label for="ntDest">Destination (rough is fine)</label><input id="ntDest" placeholder="e.g. Costa Rica, or not sure yet" /></div>
-      <div class="field"><label for="ntDates">When</label><input id="ntDates" placeholder="e.g. Early March 2027" /></div>
-      <button type="button" class="btn btn-primary" id="ntCreateBtn">Start planning</button>
-      <div class="chat-status" id="ntStatus"></div>
+    <div class="callout" id="aiBanner" hidden>
+      <div class="callout-icon" aria-hidden="true">!</div>
+      <div class="callout-body">
+        <span id="aiBannerText"></span>
+        <div><button type="button" class="link-btn" id="aiRequestBtn" hidden>Request access</button></div>
+      </div>
     </div>
 
     <div id="tripsList"></div>
+    <footer>Research, plan, and watch prices. Lock a trip in when it's booked.</footer>
   </div>
 
   <div id="view-trip" hidden>
-    <button type="button" class="back-btn" id="backBtn">&larr; All Trips</button>
-
-    <div class="title-block" style="margin-top:6px;">
-      <div>
+    <div class="trip-head" id="lt-trip">
+      <div style="min-width:0">
         <p class="eyebrow" id="tripDest"></p>
         <h1 id="tripName"></h1>
       </div>
       <span class="badge" id="tripBadge"></span>
     </div>
 
-    <nav class="tabbar" role="tablist">
-      <div class="tab-thumb" id="tabThumb"></div>
-      <button role="tab" id="tab-btn-chat" aria-selected="true">Chat</button>
-      <button role="tab" id="tab-btn-itinerary" aria-selected="false">Itinerary</button>
-      <button role="tab" id="tab-btn-watches" aria-selected="false">Watches</button>
-      <button role="tab" id="tab-btn-details" aria-selected="false">Details</button>
-    </nav>
-
-    <div id="tab-chat" class="tabpanel">
+    <div id="tab-chat" class="tabpanel" role="tabpanel">
       <div class="chat-log" id="chatLog">
-        <div class="chat-empty" id="chatEmpty">Ask about this trip &mdash; research flights, hotels, activities, or say "plan the days" and I'll draft an itinerary.</div>
-      </div>
-      <div class="chat-status" id="chatStatus"></div>
-      <div class="chat-input-row">
-        <textarea id="chatText" rows="1" placeholder="Message Claude&hellip;" maxlength="4000"></textarea>
-        <button type="button" class="chat-send" id="chatSend" aria-label="Send">&#8593;</button>
-      </div>
-    </div>
-
-    <div id="tab-itinerary" class="tabpanel" hidden>
-      <div id="itineraryEmpty" class="empty-state">No itinerary yet &mdash; ask in Chat to draft one, e.g. "plan a 5-day trip".</div>
-      <div class="day-list" id="dayList"></div>
-    </div>
-
-    <div id="tab-watches" class="tabpanel" hidden>
-      <div class="card card-pad">
-        <div class="field"><label for="wKind">Type</label>
-          <select id="wKind" style="width:100%; font:inherit; font-size:16px; padding:10px 12px; border-radius:10px; border:1px solid var(--sep); background:var(--fill); color:var(--label);">
-            <option value="flight">Flight</option>
-            <option value="hotel">Hotel</option>
-            <option value="airbnb">Airbnb</option>
-            <option value="other">Other</option>
-          </select>
+        <div class="empty chat-empty" id="chatEmpty">
+          <svg><use href="#i-chat"/></svg>
+          <b>Ask anything about this trip</b>
+          <span>Flights, places to stay, what to do. Or say "plan the days" and I'll draft an itinerary.</span>
+          <div class="prompt-chips" style="margin-top:8px">
+            <button type="button" class="chip" data-prompt="Find nonstop flight options and rough prices for these dates.">Flights</button>
+            <button type="button" class="chip" data-prompt="Suggest three places to stay with a good location and value.">Where to stay</button>
+            <button type="button" class="chip" data-prompt="Plan the days for this trip.">Plan the days</button>
+          </div>
         </div>
-        <div class="field"><label for="wLabel">What to watch</label><input id="wLabel" placeholder="e.g. ATL &rarr; SJO nonstop" /></div>
-        <div class="field"><label for="wCriteria">What you're looking for</label><input id="wCriteria" placeholder="e.g. under $400 roundtrip" /></div>
-        <div class="field"><label for="wUrl">Listing link (optional)</label><input id="wUrl" placeholder="https://&hellip;" /></div>
-        <div class="field"><label for="wInterval">Check every</label>
-          <select id="wInterval" style="width:100%; font:inherit; font-size:16px; padding:10px 12px; border-radius:10px; border:1px solid var(--sep); background:var(--fill); color:var(--label);">
-            <option value="6">6 hours</option>
-            <option value="24" selected>Day</option>
-            <option value="72">3 days</option>
-            <option value="168">Week</option>
-          </select>
-        </div>
-        <button type="button" class="btn btn-primary" id="wAddBtn">Add watch</button>
-        <div class="chat-status" id="wStatus"></div>
       </div>
-      <div id="watchesEmpty" class="empty-state" hidden>Nothing being watched yet.</div>
-      <div id="watchesList"></div>
     </div>
 
-    <div id="tab-details" class="tabpanel" hidden>
-      <div class="card card-pad">
-        <div class="field"><label for="dName">Trip name</label><input id="dName" /></div>
-        <div class="field"><label for="dDest">Destination</label><input id="dDest" /></div>
-        <div class="field"><label for="dDates">When</label><input id="dDates" /></div>
-        <div class="field"><label for="dNotes">Notes</label><textarea id="dNotes" rows="4"></textarea></div>
-        <button type="button" class="btn btn-ghost" id="dSaveBtn" style="width:100%; margin-bottom:10px;">Save details</button>
-        <button type="button" class="btn btn-primary" id="lockBtn" style="margin-bottom:10px;">Lock in this trip</button>
-        <button type="button" class="btn btn-ghost" id="unlockBtn" style="width:100%; margin-bottom:10px;" hidden>Unlock (back to planning)</button>
-        <button type="button" class="btn btn-danger" id="deleteBtn">Delete trip</button>
-        <div class="chat-status" id="dStatus"></div>
+    <div id="tab-itinerary" class="tabpanel" role="tabpanel" hidden>
+      <div id="itineraryEmpty" class="empty">
+        <svg><use href="#i-cal"/></svg>
+        <b>No itinerary yet</b>
+        <span>Ask in Chat to draft one, and it'll show up here day by day.</span>
+        <button type="button" class="btn btn-secondary" id="itineraryAskBtn">Plan the days in Chat</button>
       </div>
+      <div class="stack" id="dayList"></div>
+    </div>
+
+    <div id="tab-watches" class="tabpanel" role="tabpanel" hidden>
+      <button type="button" class="btn btn-primary" id="wOpenBtn"><svg><use href="#i-plus"/></svg>Watch a price</button>
+      <div id="watchesEmpty" class="empty" hidden>
+        <svg><use href="#i-eye"/></svg>
+        <b>Nothing being watched</b>
+        <span>Add a flight, hotel or listing and it gets checked on the schedule you pick.</span>
+      </div>
+      <div class="stack" id="watchesList"></div>
+      <div class="status" id="wStatus"></div>
+    </div>
+
+    <div id="tab-details" class="tabpanel" role="tabpanel" hidden>
+      <div class="form">
+        <div class="field"><label for="dName">Trip name</label><input id="dName" autocomplete="off" enterkeyhint="next"></div>
+        <div class="field"><label for="dDest">Destination</label><input id="dDest" autocomplete="off" enterkeyhint="next"></div>
+        <div class="field"><label for="dDates">When</label><input id="dDates" autocomplete="off" enterkeyhint="next"></div>
+        <div class="field"><label for="dNotes">Notes</label><textarea id="dNotes" rows="4" placeholder="Confirmation numbers, ideas, who's coming…"></textarea></div>
+      </div>
+      <button type="button" class="btn btn-secondary" id="dSaveBtn">Save details</button>
+      <div class="status" id="dStatus"></div>
+      <div class="section-header">Status</div>
+      <div class="actions">
+        <button type="button" class="btn btn-primary" id="lockBtn"><svg><use href="#i-lock"/></svg>Lock in this trip</button>
+        <button type="button" class="btn btn-secondary" id="unlockBtn" hidden>Unlock (back to planning)</button>
+        <p class="muted" style="text-align:center;padding:0 12px">Locking marks a trip as booked. It stops price checks; chat, itinerary and notes keep working.</p>
+      </div>
+      <div class="section-header">Danger zone</div>
+      <button type="button" class="btn btn-danger" id="deleteBtn">Delete trip</button>
     </div>
   </div>
+</main>
 
-  <footer>Trip Planner &middot; research, plan, and watch prices &mdash; lock a trip in when it's booked</footer>
+<nav class="tabbar" id="tabbar" role="tablist" aria-label="Trip sections" hidden>
+  <div class="tabbar-inner">
+    <button type="button" role="tab" class="tab" id="tab-btn-chat" aria-selected="true" aria-controls="tab-chat"><svg><use href="#i-chat"/></svg>Chat</button>
+    <button type="button" role="tab" class="tab" id="tab-btn-itinerary" aria-selected="false" aria-controls="tab-itinerary"><svg><use href="#i-cal"/></svg>Itinerary</button>
+    <button type="button" role="tab" class="tab" id="tab-btn-watches" aria-selected="false" aria-controls="tab-watches"><svg><use href="#i-eye"/></svg>Watches</button>
+    <button type="button" role="tab" class="tab" id="tab-btn-details" aria-selected="false" aria-controls="tab-details"><svg><use href="#i-info"/></svg>Details</button>
+  </div>
+</nav>
+
+<div class="composer" id="composer" hidden>
+  <div class="composer-inner">
+    <textarea id="chatText" rows="1" placeholder="Message" maxlength="4000" enterkeyhint="send" aria-label="Message"></textarea>
+    <button type="button" class="send" id="chatSend" aria-label="Send" disabled><svg><use href="#i-up"/></svg></button>
+  </div>
+  <div class="composer-status" id="chatStatus"></div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- Sheet contents live here until opened -->
+<div id="sheetStash" hidden>
+
+  <div id="sh-newTrip">
+    <div class="form">
+      <div class="field"><label for="ntName">Trip name</label><input id="ntName" placeholder="Spring break somewhere warm" autocomplete="off" enterkeyhint="next"></div>
+      <div class="field"><label for="ntDest">Destination</label><input id="ntDest" placeholder="Costa Rica, or not sure yet" autocomplete="off" enterkeyhint="next"></div>
+      <div class="field"><label for="ntDates">When</label><input id="ntDates" placeholder="Early March 2027" autocomplete="off" enterkeyhint="done"></div>
+    </div>
+    <p class="form-note">Rough is fine. You can change all of this later.</p>
+    <button type="button" class="btn btn-primary" id="ntCreateBtn" style="margin-top:14px">Start planning</button>
+    <div class="status" id="ntStatus"></div>
+  </div>
+
+  <div id="sh-watch">
+    <div class="form">
+      <div class="field"><label for="wKind">Type</label>
+        <select id="wKind"><option value="flight">Flight</option><option value="hotel">Hotel</option><option value="airbnb">Airbnb</option><option value="other">Other</option></select>
+      </div>
+      <div class="field"><label for="wLabel">What to watch</label><input id="wLabel" placeholder="ATL → SJO nonstop" autocomplete="off" enterkeyhint="next"></div>
+      <div class="field"><label for="wCriteria">What you're hoping for</label><input id="wCriteria" placeholder="Under $400 round trip" autocomplete="off" enterkeyhint="next"></div>
+      <div class="field"><label for="wUrl">Listing link (optional)</label><input id="wUrl" type="url" inputmode="url" placeholder="https://…" autocomplete="off" autocapitalize="none" enterkeyhint="done"></div>
+      <div class="field"><label for="wInterval">Check every</label>
+        <select id="wInterval"><option value="6">6 hours</option><option value="24" selected>Day</option><option value="72">3 days</option><option value="168">Week</option></select>
+      </div>
+    </div>
+    <p class="form-note">Each check runs a quick web search and keeps the last result here.</p>
+    <button type="button" class="btn btn-primary" id="wAddBtn" style="margin-top:14px">Add watch</button>
+    <div class="status" id="wAddStatus"></div>
+  </div>
+
+  <div id="sh-account">
+    <div class="list" id="accountList"></div>
+    <div class="section-header" id="accountAdminHdr" hidden>Admin</div>
+    <div class="list" id="accountAdminList" hidden></div>
+    <div style="margin-top:14px"><button type="button" class="btn btn-secondary" id="authBarBtn"></button></div>
+  </div>
+
+  <div id="sh-password">
+    <div class="form">
+      <div class="field"><label for="pwCurrent">Current password</label><input id="pwCurrent" type="password" autocomplete="current-password" enterkeyhint="next"></div>
+      <div class="field"><label for="pwNew">New password</label><input id="pwNew" type="password" autocomplete="new-password" enterkeyhint="done"></div>
+    </div>
+    <p class="form-note" id="pwNote">At least 10 characters. If you signed in with Face ID, you can leave the current password blank.</p>
+    <button type="button" class="btn btn-primary" id="pwSaveBtn" style="margin-top:14px">Change password</button>
+    <div class="status" id="pwStatus"></div>
+  </div>
+
+  <div id="sh-aiRequest">
+    <p class="sheet-msg">Chat and price checks use Claude, which costs the site owner money, so access is approved by hand. A note helps.</p>
+    <div class="form"><div class="field"><label for="aiNote">Note (optional)</label><textarea id="aiNote" rows="3" placeholder="Planning a trip to…"></textarea></div></div>
+    <button type="button" class="btn btn-primary" id="aiSendBtn" style="margin-top:14px">Send request</button>
+    <div class="status" id="aiStatus"></div>
+  </div>
+
+  <div id="sh-admin">
+    <p class="muted" style="margin:0 4px 12px">Approving someone lets them spend Anthropic tokens on your key.</p>
+    <div class="list" id="adminList"></div>
+  </div>
+
 </div>
 
 <script>
 (function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+
   function escapeHtml(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -297,83 +534,120 @@
       return '<pre><code>' + parked[Number(i)] + "</code></pre>";
     });
   }
+  function svgUse(id, cls) { return '<svg' + (cls ? ' class="' + cls + '"' : '') + ' aria-hidden="true"><use href="#' + id + '"/></svg>'; }
 
-  /* ---------- Auth bar ---------- */
-  var authBarText = document.getElementById("authBarText");
-  var authBarBtn = document.getElementById("authBarBtn");
-  var isSignedIn = false;
+  /* ---------- Toast ---------- */
+  var toastEl = $("toast"), toastTimer = null;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.classList.remove("show"); }, 2800);
+  }
 
-  var me = null;
-  var adminBtn = document.getElementById("adminBtn");
-  var aiBanner = document.getElementById("aiBanner");
-  var aiBannerText = document.getElementById("aiBannerText");
-  var aiRequestBtn = document.getElementById("aiRequestBtn");
-  var adminPanel = document.getElementById("adminPanel");
+  /* ---------- Sheets ---------- */
+  var stash = $("sheetStash");
+  var openSheetEl = null;
+  function closeSheet() {
+    if (!openSheetEl) return;
+    var el = openSheetEl; openSheetEl = null;
+    el.classList.add("closing");
+    document.body.style.overflow = "";
+    var finish = function () {
+      var content = el.querySelector(".sheet-content");
+      Array.prototype.slice.call(content.children).forEach(function (c) { if (c.dataset.stash) stash.appendChild(c); });
+      if (el.parentNode) el.parentNode.removeChild(el);
+      if (el._onClose) el._onClose();
+    };
+    var done = false;
+    var t = setTimeout(function () { if (!done) { done = true; finish(); } }, 220);
+    el.addEventListener("animationend", function () { if (!done) { done = true; clearTimeout(t); finish(); } }, { once: true });
+  }
+  function openSheet(opts) {
+    closeSheet();
+    var backdrop = document.createElement("div");
+    backdrop.className = "sheet-backdrop";
+    var sheet = document.createElement("div");
+    sheet.className = "sheet"; sheet.setAttribute("role", "dialog"); sheet.setAttribute("aria-modal", "true"); sheet.tabIndex = -1;
+    if (opts.title) sheet.setAttribute("aria-label", opts.title);
+    sheet.innerHTML = '<div class="grabber"></div>' +
+      (opts.title ? '<div class="sheet-head"><h2>' + escapeHtml(opts.title) + '</h2><button type="button" class="sheet-close" aria-label="Close">' + svgUse("i-x") + '</button></div>' : '') +
+      '<div class="sheet-content"></div>';
+    var content = sheet.querySelector(".sheet-content");
+    if (typeof opts.body === "string") content.innerHTML = opts.body;
+    else if (opts.body) { opts.body.dataset.stash = "1"; content.appendChild(opts.body); }
+    backdrop.appendChild(sheet);
+    backdrop.addEventListener("click", function (e) { if (e.target === backdrop) closeSheet(); });
+    var closeBtn = sheet.querySelector(".sheet-close");
+    if (closeBtn) closeBtn.addEventListener("click", closeSheet);
+    backdrop._onClose = opts.onClose || null;
+    document.body.appendChild(backdrop);
+    document.body.style.overflow = "hidden";
+    openSheetEl = backdrop;
+    var focusEl = opts.focus ? sheet.querySelector(opts.focus) : null;
+    setTimeout(function () { (focusEl || sheet).focus({ preventScroll: true }); }, 60);
+    return sheet;
+  }
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeSheet(); });
 
-  // Anyone can sign up and use the planner. Anything that calls Claude needs
-  // aiAccess === "approved", granted by hand — so the banner explains where
-  // the user stands instead of letting chat fail with a bare 403.
+  function confirmSheet(o) {
+    return new Promise(function (resolve) {
+      var settled = false;
+      var sheet = openSheet({
+        body: '<p class="sheet-msg"><b>' + escapeHtml(o.title) + '</b>' + escapeHtml(o.message || "") + '</p>' +
+          '<div class="actions"><button type="button" class="btn ' + (o.destructive ? "btn-danger" : "btn-primary") + '" data-act="ok">' + escapeHtml(o.confirmLabel || "Confirm") + '</button>' +
+          '<button type="button" class="btn btn-secondary" data-act="cancel">Cancel</button></div>',
+        onClose: function () { if (!settled) { settled = true; resolve(false); } }
+      });
+      sheet.querySelector('[data-act="ok"]').addEventListener("click", function () { settled = true; closeSheet(); resolve(true); });
+      sheet.querySelector('[data-act="cancel"]').addEventListener("click", function () { settled = true; closeSheet(); resolve(false); });
+    });
+  }
+  function setStatus(el, msg, kind) { el.textContent = msg || ""; el.className = el.className.replace(/\b(error|ok)\b/g, "").trim() + (kind ? " " + kind : ""); }
+
+  /* ---------- Nav bar collapse ---------- */
+  var navbar = $("navbar"), navTitle = $("navTitle");
+  var titleObserver = null;
+  function watchLargeTitle(el) {
+    if (titleObserver) titleObserver.disconnect();
+    if (!("IntersectionObserver" in window)) { navbar.classList.add("is-stuck"); return; }
+    titleObserver = new IntersectionObserver(function (entries) {
+      navbar.classList.toggle("is-stuck", !entries[0].isIntersecting);
+    }, { rootMargin: "-" + (44 + 8) + "px 0px 0px 0px", threshold: 0 });
+    titleObserver.observe(el);
+  }
+
+  /* ---------- Keyboard-aware composer ---------- */
+  var vv = window.visualViewport;
+  function onViewport() {
+    if (!vv) return;
+    var kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    document.documentElement.style.setProperty("--kb", kb + "px");
+    document.body.classList.toggle("kb-open", kb > 80);
+  }
+  if (vv) { vv.addEventListener("resize", onViewport); vv.addEventListener("scroll", onViewport); }
+
+  /* ---------- Auth / account ---------- */
+  var isSignedIn = false, me = null;
+  var aiBanner = $("aiBanner"), aiBannerText = $("aiBannerText"), aiRequestBtn = $("aiRequestBtn");
+  var accountBtn = $("accountBtn"), authBarBtn = $("authBarBtn");
+
   var AI_COPY = {
-    none:     ["AI research is off for your account — ask for access to use chat and price watches.", true],
+    none:     ["AI research is off for your account. Ask for access to use chat and price watches.", true],
     pending:  ["Your AI access request is waiting to be reviewed.", false],
     denied:   ["Your request for AI access wasn't approved.", false],
     approved: ["", false]
   };
 
   function renderAuthBar() {
-    if (!isSignedIn) {
-      authBarText.textContent = "Not signed in";
-      authBarBtn.textContent = "Log in";
-      adminBtn.hidden = true;
-      aiBanner.hidden = true;
-      if (pwChangeBtn) pwChangeBtn.hidden = true;
-      return;
-    }
-    if (pwChangeBtn) pwChangeBtn.hidden = false;
-    authBarText.textContent = "Signed in as " + (me && me.displayName ? me.displayName : "you")
-      + (me && me.mustChangePassword ? " — using a temporary password" : "");
-    authBarBtn.textContent = "Log out";
-    adminBtn.hidden = !(me && me.isAdmin);
-
+    if (!isSignedIn) { aiBanner.hidden = true; return; }
     var state = (me && me.aiAccess) || "none";
     var copy = AI_COPY[state] || AI_COPY.none;
-    if (state === "approved") {
-      aiBanner.hidden = true;
-    } else {
-      aiBanner.hidden = false;
-      aiBannerText.textContent = copy[0];
-      aiRequestBtn.hidden = !copy[1];
-    }
+    aiBanner.hidden = state === "approved";
+    aiBannerText.textContent = copy[0];
+    aiRequestBtn.hidden = !copy[1];
   }
-
   function aiReady() { return !!(me && me.aiAccess === "approved"); }
-
-  // Changing your own password. The server takes the current one, or lets a
-  // passkey-proved session through without it - so forgetting the password
-  // is recoverable by anyone who set up Face ID.
-  var pwChangeBtn = document.getElementById("pwChangeBtn");
-  if (pwChangeBtn) pwChangeBtn.addEventListener("click", async function () {
-    var current = window.prompt("Your current password — leave blank if you signed in with Face ID:") || "";
-    if (current === null) return;
-    var next = window.prompt("New password (at least 10 characters):") || "";
-    if (!next) return;
-    if (next.length < 10) { window.alert("Password must be at least 10 characters."); return; }
-    pwChangeBtn.disabled = true;
-    try {
-      var r = await fetch("/api/auth/password", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currentPassword: current, newPassword: next })
-      });
-      var d = await r.json();
-      if (!r.ok) throw new Error(d.error || "failed");
-      if (me) me.mustChangePassword = false;
-      window.alert("Password changed.");
-      renderAuthBar();
-    } catch (e) {
-      window.alert((e && e.message) || "Couldn't change the password.");
-    }
-    pwChangeBtn.disabled = false;
-  });
 
   async function refreshAuthStatus() {
     try {
@@ -385,314 +659,332 @@
     renderAuthBar();
   }
 
-  aiRequestBtn.addEventListener("click", async function () {
-    var note = window.prompt("Anything you want to say about why you need AI research? (optional)") || "";
-    aiRequestBtn.disabled = true;
+  function accountRow(title, sub, onTap, opts) {
+    opts = opts || {};
+    var b = document.createElement(onTap ? "button" : "div");
+    if (onTap) b.type = "button";
+    b.className = "row";
+    b.innerHTML = '<div class="row-main"><div class="row-title"' + (opts.danger ? ' style="color:var(--red)"' : '') + '>' + escapeHtml(title) + '</div>' + (sub ? '<div class="row-sub">' + escapeHtml(sub) + '</div>' : '') + '</div>' + (opts.pill ? '<span class="pill ' + escapeHtml(opts.pill) + '">' + escapeHtml(opts.pill) + '</span>' : '') + (onTap ? svgUse("i-chev-r", "row-chevron") : '');
+    if (onTap) b.addEventListener("click", onTap);
+    return b;
+  }
+
+  accountBtn.addEventListener("click", function () {
+    if (!isSignedIn) { location.href = "/login"; return; }
+    var list = $("accountList"); list.innerHTML = "";
+    list.appendChild(accountRow(me && me.displayName ? me.displayName : "You", me && me.email ? me.email : "", null));
+    var state = (me && me.aiAccess) || "none";
+    list.appendChild(accountRow("AI research", state === "approved" ? "Chat and price watches are on" : (AI_COPY[state] || AI_COPY.none)[0], state === "none" ? openAiRequest : null, { pill: state }));
+    list.appendChild(accountRow("Change password", me && me.mustChangePassword ? "You're using a temporary password" : "", openPasswordSheet));
+    var isAdmin = !!(me && me.isAdmin);
+    $("accountAdminHdr").hidden = !isAdmin; $("accountAdminList").hidden = !isAdmin;
+    if (isAdmin) { var al = $("accountAdminList"); al.innerHTML = ""; al.appendChild(accountRow("Access requests", "Approve AI access and reset passwords", openAdmin)); }
+    authBarBtn.textContent = "Log out";
+    openSheet({ title: "Account", body: $("sh-account") });
+  });
+
+  authBarBtn.addEventListener("click", async function () {
+    try { await fetch("/api/auth/logout", { method: "POST" }); } catch (e) {}
+    isSignedIn = false; me = null;
+    closeSheet();
+    renderAuthBar();
+    goToTrips();
+    loadTripsList();
+  });
+
+  function openPasswordSheet() {
+    $("pwCurrent").value = ""; $("pwNew").value = "";
+    setStatus($("pwStatus"), "");
+    openSheet({ title: "Change password", body: $("sh-password"), focus: "#pwCurrent" });
+  }
+  // The server takes the current password, or lets a passkey-proved session
+  // through without it, so a forgotten password is recoverable by anyone who
+  // set up Face ID.
+  $("pwSaveBtn").addEventListener("click", async function () {
+    var current = $("pwCurrent").value || "", next = $("pwNew").value || "";
+    var st = $("pwStatus"), btn = $("pwSaveBtn");
+    if (!next) { setStatus(st, "Enter a new password.", "error"); return; }
+    if (next.length < 10) { setStatus(st, "Password must be at least 10 characters.", "error"); return; }
+    btn.disabled = true; setStatus(st, "Saving…");
+    try {
+      var r = await fetch("/api/auth/password", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword: current, newPassword: next })
+      });
+      var d = await r.json();
+      if (!r.ok) throw new Error(d.error || "failed");
+      if (me) me.mustChangePassword = false;
+      closeSheet(); toast("Password changed");
+    } catch (e) {
+      setStatus(st, (e && e.message) || "Couldn't change the password.", "error");
+    }
+    btn.disabled = false;
+  });
+
+  function openAiRequest() { $("aiNote").value = ""; setStatus($("aiStatus"), ""); openSheet({ title: "Request AI access", body: $("sh-aiRequest") }); }
+  aiRequestBtn.addEventListener("click", openAiRequest);
+  $("aiSendBtn").addEventListener("click", async function () {
+    var btn = $("aiSendBtn"), st = $("aiStatus");
+    btn.disabled = true; setStatus(st, "Sending…");
     try {
       var r = await fetch("/api/ai-access/request", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ note: note })
+        body: JSON.stringify({ note: $("aiNote").value || "" })
       });
       if (!r.ok) throw new Error("failed");
       if (me) me.aiAccess = "pending";
-      renderAuthBar();
-    } catch (e) {
-      aiBannerText.textContent = "Couldn't send that request — try again.";
-    }
-    aiRequestBtn.disabled = false;
+      renderAuthBar(); closeSheet(); toast("Request sent");
+    } catch (e) { setStatus(st, "Couldn't send that request. Try again.", "error"); }
+    btn.disabled = false;
   });
 
-  adminBtn.addEventListener("click", function () {
-    adminPanel.hidden = !adminPanel.hidden;
-    if (!adminPanel.hidden) loadAdmin();
-  });
-
+  function openAdmin() { openSheet({ title: "Access requests", body: $("sh-admin") }); loadAdmin(); }
   async function loadAdmin() {
-    var list = document.getElementById("adminList");
-    list.textContent = "Loading…";
+    var list = $("adminList");
+    list.innerHTML = '<div class="admin-row"><span class="muted">Loading…</span></div>';
     try {
       var r = await fetch("/api/admin/users");
       if (!r.ok) throw new Error("failed");
       var users = await r.json();
       list.innerHTML = "";
-      if (!users.length) { list.textContent = "Nobody has registered yet."; return; }
+      if (!users.length) { list.innerHTML = '<div class="admin-row"><span class="muted">Nobody has registered yet.</span></div>'; return; }
       users.forEach(function (u) {
-        var row = document.createElement("div");
-        row.className = "admin-row";
-
-        var who = document.createElement("div");
-        who.className = "who";
-        var b = document.createElement("b");
-        b.textContent = u.displayName || u.email;
-        who.appendChild(b);
-        var em = document.createElement("span");
-        em.className = "note";
-        em.textContent = u.email;
-        who.appendChild(em);
-        if (u.aiNote) {
-          var n = document.createElement("div");
-          n.className = "note";
-          n.textContent = "“" + u.aiNote + "”";
-          who.appendChild(n);
-        }
+        var row = document.createElement("div"); row.className = "admin-row";
+        var who = document.createElement("div"); who.className = "admin-who";
+        var b = document.createElement("b"); b.textContent = u.displayName || u.email; who.appendChild(b);
+        var em = document.createElement("div"); em.className = "note"; em.textContent = u.email; who.appendChild(em);
+        if (u.aiNote) { var n = document.createElement("div"); n.className = "note"; n.textContent = "“" + u.aiNote + "”"; who.appendChild(n); }
+        if (u.resetRequestedAt) { var rq = document.createElement("div"); rq.className = "note"; rq.style.color = "var(--orange)"; rq.textContent = "Asked for a password reset"; who.appendChild(rq); }
         row.appendChild(who);
 
-        if (u.resetRequestedAt) {
-          var rq = document.createElement("div");
-          rq.className = "note";
-          rq.textContent = "Asked for a password reset";
-          who.appendChild(rq);
-        }
-
-        var pill = document.createElement("span");
-        pill.className = "pill";
-        pill.textContent = u.aiAccess;
-        row.appendChild(pill);
-
-        // There is no email service here, so a reset is read out by hand:
-        // the password comes back exactly once and is never stored in clear.
-        var resetBtn = document.createElement("button");
-        resetBtn.type = "button";
-        resetBtn.className = "authbar-btn";
-        resetBtn.textContent = u.resetRequestedAt ? "Reset password ●" : "Reset password";
-        resetBtn.addEventListener("click", async function () {
-          if (!window.confirm("Replace " + u.email + "'s password with a new temporary one?\n\nTheir current password stops working immediately.")) return;
-          resetBtn.disabled = true;
-          try {
-            var rr = await fetch("/api/admin/reset-password", {
-              method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ userId: u.id })
-            });
-            var dd = await rr.json();
-            if (!rr.ok) throw new Error(dd.error || "failed");
-            var out = document.createElement("div");
-            out.className = "note";
-            out.textContent = "Temporary password for " + dd.email + ": " + dd.password +
-              " — give it to them now, it is not shown again.";
-            who.appendChild(out);
-            resetBtn.textContent = "Reset done";
-          } catch (e) {
-            resetBtn.disabled = false;
-            resetBtn.textContent = "Reset failed — retry";
-          }
-        });
-        row.appendChild(resetBtn);
+        var acts = document.createElement("div"); acts.className = "admin-actions";
+        var pill = document.createElement("span"); pill.className = "pill " + (u.aiAccess || ""); pill.textContent = u.aiAccess; acts.appendChild(pill);
 
         if (!u.isAdmin) {
           [["Approve", "approved"], ["Deny", "denied"]].forEach(function (pair) {
             if (u.aiAccess === pair[1]) return;
-            var btn = document.createElement("button");
-            btn.type = "button";
-            btn.className = "authbar-btn";
-            btn.textContent = pair[0];
+            var btn = document.createElement("button"); btn.type = "button"; btn.className = "btn btn-secondary btn-sm"; btn.textContent = pair[0];
             btn.addEventListener("click", async function () {
               btn.disabled = true;
               try {
-                var rr = await fetch("/api/admin/ai-access", {
-                  method: "POST", headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ userId: u.id, decision: pair[1] })
-                });
+                var rr = await fetch("/api/admin/ai-access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: u.id, decision: pair[1] }) });
                 if (!rr.ok) throw new Error("failed");
                 loadAdmin();
-              } catch (e) { btn.disabled = false; }
+              } catch (e) { btn.disabled = false; toast("That didn't save"); }
             });
-            row.appendChild(btn);
+            acts.appendChild(btn);
           });
         }
+        // There is no email service here, so a reset is read out by hand:
+        // the password comes back exactly once and is never stored in clear.
+        var resetBtn = document.createElement("button"); resetBtn.type = "button"; resetBtn.className = "btn btn-plain btn-sm";
+        resetBtn.textContent = u.resetRequestedAt ? "Reset password ●" : "Reset password";
+        resetBtn.addEventListener("click", async function () {
+          var ok = await confirmSheet({ title: "Reset " + u.email + "?", message: "Their current password stops working immediately. You'll get a temporary one to pass on.", confirmLabel: "Reset password", destructive: true });
+          if (!ok) return;
+          resetBtn.disabled = true;
+          try {
+            var rr = await fetch("/api/admin/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: u.id }) });
+            var dd = await rr.json();
+            if (!rr.ok) throw new Error(dd.error || "failed");
+            var out = document.createElement("div"); out.className = "note"; out.textContent = "Temporary password for " + dd.email + " (shown once):"; who.appendChild(out);
+            var pw = document.createElement("div"); pw.className = "temp-pw"; pw.textContent = dd.password; who.appendChild(pw);
+            resetBtn.textContent = "Reset done";
+          } catch (e) { resetBtn.disabled = false; resetBtn.textContent = "Reset failed. Retry"; }
+        });
+        acts.appendChild(resetBtn);
+        row.appendChild(acts);
         list.appendChild(row);
       });
-    } catch (e) {
-      list.textContent = "Couldn't load requests.";
-    }
+    } catch (e) { list.innerHTML = '<div class="admin-row"><span class="muted">Couldn\'t load requests.</span></div>'; }
   }
-  authBarBtn.addEventListener("click", async function () {
-    if (isSignedIn) {
-      try { await fetch("/api/auth/logout", { method: "POST" }); } catch (e) {}
-      isSignedIn = false;
-      renderAuthBar();
-    } else {
-      location.href = "/login";
-    }
-  });
-  renderAuthBar();
-  refreshAuthStatus();
 
   function showAuthRequired(statusEl) {
     if (!statusEl) { location.href = "/login"; return; }
-    statusEl.textContent = "Please log in to save changes.";
-    statusEl.className = "chat-status error";
+    setStatus(statusEl, "Please log in to save changes.", "error");
   }
-
-  // A 403 here means "signed in, but AI isn't approved for you" — a different
-  // problem from not being logged in, so say so rather than sending them to
-  // a login page they're already past.
+  // A 403 here means "signed in, but AI isn't approved for you"; a different
+  // problem from not being logged in, so say so rather than sending them to a
+  // login page they're already past.
   function showAiRequired(statusEl) {
     refreshAuthStatus();
     if (!statusEl) return;
     var state = (me && me.aiAccess) || "none";
-    statusEl.textContent = state === "pending"
-      ? "Your AI access request is still being reviewed."
-      : "AI research isn't enabled for your account yet — request access at the top of the page.";
-    statusEl.className = "chat-status error";
+    setStatus(statusEl, state === "pending" ? "Your AI access request is still being reviewed." : "AI research isn't on for your account yet. Request access from the Account menu.", "error");
   }
 
   /* ---------- Routing: #/trips  or  #/trip/<id> ---------- */
-  var viewTrips = document.getElementById("view-trips");
-  var viewTrip = document.getElementById("view-trip");
-  var currentTripId = null;
-  var currentTrip = null;
-  var qaDocs = [];
-  var watches = [];
-  var itineraryDays = [];
+  var viewTrips = $("view-trips"), viewTrip = $("view-trip");
+  var tabbar = $("tabbar"), composer = $("composer"), backBtn = $("backBtn"), newTripBtn = $("newTripBtn");
+  var currentTripId = null, currentTrip = null, qaDocs = [], watches = [], itineraryDays = [];
 
   function parseHash() {
     var h = (location.hash || "").replace(/^#\/?/, "");
     var m = h.match(/^trip\/(.+)$/);
     return m ? { view: "trip", id: m[1] } : { view: "trips" };
   }
-
   function goToTrips() { location.hash = "#/trips"; }
   function goToTrip(id) { location.hash = "#/trip/" + id; }
-
   window.addEventListener("hashchange", route);
-  document.getElementById("backBtn").addEventListener("click", goToTrips);
+  backBtn.addEventListener("click", goToTrips);
 
   function route() {
+    closeSheet();
     var r = parseHash();
+    window.scrollTo(0, 0);
     if (r.view === "trip") {
-      viewTrips.hidden = true;
-      viewTrip.hidden = false;
+      viewTrips.hidden = true; viewTrip.hidden = false;
+      backBtn.hidden = false; accountBtn.hidden = true; newTripBtn.hidden = true;
+      tabbar.hidden = false; document.body.classList.add("has-tabs");
+      watchLargeTitle($("lt-trip"));
       loadTrip(r.id);
     } else {
-      viewTrip.hidden = true;
-      viewTrips.hidden = false;
+      viewTrip.hidden = true; viewTrips.hidden = false;
+      backBtn.hidden = true; accountBtn.hidden = false; newTripBtn.hidden = false;
+      tabbar.hidden = true; composer.hidden = true;
+      document.body.classList.remove("has-tabs", "has-composer");
+      currentTripId = null;
+      navTitle.textContent = "Your Trips";
+      watchLargeTitle($("lt-trips"));
       loadTripsList();
     }
   }
 
   /* ---------- Trips list ---------- */
-  var newTripForm = document.getElementById("newTripForm");
-  document.getElementById("newTripBtn").addEventListener("click", function () {
-    newTripForm.hidden = !newTripForm.hidden;
+  newTripBtn.addEventListener("click", function () {
+    if (!isSignedIn) { location.href = "/login"; return; }
+    setStatus($("ntStatus"), "");
+    openSheet({ title: "New trip", body: $("sh-newTrip"), focus: "#ntName" });
   });
-
-  document.getElementById("ntCreateBtn").addEventListener("click", async function () {
-    var name = document.getElementById("ntName").value.trim();
-    var status = document.getElementById("ntStatus");
-    if (!name) { status.textContent = "Give it a name first."; status.className = "chat-status error"; return; }
-    status.textContent = "Creating…";
-    status.className = "chat-status";
+  ["ntName", "ntDest", "ntDates"].forEach(function (id, i, arr) {
+    $(id).addEventListener("keydown", function (e) {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      if (i < arr.length - 1) $(arr[i + 1]).focus(); else $("ntCreateBtn").click();
+    });
+  });
+  $("ntCreateBtn").addEventListener("click", async function () {
+    var name = $("ntName").value.trim(), status = $("ntStatus"), btn = $("ntCreateBtn");
+    if (!name) { setStatus(status, "Give it a name first.", "error"); $("ntName").focus(); return; }
+    btn.disabled = true; setStatus(status, "Creating…");
     try {
       var res = await fetch("/api/trips", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name,
-          destination: document.getElementById("ntDest").value.trim(),
-          dateRange: document.getElementById("ntDates").value.trim()
-        })
+        body: JSON.stringify({ name: name, destination: $("ntDest").value.trim(), dateRange: $("ntDates").value.trim() })
       });
-      if (res.status === 401) { showAuthRequired(status); return; }
+      if (res.status === 401) { showAuthRequired(status); btn.disabled = false; return; }
       var data = await res.json();
       if (!res.ok) throw new Error(data.error || "failed");
-      document.getElementById("ntName").value = "";
-      document.getElementById("ntDest").value = "";
-      document.getElementById("ntDates").value = "";
-      newTripForm.hidden = true;
-      status.textContent = "";
+      $("ntName").value = ""; $("ntDest").value = ""; $("ntDates").value = "";
+      setStatus(status, "");
+      closeSheet();
       goToTrip(data.id);
-    } catch (e) {
-      status.textContent = "Couldn't create that trip — try again.";
-      status.className = "chat-status error";
-    }
+    } catch (e) { setStatus(status, "Couldn't create that trip. Try again.", "error"); }
+    btn.disabled = false;
   });
 
   // What an anonymous visitor sees. Registration is open, so this is an
   // invitation rather than a wall.
   function renderSignedOut(list) {
     list.innerHTML = "";
-    var box = document.createElement("div");
-    box.className = "empty-state";
-    var p = document.createElement("p");
-    p.textContent = "Sign in to see your trips, or create an account — it takes a moment and your trips are yours alone.";
-    box.appendChild(p);
-    var btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "authbar-btn";
-    btn.textContent = "Sign in or create an account";
+    var box = document.createElement("div"); box.className = "empty";
+    box.innerHTML = svgUse("i-plane") + '<b>Plan your next trip</b><span>Sign in to see your trips, or create an account. It takes a moment, and your trips are yours alone.</span>';
+    var btn = document.createElement("button"); btn.type = "button"; btn.className = "btn btn-primary"; btn.textContent = "Sign in or create an account";
     btn.addEventListener("click", function () { location.href = "/login"; });
-    box.appendChild(btn);
-    list.appendChild(box);
+    box.appendChild(btn); list.appendChild(box);
   }
 
   async function loadTripsList() {
-    var list = document.getElementById("tripsList");
-    list.innerHTML = '<p class="muted">Loading…</p>';
+    var list = $("tripsList");
+    list.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
     try {
       var res = await fetch("/api/trips");
       // Signed out is the normal first visit now that trips belong to an
-      // account - it is not an error, and "try reloading" is useless advice
+      // account. It is not an error, and "try reloading" is useless advice
       // because reloading will never sign anyone in.
       if (res.status === 401) { renderSignedOut(list); return; }
       var trips = await res.json();
       if (!res.ok) throw new Error();
       if (!trips.length) {
-        list.innerHTML = '<div class="empty-state">No trips yet. Tap + to start planning one.</div>';
+        list.innerHTML = "";
+        var box = document.createElement("div"); box.className = "empty";
+        box.innerHTML = svgUse("i-plane") + '<b>No trips yet</b><span>Start with a name and a rough idea of where and when.</span>';
+        var btn = document.createElement("button"); btn.type = "button"; btn.className = "btn btn-primary"; btn.textContent = "Start a trip";
+        btn.addEventListener("click", function () { newTripBtn.click(); });
+        box.appendChild(btn); list.appendChild(box);
         return;
       }
+      var groups = [["Planning", trips.filter(function (t) { return t.status !== "locked"; })], ["Locked in", trips.filter(function (t) { return t.status === "locked"; })]];
       list.innerHTML = "";
-      trips.forEach(function (t) {
-        var btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "trip-card";
-        btn.innerHTML =
-          '<div class="trip-card-top"><h3>' + escapeHtml(t.name) + '</h3><span class="badge ' + (t.status === "locked" ? "locked" : "planning") + '">' + (t.status === "locked" ? "Locked in" : "Planning") + '</span></div>' +
-          '<div class="dest">' + escapeHtml([t.destination, t.dateRange].filter(Boolean).join(" · ") || "No details yet") + '</div>';
-        btn.addEventListener("click", function () { goToTrip(t.id); });
-        list.appendChild(btn);
+      groups.forEach(function (g) {
+        if (!g[1].length) return;
+        var hdr = document.createElement("div"); hdr.className = "section-header"; hdr.textContent = g[0]; list.appendChild(hdr);
+        var ul = document.createElement("div"); ul.className = "list";
+        g[1].forEach(function (t) {
+          var btn = document.createElement("button"); btn.type = "button"; btn.className = "row";
+          var sub = [t.destination, t.dateRange].filter(Boolean).join(" · ") || "No details yet";
+          var extra = t.dayCount ? " · " + t.dayCount + (t.dayCount === 1 ? " day" : " days") : "";
+          btn.innerHTML = '<div class="row-main"><div class="row-title">' + escapeHtml(t.name) + '</div><div class="row-sub">' + escapeHtml(sub + extra) + '</div></div>' +
+            (t.status === "locked" ? '<span class="badge locked">Locked</span>' : '') + svgUse("i-chev-r", "row-chevron");
+          btn.addEventListener("click", function () { goToTrip(t.id); });
+          ul.appendChild(btn);
+        });
+        list.appendChild(ul);
       });
     } catch (e) {
-      list.innerHTML = '<div class="empty-state">Couldn’t load trips — try reloading.</div>';
+      list.innerHTML = '<div class="empty"><b>Couldn’t load trips</b><span>Check your connection and pull down to try again.</span></div>';
     }
   }
 
   /* ---------- Trip detail: tabs ---------- */
   var tripTabs = ["chat", "itinerary", "watches", "details"];
-  var thumb = document.getElementById("tabThumb");
+  var currentTab = "chat";
   function selectTripTab(name) {
+    currentTab = name;
     tripTabs.forEach(function (t) {
-      document.getElementById("tab-" + t).hidden = t !== name;
-      document.getElementById("tab-btn-" + t).setAttribute("aria-selected", String(t === name));
+      $("tab-" + t).hidden = t !== name;
+      $("tab-btn-" + t).setAttribute("aria-selected", String(t === name));
     });
-    var btn = document.getElementById("tab-btn-" + name);
-    thumb.style.left = btn.offsetLeft + "px";
-    thumb.style.width = btn.offsetWidth + "px";
+    var showComposer = name === "chat";
+    composer.hidden = !showComposer;
+    document.body.classList.toggle("has-composer", showComposer);
+    if (showComposer) scrollChatToEnd();
+    else window.scrollTo(0, 0);
   }
   tripTabs.forEach(function (t) {
-    document.getElementById("tab-btn-" + t).addEventListener("click", function () { selectTripTab(t); });
+    $("tab-btn-" + t).addEventListener("click", function () {
+      if (currentTab === t) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+      selectTripTab(t);
+    });
   });
+  $("itineraryAskBtn").addEventListener("click", function () { selectTripTab("chat"); $("chatText").value = "Plan the days for this trip."; autoGrowChatText(); $("chatText").focus(); });
 
   async function loadTrip(id) {
     currentTripId = id;
     qaDocs = []; watches = []; itineraryDays = [];
+    $("tripName").textContent = "Loading…"; $("tripDest").textContent = ""; navTitle.textContent = "";
+    $("tripBadge").className = "badge"; $("tripBadge").textContent = "";
     selectTripTab("chat");
     try {
       var res = await fetch("/api/trips/" + id);
       if (!res.ok) { goToTrips(); return; }  // 401 lands on the signed-out state
       currentTrip = await res.json();
     } catch (e) { goToTrips(); return; }
+    if (currentTripId !== id) return;
 
-    document.getElementById("tripName").textContent = currentTrip.name || "Untitled trip";
-    document.getElementById("tripDest").textContent = [currentTrip.destination, currentTrip.dateRange].filter(Boolean).join(" · ") || "Trip Planner";
-    var badge = document.getElementById("tripBadge");
+    var name = currentTrip.name || "Untitled trip";
+    $("tripName").textContent = name; navTitle.textContent = name;
+    $("tripDest").textContent = [currentTrip.destination, currentTrip.dateRange].filter(Boolean).join(" · ") || "Trip Planner";
+    var badge = $("tripBadge");
     badge.textContent = currentTrip.status === "locked" ? "Locked in" : "Planning";
     badge.className = "badge " + (currentTrip.status === "locked" ? "locked" : "planning");
 
-    document.getElementById("dName").value = currentTrip.name || "";
-    document.getElementById("dDest").value = currentTrip.destination || "";
-    document.getElementById("dDates").value = currentTrip.dateRange || "";
-    document.getElementById("dNotes").value = currentTrip.notes || "";
-    document.getElementById("lockBtn").hidden = currentTrip.status === "locked";
-    document.getElementById("unlockBtn").hidden = currentTrip.status !== "locked";
+    $("dName").value = currentTrip.name || "";
+    $("dDest").value = currentTrip.destination || "";
+    $("dDates").value = currentTrip.dateRange || "";
+    $("dNotes").value = currentTrip.notes || "";
+    $("lockBtn").hidden = currentTrip.status === "locked";
+    $("unlockBtn").hidden = currentTrip.status !== "locked";
 
     itineraryDays = Array.isArray(currentTrip.days) ? currentTrip.days : [];
     renderItinerary(itineraryDays);
@@ -701,61 +993,64 @@
   }
 
   /* ---------- Itinerary ---------- */
-  var dayList = document.getElementById("dayList");
-  var itineraryEmpty = document.getElementById("itineraryEmpty");
-  var checkIconSvg = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="4,13 9,18 20,6"/></svg>';
+  var dayList = $("dayList"), itineraryEmpty = $("itineraryEmpty");
 
   function renderItinerary(days) {
     itineraryDays = days;
     dayList.innerHTML = "";
     itineraryEmpty.hidden = !!days.length;
     var todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0);
+    var openedOne = false;
     days.forEach(function (d, i) {
       var dayDate = /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? new Date(d.date + "T00:00:00") : null;
       var isPast = dayDate ? dayDate.getTime() < todayMidnight.getTime() : false;
+      var isToday = dayDate ? dayDate.getTime() === todayMidnight.getTime() : false;
+      var open = isToday || (!openedOne && !isPast);
+      if (open) openedOne = true;
 
       var el = document.createElement("div");
-      el.className = "day" + (i === 0 ? " is-open" : "");
+      el.className = "day" + (open ? " is-open" : "") + (isToday ? " is-today" : "") + (isPast ? " is-past" : "");
       var blocksHtml = (d.blocks || []).map(function (b) {
         return '<li><span class="b-time">' + escapeHtml(b[0]) + '</span><span>' + escapeHtml(b[1]) + '</span></li>';
       }).join("");
       el.innerHTML =
-        '<button type="button" class="day-head" aria-expanded="' + (i === 0) + '">' +
-          '<span class="day-num">' + (isPast ? checkIconSvg : (i + 1)) + '</span>' +
-          '<span class="day-head-text"><h3>' + escapeHtml(d.title) + '</h3><span class="day-date">' + escapeHtml(d.dateLabel) + '</span></span>' +
-          '<span class="day-chevron">&#9656;</span>' +
+        '<button type="button" class="day-head" aria-expanded="' + open + '">' +
+          '<span class="day-num">' + (isPast ? svgUse("i-check") : (i + 1)) + '</span>' +
+          '<span class="day-head-text"><h3>' + escapeHtml(d.title) + (isToday ? '<span class="today-pill">Today</span>' : '') + '</h3><span class="day-date">' + escapeHtml(d.dateLabel) + '</span></span>' +
+          svgUse("i-chev-r", "day-chevron") +
         '</button>' +
-        '<div class="day-body"' + (i === 0 ? "" : " hidden") + '>' +
+        '<div class="day-body"' + (open ? "" : " hidden") + '>' +
           '<ul class="blocks">' + blocksHtml + '</ul>' +
           (d.tip ? '<p class="day-tip">' + escapeHtml(d.tip) + '</p>' : '') +
         '</div>';
-      var headBtn = el.querySelector(".day-head");
-      var body = el.querySelector(".day-body");
+      var headBtn = el.querySelector(".day-head"), body = el.querySelector(".day-body");
       headBtn.addEventListener("click", function () {
-        var open = el.classList.toggle("is-open");
-        body.hidden = !open;
-        headBtn.setAttribute("aria-expanded", String(open));
+        var isOpen = el.classList.toggle("is-open");
+        body.hidden = !isOpen;
+        headBtn.setAttribute("aria-expanded", String(isOpen));
       });
       dayList.appendChild(el);
     });
   }
 
   /* ---------- Chat ---------- */
-  var chatLog = document.getElementById("chatLog");
-  var chatEmpty = document.getElementById("chatEmpty");
-  var chatStatus = document.getElementById("chatStatus");
-  var chatText = document.getElementById("chatText");
-  var chatSend = document.getElementById("chatSend");
+  var chatLog = $("chatLog"), chatEmpty = $("chatEmpty"), chatStatus = $("chatStatus"), chatText = $("chatText"), chatSend = $("chatSend");
+
+  function scrollChatToEnd() {
+    requestAnimationFrame(function () { window.scrollTo(0, document.documentElement.scrollHeight); });
+  }
 
   async function refreshChat() {
+    var id = currentTripId;
     try {
-      var res = await fetch("/api/trips/" + currentTripId + "/messages");
-      if (!res.ok) return;
+      var res = await fetch("/api/trips/" + id + "/messages");
+      if (!res.ok || currentTripId !== id) return;
       var data = await res.json();
       if (Array.isArray(data)) {
         qaDocs = data;
         qaDocs.sort(function (a, b) { return (a.askedAt || "").localeCompare(b.askedAt || ""); });
         renderChat();
+        if (currentTab === "chat") scrollChatToEnd();
       }
     } catch (e) {}
   }
@@ -778,19 +1073,19 @@
       if (doc.answer) {
         html += '<div class="msg-row a"><div class="bubble">' + renderMarkdown(doc.answer) + "</div></div>";
       } else {
-        html += '<div class="msg-row a"><div class="bubble pending">Waiting for a reply&hellip;</div></div>';
+        html += '<div class="msg-row a"><div class="bubble" aria-label="Waiting for a reply"><span class="typing"><i></i><i></i><i></i></span></div></div>';
       }
       if (doc.proposedChange && !doc._changeHandled) {
-        html += '<div class="msg-row a"><div class="bubble proposed-change">' +
+        html += '<div class="msg-row a"><div class="proposed">' +
+          '<div class="pc-label">Proposed itinerary</div>' +
           '<div class="pc-summary">' + escapeHtml(doc.proposedChange.summary || "Itinerary update") + '</div>' +
           '<div class="pc-actions">' +
-            '<button type="button" class="pc-apply" data-idx="' + idx + '">Apply</button>' +
-            '<button type="button" class="pc-discard" data-idx="' + idx + '">Discard</button>' +
+            '<button type="button" class="btn btn-primary pc-apply" data-idx="' + idx + '">Apply</button>' +
+            '<button type="button" class="btn btn-secondary pc-discard" data-idx="' + idx + '">Discard</button>' +
           '</div></div></div>';
       }
     });
     chatLog.innerHTML = html;
-    chatLog.scrollTop = chatLog.scrollHeight;
     chatLog.querySelectorAll(".pc-apply").forEach(function (btn) {
       btn.addEventListener("click", function () { applyProposedChange(Number(btn.dataset.idx)); });
     });
@@ -802,8 +1097,7 @@
   async function applyProposedChange(idx) {
     var doc = qaDocs[idx];
     if (!doc || !doc.proposedChange) return;
-    chatStatus.textContent = "Saving…";
-    chatStatus.className = "chat-status";
+    setStatus(chatStatus, "Saving…");
     try {
       var res = await fetch("/api/trips/" + currentTripId + "/schedule/apply", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -814,12 +1108,9 @@
       doc._changeHandled = true;
       renderChat();
       renderItinerary(doc.proposedChange.days);
-      chatStatus.textContent = "Itinerary updated.";
-      chatStatus.className = "chat-status ok";
-    } catch (e) {
-      chatStatus.textContent = "Couldn't save that — try again.";
-      chatStatus.className = "chat-status error";
-    }
+      setStatus(chatStatus, "");
+      toast("Itinerary updated");
+    } catch (e) { setStatus(chatStatus, "Couldn't save that. Try again.", "error"); }
   }
   function discardProposedChange(idx) {
     var doc = qaDocs[idx];
@@ -830,24 +1121,33 @@
 
   function autoGrowChatText() {
     chatText.style.height = "auto";
-    chatText.style.height = Math.min(chatText.scrollHeight, 100) + "px";
+    chatText.style.height = Math.min(chatText.scrollHeight, 128) + "px";
+    chatSend.disabled = !chatText.value.trim();
   }
   chatText.addEventListener("input", autoGrowChatText);
   chatText.addEventListener("keydown", function (e) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); chatSend.click(); }
+  });
+  chatText.addEventListener("focus", function () { setTimeout(onViewport, 300); });
+  chatText.addEventListener("blur", function () { setTimeout(onViewport, 100); });
+  chatLog.addEventListener("click", function (e) {
+    var chip = e.target.closest && e.target.closest(".chip[data-prompt]");
+    if (!chip) return;
+    chatText.value = chip.dataset.prompt; autoGrowChatText(); chatSend.click();
   });
 
   chatSend.addEventListener("click", async function () {
     var text = chatText.value.trim();
     if (!text || !currentTripId) return;
     chatSend.disabled = true;
-    chatStatus.textContent = "Sending…";
-    chatStatus.className = "chat-status";
+    setStatus(chatStatus, "");
     var entry = { question: text, answer: null, askedAt: new Date().toISOString() };
     qaDocs.push(entry);
     renderChat();
-    // No timeout here previously meant a hung or very slow request left the
-    // bubble reading "Waiting for a reply..." forever with no visible error.
+    chatText.value = ""; autoGrowChatText(); chatSend.disabled = true;
+    scrollChatToEnd();
+    // Without a timeout, a hung or very slow request left the bubble waiting
+    // forever with no visible error.
     var timeoutMs = 60000;
     var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
     var timer = controller ? setTimeout(function () { controller.abort(); }, timeoutMs) : null;
@@ -859,11 +1159,12 @@
       });
       if (res.status === 403) {
         showAiRequired(chatStatus);
+        entry.answer = "AI research isn't on for your account yet.";
+        renderChat();
         return;
       }
       if (res.status === 401) {
-        chatStatus.textContent = "Please log in to use chat.";
-        chatStatus.className = "chat-status error";
+        setStatus(chatStatus, "Please log in to use chat.", "error");
         entry.answer = "Please log in to use chat.";
         renderChat();
         return;
@@ -873,152 +1174,146 @@
       entry.answer = data.answer;
       entry.proposedChange = data.proposedChange || null;
       renderChat();
-      chatStatus.textContent = "";
-      chatText.value = "";
-      autoGrowChatText();
+      scrollChatToEnd();
     } catch (e) {
       var timedOut = e && e.name === "AbortError";
-      chatStatus.textContent = timedOut
-        ? "That's taking too long — try again in a moment."
-        : "Couldn't send that — try again.";
-      chatStatus.className = "chat-status error";
-      entry.answer = timedOut
-        ? "⚠️ No reply after a minute — try again."
-        : "⚠️ Couldn't reach the server — try again.";
+      setStatus(chatStatus, timedOut ? "That's taking too long. Try again in a moment." : "Couldn't send that. Try again.", "error");
+      entry.answer = timedOut ? "⚠️ No reply after a minute. Try again." : "⚠️ Couldn't reach the server. Try again.";
       renderChat();
+      chatText.value = text; autoGrowChatText();
     } finally {
       if (timer) clearTimeout(timer);
-      chatSend.disabled = false;
+      chatSend.disabled = !chatText.value.trim();
     }
   });
 
   /* ---------- Watches ---------- */
-  var watchesList = document.getElementById("watchesList");
-  var watchesEmpty = document.getElementById("watchesEmpty");
+  var watchesList = $("watchesList"), watchesEmpty = $("watchesEmpty");
 
   async function refreshWatches() {
+    var id = currentTripId;
     try {
-      var res = await fetch("/api/trips/" + currentTripId + "/watches");
-      if (!res.ok) return;
+      var res = await fetch("/api/trips/" + id + "/watches");
+      if (!res.ok || currentTripId !== id) return;
       watches = await res.json();
       renderWatches();
     } catch (e) {}
+  }
+
+  function relTime(iso) {
+    var t = new Date(iso).getTime(); if (isNaN(t)) return "";
+    var m = Math.round((Date.now() - t) / 60000);
+    if (m < 1) return "just now";
+    if (m < 60) return m + " min ago";
+    var h = Math.round(m / 60); if (h < 24) return h + (h === 1 ? " hour ago" : " hours ago");
+    var d = Math.round(h / 24); if (d < 7) return d + (d === 1 ? " day ago" : " days ago");
+    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
   function renderWatches() {
     watchesEmpty.hidden = !!watches.length;
     watchesList.innerHTML = "";
     watches.forEach(function (w) {
-      var el = document.createElement("div");
-      el.className = "watch-card";
+      var el = document.createElement("div"); el.className = "watch";
       var intervalLabel = { 6: "6 hours", 24: "day", 72: "3 days", 168: "week" }[w.intervalHours] || (w.intervalHours + "h");
+      var safeUrl = w.url && /^https?:\/\//i.test(w.url) ? w.url : "";
       el.innerHTML =
         '<div class="watch-top"><span class="watch-label">' + escapeHtml(w.label) + '</span><span class="watch-kind">' + escapeHtml(w.kind) + '</span></div>' +
         (w.criteria ? '<div class="watch-criteria">' + escapeHtml(w.criteria) + '</div>' : '') +
-        (w.lastResult ? '<div class="watch-result">' + escapeHtml(w.lastResult) + '</div>' : '<div class="muted" style="padding:0 2px 8px;">Not checked yet.</div>') +
-        '<div class="watch-meta">' + (w.lastCheckedAt ? "Last checked " + new Date(w.lastCheckedAt).toLocaleString() : "Never checked") + ' · every ' + intervalLabel + '</div>' +
-        '<div class="watch-actions"><button type="button" class="watch-check-btn" data-id="' + w.id + '">Check now</button><button type="button" class="watch-remove-btn" data-id="' + w.id + '">Remove</button></div>';
+        (w.lastResult ? '<div class="watch-result">' + escapeHtml(w.lastResult) + '</div>' : '<div class="watch-none">Not checked yet.</div>') +
+        '<div class="watch-meta">' + (w.lastCheckedAt ? "Checked " + relTime(w.lastCheckedAt) : "Never checked") + ' · every ' + intervalLabel + '</div>' +
+        '<div class="watch-actions"><button type="button" class="btn btn-secondary btn-sm watch-check-btn">Check now</button>' +
+        (safeUrl ? '<a href="' + escapeHtml(safeUrl) + '" target="_blank" rel="noopener noreferrer">Open listing</a>' : '') +
+        '<button type="button" class="btn btn-plain btn-sm watch-remove-btn">Remove</button></div>';
       var checkBtn = el.querySelector(".watch-check-btn");
       checkBtn.addEventListener("click", async function () {
-        checkBtn.disabled = true;
-        checkBtn.textContent = "Checking…";
+        checkBtn.disabled = true; checkBtn.textContent = "Checking…";
         try {
           var res = await fetch("/api/trips/" + currentTripId + "/watches/" + w.id + "/check", { method: "POST" });
           if (res.status === 403 || res.status === 401) {
-            if (res.status === 403) showAiRequired(document.getElementById("wStatus"));
-            else showAuthRequired(document.getElementById("wStatus"));
+            if (res.status === 403) showAiRequired($("wStatus")); else showAuthRequired($("wStatus"));
             checkBtn.disabled = false; checkBtn.textContent = "Check now"; return;
           }
           if (!res.ok) throw new Error();
           await refreshWatches();
-        } catch (e) {
-          checkBtn.disabled = false;
-          checkBtn.textContent = "Check now";
-        }
+        } catch (e) { checkBtn.disabled = false; checkBtn.textContent = "Check now"; toast("Check failed"); }
       });
       el.querySelector(".watch-remove-btn").addEventListener("click", async function () {
+        var ok = await confirmSheet({ title: "Stop watching?", message: w.label, confirmLabel: "Remove watch", destructive: true });
+        if (!ok) return;
         var res = await fetch("/api/trips/" + currentTripId + "/watches/" + w.id, { method: "DELETE" });
-        if (res.status === 401) { showAuthRequired(document.getElementById("wStatus")); return; }
+        if (res.status === 401) { showAuthRequired($("wStatus")); return; }
         refreshWatches();
       });
       watchesList.appendChild(el);
     });
   }
 
-  document.getElementById("wAddBtn").addEventListener("click", async function () {
-    var status = document.getElementById("wStatus");
-    var label = document.getElementById("wLabel").value.trim();
-    if (!label) { status.textContent = "Say what to watch first."; status.className = "chat-status error"; return; }
-    status.textContent = "Adding…";
-    status.className = "chat-status";
+  $("wOpenBtn").addEventListener("click", function () {
+    setStatus($("wAddStatus"), "");
+    openSheet({ title: "Watch a price", body: $("sh-watch"), focus: "#wLabel" });
+  });
+  $("wAddBtn").addEventListener("click", async function () {
+    var status = $("wAddStatus"), btn = $("wAddBtn");
+    var label = $("wLabel").value.trim();
+    if (!label) { setStatus(status, "Say what to watch first.", "error"); $("wLabel").focus(); return; }
+    btn.disabled = true; setStatus(status, "Adding…");
     try {
       var res = await fetch("/api/trips/" + currentTripId + "/watches", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          kind: document.getElementById("wKind").value,
-          label: label,
-          criteria: document.getElementById("wCriteria").value.trim(),
-          url: document.getElementById("wUrl").value.trim(),
-          intervalHours: Number(document.getElementById("wInterval").value)
+          kind: $("wKind").value, label: label, criteria: $("wCriteria").value.trim(),
+          url: $("wUrl").value.trim(), intervalHours: Number($("wInterval").value)
         })
       });
-      if (res.status === 401) { showAuthRequired(status); return; }
+      if (res.status === 401) { showAuthRequired(status); btn.disabled = false; return; }
       if (!res.ok) throw new Error();
-      document.getElementById("wLabel").value = "";
-      document.getElementById("wCriteria").value = "";
-      document.getElementById("wUrl").value = "";
-      status.textContent = "";
+      $("wLabel").value = ""; $("wCriteria").value = ""; $("wUrl").value = "";
+      setStatus(status, ""); closeSheet(); toast("Watching " + label);
       refreshWatches();
-    } catch (e) {
-      status.textContent = "Couldn't add that — try again.";
-      status.className = "chat-status error";
-    }
+    } catch (e) { setStatus(status, "Couldn't add that. Try again.", "error"); }
+    btn.disabled = false;
   });
 
   /* ---------- Details / lock ---------- */
-  document.getElementById("dSaveBtn").addEventListener("click", async function () {
-    var status = document.getElementById("dStatus");
-    status.textContent = "Saving…"; status.className = "chat-status";
+  $("dSaveBtn").addEventListener("click", async function () {
+    var status = $("dStatus"), btn = $("dSaveBtn");
+    btn.disabled = true; setStatus(status, "Saving…");
     try {
       var res = await fetch("/api/trips/" + currentTripId, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: document.getElementById("dName").value.trim(),
-          destination: document.getElementById("dDest").value.trim(),
-          dateRange: document.getElementById("dDates").value.trim(),
-          notes: document.getElementById("dNotes").value
-        })
+        body: JSON.stringify({ name: $("dName").value.trim(), destination: $("dDest").value.trim(), dateRange: $("dDates").value.trim(), notes: $("dNotes").value })
       });
-      if (res.status === 401) { showAuthRequired(status); return; }
+      if (res.status === 401) { showAuthRequired(status); btn.disabled = false; return; }
       if (!res.ok) throw new Error();
-      status.textContent = "Saved.";
-      status.className = "chat-status ok";
-      loadTrip(currentTripId);
-    } catch (e) {
-      status.textContent = "Couldn't save — try again.";
-      status.className = "chat-status error";
-    }
+      setStatus(status, ""); toast("Saved");
+      var id = currentTripId; await loadTrip(id); selectTripTab("details");
+    } catch (e) { setStatus(status, "Couldn't save. Try again.", "error"); }
+    btn.disabled = false;
   });
 
-  document.getElementById("lockBtn").addEventListener("click", async function () {
-    if (!confirm("Lock in this trip? It'll move out of active planning; you can still edit and chat about it, and unlock it later if needed.")) return;
+  $("lockBtn").addEventListener("click", async function () {
+    var ok = await confirmSheet({ title: "Lock in this trip?", message: "It moves out of active planning and price checks stop. You can still chat and edit, and unlock it later if plans change.", confirmLabel: "Lock it in" });
+    if (!ok) return;
     var res = await fetch("/api/trips/" + currentTripId + "/lock", { method: "POST" });
-    if (res.status === 401) { showAuthRequired(document.getElementById("dStatus")); return; }
-    loadTrip(currentTripId);
+    if (res.status === 401) { showAuthRequired($("dStatus")); return; }
+    toast("Locked in"); var id = currentTripId; await loadTrip(id); selectTripTab("details");
   });
-  document.getElementById("unlockBtn").addEventListener("click", async function () {
+  $("unlockBtn").addEventListener("click", async function () {
     var res = await fetch("/api/trips/" + currentTripId + "/unlock", { method: "POST" });
-    if (res.status === 401) { showAuthRequired(document.getElementById("dStatus")); return; }
-    loadTrip(currentTripId);
+    if (res.status === 401) { showAuthRequired($("dStatus")); return; }
+    toast("Back to planning"); var id = currentTripId; await loadTrip(id); selectTripTab("details");
   });
-  document.getElementById("deleteBtn").addEventListener("click", async function () {
-    if (!confirm("Delete this trip? This can't be undone.")) return;
+  $("deleteBtn").addEventListener("click", async function () {
+    var ok = await confirmSheet({ title: "Delete this trip?", message: "Chat history, itinerary and watches go with it. This can't be undone.", confirmLabel: "Delete trip", destructive: true });
+    if (!ok) return;
     var res = await fetch("/api/trips/" + currentTripId, { method: "DELETE" });
-    if (res.status === 401) { showAuthRequired(document.getElementById("dStatus")); return; }
+    if (res.status === 401) { showAuthRequired($("dStatus")); return; }
     goToTrips();
   });
 
-  route();
+  refreshAuthStatus().then(function () { route(); });
 })();
 </script>
-</body></html>
+</body>
+</html>
