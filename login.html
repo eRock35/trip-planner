@@ -82,6 +82,9 @@
   .links{display:flex; flex-direction:column; gap:0; margin-top:4px;}
   @media (prefers-reduced-motion: reduce){ *{transition-duration:.01ms !important;} }
 </style>
+  <!-- Analytics. Serves an inert file unless GA_MEASUREMENT_ID is set on
+       the service, so local runs and browser tests send nothing. -->
+  <script src="/analytics.js" async></script>
 </head>
 <body>
   <div class="wrap">

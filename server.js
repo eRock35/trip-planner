@@ -3,6 +3,7 @@ const path = require('path');
 const { Firestore } = require('@google-cloud/firestore');
 const Anthropic = require('@anthropic-ai/sdk');
 const { createAccounts } = require('./accounts');
+const analytics = require('./analytics');
 
 const PORT = process.env.PORT || 8080;
 const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'metal-celerity-236019';
@@ -41,6 +42,12 @@ app.get('/healthz', (req, res) => res.status(200).send('ok'));
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
 
 // Every request gets req.user (or null) before any gate runs.
+// Analytics. Mounted BEFORE the gate below: a gated /analytics.js is a 401,
+// so the sign-in page - the page every visitor actually sees - would be the
+// one page that never measures. Serves an inert file unless
+// GA_MEASUREMENT_ID is set on the service.
+analytics.mount(app, 'trip-planner');
+
 app.use(accounts.attachUser);
 accounts.mount(app);
 
