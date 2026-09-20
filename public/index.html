@@ -539,11 +539,33 @@
     }
   });
 
+  // What an anonymous visitor sees. Registration is open, so this is an
+  // invitation rather than a wall.
+  function renderSignedOut(list) {
+    list.innerHTML = "";
+    var box = document.createElement("div");
+    box.className = "empty-state";
+    var p = document.createElement("p");
+    p.textContent = "Sign in to see your trips, or create an account — it takes a moment and your trips are yours alone.";
+    box.appendChild(p);
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "authbar-btn";
+    btn.textContent = "Sign in or create an account";
+    btn.addEventListener("click", function () { location.href = "/login"; });
+    box.appendChild(btn);
+    list.appendChild(box);
+  }
+
   async function loadTripsList() {
     var list = document.getElementById("tripsList");
     list.innerHTML = '<p class="muted">Loading…</p>';
     try {
       var res = await fetch("/api/trips");
+      // Signed out is the normal first visit now that trips belong to an
+      // account - it is not an error, and "try reloading" is useless advice
+      // because reloading will never sign anyone in.
+      if (res.status === 401) { renderSignedOut(list); return; }
       var trips = await res.json();
       if (!res.ok) throw new Error();
       if (!trips.length) {
@@ -588,7 +610,7 @@
     selectTripTab("chat");
     try {
       var res = await fetch("/api/trips/" + id);
-      if (!res.ok) { goToTrips(); return; }
+      if (!res.ok) { goToTrips(); return; }  // 401 lands on the signed-out state
       currentTrip = await res.json();
     } catch (e) { goToTrips(); return; }
 
