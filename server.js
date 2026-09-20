@@ -3,6 +3,8 @@ const path = require('path');
 const { Firestore } = require('@google-cloud/firestore');
 const Anthropic = require('@anthropic-ai/sdk');
 const { createAccounts } = require('./accounts');
+const identityLib = require('./identity');
+const identityStore = require('./identity-store');
 const analytics = require('./analytics');
 
 const PORT = process.env.PORT || 8080;
@@ -48,7 +50,123 @@ app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html'))
 // GA_MEASUREMENT_ID is set on the service.
 analytics.mount(app, 'trip-planner');
 
-app.use(accounts.attachUser);
+// The shared account, mounted at /api/auth - where this app's pages already
+// post - so register, login, logout, password and the Face ID routes keep
+// their URLs. It is registered BEFORE accounts.mount, so identity wins every
+// path the two both define and this app's own copies are never reached.
+//
+// This app keeps its OWN users/<uid> record for what identity has no opinion
+// about: aiAccess (who may spend Anthropic tokens), isAdmin, and the reset
+// request flag. The uid is unchanged - both derive base64url of the lowercased
+// email - so every existing trip stays owned by the same person.
+const identity = identityLib.create({
+  store: identityStore.store,
+  secret: () => process.env.IDENTITY_SESSION_SECRET || '',
+  app: 'trip-planner',
+  baseDomain: process.env.PASSKEY_RP_ID || '',
+  rpName: 'Trip Planner',
+  mountPath: '/api/auth',
+});
+
+/** Identity says who; this app's own record says what they may do here.
+ *  `uid` is kept alongside `id` because every route in this file reads
+ *  req.user.uid, and renaming it would touch ownership checks on live data. */
+async function attachProfile(req, _res, next) {
+  if (req.user) {
+    req.user.uid = req.user.id;
+    const own = await db.collection('users').doc(req.user.id).get().catch(() => null);
+    if (own && own.exists) {
+      const d = own.data();
+      req.user.aiAccess = d.aiAccess || 'none';
+      req.user.isAdmin = !!d.isAdmin;
+      req.user.mustChangePassword = !!d.mustChangePassword;
+      req.user.displayName = d.displayName || req.user.email;
+    } else {
+      // First sight of this account on this app. Give it a record so the
+      // admin panel can see it and grant AI access.
+      req.user.aiAccess = 'none';
+      req.user.isAdmin = ADMIN_EMAIL && req.user.email === ADMIN_EMAIL;
+      await db.collection('users').doc(req.user.id).set({
+        email: req.user.email,
+        aiAccess: req.user.isAdmin ? 'approved' : 'none',
+        isAdmin: !!req.user.isAdmin,
+        createdAt: new Date().toISOString(),
+      }, { merge: true }).catch(() => {});
+      if (req.user.isAdmin) req.user.aiAccess = 'approved';
+    }
+  }
+  next();
+}
+
+// Registered before identity.mount so it wins /api/auth/me: the page needs
+// aiAccess and isAdmin, which are this app's business, not identity's.
+app.get('/api/auth/me', identity.attachUser, attachProfile, (req, res) => {
+  if (!req.user) return res.json({ signedIn: false });
+  res.json({
+    signedIn: true,
+    uid: req.user.id,
+    email: req.user.email,
+    via: req.user.via,
+    displayName: req.user.displayName || req.user.email,
+    aiAccess: req.user.aiAccess || 'none',
+    isAdmin: !!req.user.isAdmin,
+    mustChangePassword: !!req.user.mustChangePassword,
+  });
+});
+
+identity.mount(app);
+app.use(attachProfile);
+
+// The admin reset door, moved onto the identity record because that is where
+// the password lives now. Registered before accounts.mount so these win over
+// this app's originals, which would otherwise write a password nobody reads.
+//
+// There is still no mail sender on this project, so this and a Face ID session
+// remain the only two ways back in for someone who forgets their password -
+// see the reasoning in CLAUDE.md.
+app.post('/api/auth/reset-request', async (req, res) => {
+  try {
+    const uid = identityLib.uidFor((req.body || {}).email);
+    const user = await identityStore.store.get('users', uid);
+    if (user) {
+      // The flag lives on THIS app's record: it is what the admin panel here
+      // lists, and it is this app's workflow, not identity's.
+      await db.collection('users').doc(uid).set({ resetRequestedAt: new Date().toISOString() }, { merge: true });
+    }
+  } catch (err) {
+    console.error('POST /api/auth/reset-request', err);
+  }
+  // The same answer either way, or this tells a stranger which addresses are
+  // registered.
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/reset-password', requireLogin, accounts.requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'userId is required.' });
+    const target = await identityStore.store.get('users', userId);
+    if (!target) return res.status(404).json({ error: 'No such user.' });
+
+    // Returned exactly once and never stored in the clear.
+    const password = require('crypto').randomBytes(9).toString('base64url');
+    await identityStore.store.set('users', userId, {
+      ...target,
+      password: identityLib.makeHash(password),
+      passwordChangedAt: new Date().toISOString(),
+    });
+    await db.collection('users').doc(userId).set({
+      mustChangePassword: true,
+      resetRequestedAt: null,
+    }, { merge: true });
+    await identity.log('password.admin-reset', req, { uid: userId, email: target.email });
+    res.json({ ok: true, password, email: target.email });
+  } catch (err) {
+    console.error('POST /api/admin/reset-password', err);
+    res.status(500).json({ error: 'Could not reset that password.' });
+  }
+});
+
 accounts.mount(app);
 
 function requireLoginOrCron(req, res, next) {
