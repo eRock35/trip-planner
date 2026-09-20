@@ -3,8 +3,12 @@
 Research, plan, and monitor upcoming trips — flights, hotels, Airbnbs — in
 one place, with Claude helping via chat. When a trip is booked, "lock it in"
 and it becomes a settled itinerary instead of an active research target.
-Private (not because of PII the way `santa-rosa-beach-trip` is, but because
-it's personal trip research/budget info) — don't suggest making it public.
+
+The **GitHub repo is public** (Erik's explicit choice — it holds no secrets,
+no PII, no credentials; those all live in Secret Manager and env vars). The
+**deployed app** has a narrower gate than the repo's visibility implies —
+see "Sign-in" below: anyone can browse it, but saving anything costs
+Anthropic tokens, so that's login-gated.
 
 ## The core idea: one app, many trips
 
@@ -56,6 +60,29 @@ need it.
     lastCheckedAt, lastResult, history}`. `history` is capped at 20 entries.
 - `control/watch-cron` — single doc, `{lastRunAt, checked}` from the most
   recent batch run.
+
+## Sign-in: public browse, gated writes
+
+Unlike `santa-rosa-beach-trip` (whole app gated, because of real family PII),
+this app is **public to browse** — same split `college-football-app` uses,
+and for the same reason: letting anyone view/play costs nothing, but any
+route that spends an Anthropic call or writes data does cost money, so
+*those* routes require login. `requireLogin` is applied per-route in
+`server.js`, not as a blanket `app.use(requireLogin)` — see the auth section
+comment there for the exact list. Public: `GET /api/trips`, `GET
+/api/trips/:id`, `GET /api/trips/:id/messages`, `GET /api/trips/:id/watches`,
+static file serving, and the `/api/auth/*` routes themselves. Gated: every
+create/update/delete/lock/unlock/chat/apply/watch-check route.
+`/api/cron/check-watches` is separately on `requireLoginOrCron` (session or
+the cron secret), unaffected by this split.
+
+`auth.js` already exposes `GET /api/auth/status` (`{signedIn,
+passkeyRegistered}`) and `POST /api/auth/logout` — `public/index.html` polls
+status on load to render a small "Log in" / "Log out" bar at the top, and
+every mutating fetch call checks for a `401` response and points the user at
+`/login` via `showAuthRequired()` instead of failing silently. Keep both of
+those in sync if you add a new mutating route: gate it server-side with
+`requireLogin`, and handle its `401` client-side the same way.
 
 ## Chat can draft or edit the itinerary
 

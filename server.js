@@ -19,10 +19,12 @@ const app = express();
 app.use(express.json());
 
 // ---------------------------------------------------------------------------
-// Auth - identical shape to santa-rosa-beach-trip (same auth.js, verbatim).
-// The whole app is gated because trip research/plans are personal, and the
-// login page has to live outside the gate or there'd be nowhere to offer
-// Face ID from.
+// Auth - auth.js and login.html are the same file as santa-rosa-beach-trip
+// (Face ID / Touch ID via WebAuthn, password fallback), but the GATE SHAPE
+// is different: this app is public to browse, same split college-football-app
+// uses and for the same reason. Anyone can load the page and view trips; only
+// routes that spend Anthropic tokens or write data require login. See
+// requireLogin's call sites below - it's applied per-route, not globally.
 // ---------------------------------------------------------------------------
 function passwordOk(req) {
   if (!SITE_LOGIN_USERNAME || !SITE_LOGIN_PASSWORD) return false;
@@ -89,7 +91,6 @@ function requireLoginOrCron(req, res, next) {
   return requireLogin(req, res, next);
 }
 
-app.use(requireLogin);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------------------------------------------------------------------------
@@ -120,7 +121,7 @@ app.get('/api/trips', async (req, res) => {
   }
 });
 
-app.post('/api/trips', async (req, res) => {
+app.post('/api/trips', requireLogin, async (req, res) => {
   try {
     const { name, destination, dateRange, notes } = req.body || {};
     if (!name) return res.status(400).json({ error: 'name is required.' });
@@ -155,7 +156,7 @@ app.get('/api/trips/:id', async (req, res) => {
   }
 });
 
-app.patch('/api/trips/:id', async (req, res) => {
+app.patch('/api/trips/:id', requireLogin, async (req, res) => {
   try {
     const { name, destination, dateRange, notes } = req.body || {};
     const patch = { updatedAt: new Date().toISOString() };
@@ -174,7 +175,7 @@ app.patch('/api/trips/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/trips/:id', async (req, res) => {
+app.delete('/api/trips/:id', requireLogin, async (req, res) => {
   try {
     await db.collection('trips').doc(req.params.id).delete();
     res.json({ ok: true });
@@ -189,7 +190,7 @@ app.delete('/api/trips/:id', async (req, res) => {
 // in the same app. It stops showing up as an active planning target and
 // drops out of the watch batch-check below. That is the entire "make it its
 // own thing" mechanism - see CLAUDE.md.
-app.post('/api/trips/:id/lock', async (req, res) => {
+app.post('/api/trips/:id/lock', requireLogin, async (req, res) => {
   try {
     const ref = db.collection('trips').doc(req.params.id);
     const doc = await ref.get();
@@ -203,7 +204,7 @@ app.post('/api/trips/:id/lock', async (req, res) => {
   }
 });
 
-app.post('/api/trips/:id/unlock', async (req, res) => {
+app.post('/api/trips/:id/unlock', requireLogin, async (req, res) => {
   try {
     const ref = db.collection('trips').doc(req.params.id);
     const doc = await ref.get();
@@ -266,7 +267,7 @@ app.get('/api/trips/:id/messages', async (req, res) => {
   }
 });
 
-app.post('/api/trips/:id/chat', async (req, res) => {
+app.post('/api/trips/:id/chat', requireLogin, async (req, res) => {
   try {
     const { question } = req.body || {};
     if (!question) return res.status(400).json({ error: 'question is required.' });
@@ -331,7 +332,7 @@ app.post('/api/trips/:id/chat', async (req, res) => {
   }
 });
 
-app.post('/api/trips/:id/schedule/apply', async (req, res) => {
+app.post('/api/trips/:id/schedule/apply', requireLogin, async (req, res) => {
   try {
     const { days } = req.body || {};
     if (!Array.isArray(days) || !days.length) {
@@ -395,7 +396,7 @@ app.get('/api/trips/:id/watches', async (req, res) => {
   }
 });
 
-app.post('/api/trips/:id/watches', async (req, res) => {
+app.post('/api/trips/:id/watches', requireLogin, async (req, res) => {
   try {
     const { kind, label, criteria, url, intervalHours } = req.body || {};
     if (!label) return res.status(400).json({ error: 'label is required.' });
@@ -421,7 +422,7 @@ app.post('/api/trips/:id/watches', async (req, res) => {
   }
 });
 
-app.patch('/api/trips/:id/watches/:watchId', async (req, res) => {
+app.patch('/api/trips/:id/watches/:watchId', requireLogin, async (req, res) => {
   try {
     const { criteria, url, intervalHours } = req.body || {};
     const patch = {};
@@ -439,7 +440,7 @@ app.patch('/api/trips/:id/watches/:watchId', async (req, res) => {
   }
 });
 
-app.delete('/api/trips/:id/watches/:watchId', async (req, res) => {
+app.delete('/api/trips/:id/watches/:watchId', requireLogin, async (req, res) => {
   try {
     await db.collection('trips').doc(req.params.id).collection('watches').doc(req.params.watchId).delete();
     res.json({ ok: true });
@@ -449,7 +450,7 @@ app.delete('/api/trips/:id/watches/:watchId', async (req, res) => {
   }
 });
 
-app.post('/api/trips/:id/watches/:watchId/check', async (req, res) => {
+app.post('/api/trips/:id/watches/:watchId/check', requireLogin, async (req, res) => {
   try {
     const tripDoc = await db.collection('trips').doc(req.params.id).get();
     if (!tripDoc.exists) return res.status(404).json({ error: 'Trip not found.' });

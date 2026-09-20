@@ -127,10 +127,19 @@
 
   footer { text-align: center; color: var(--label-3); font-size: 12px; padding-top: 4px; }
   [hidden] { display: none !important; }
+
+  .authbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 4px; }
+  .authbar-text { font-size: 12.5px; color: var(--label-3); }
+  .authbar-btn { font: inherit; font-size: 12.5px; font-weight: 600; color: var(--tint); background: none; border: none; padding: 4px 2px; cursor: pointer; }
 </style>
 </head>
 <body>
 <div class="wrap">
+
+  <div class="authbar">
+    <span class="authbar-text" id="authBarText"></span>
+    <button type="button" class="authbar-btn" id="authBarBtn"></button>
+  </div>
 
   <div id="view-trips">
     <div class="title-block">
@@ -266,6 +275,41 @@
     });
   }
 
+  /* ---------- Auth bar ---------- */
+  var authBarText = document.getElementById("authBarText");
+  var authBarBtn = document.getElementById("authBarBtn");
+  var isSignedIn = false;
+
+  function renderAuthBar() {
+    authBarText.textContent = isSignedIn ? "Signed in" : "Browsing — log in to save";
+    authBarBtn.textContent = isSignedIn ? "Log out" : "Log in";
+  }
+  async function refreshAuthStatus() {
+    try {
+      var res = await fetch("/api/auth/status");
+      var data = await res.json();
+      isSignedIn = !!(data && data.signedIn);
+    } catch (e) { isSignedIn = false; }
+    renderAuthBar();
+  }
+  authBarBtn.addEventListener("click", async function () {
+    if (isSignedIn) {
+      try { await fetch("/api/auth/logout", { method: "POST" }); } catch (e) {}
+      isSignedIn = false;
+      renderAuthBar();
+    } else {
+      location.href = "/login";
+    }
+  });
+  renderAuthBar();
+  refreshAuthStatus();
+
+  function showAuthRequired(statusEl) {
+    if (!statusEl) { location.href = "/login"; return; }
+    statusEl.textContent = "Please log in to save changes.";
+    statusEl.className = "chat-status error";
+  }
+
   /* ---------- Routing: #/trips  or  #/trip/<id> ---------- */
   var viewTrips = document.getElementById("view-trips");
   var viewTrip = document.getElementById("view-trip");
@@ -321,6 +365,7 @@
           dateRange: document.getElementById("ntDates").value.trim()
         })
       });
+      if (res.status === 401) { showAuthRequired(status); return; }
       var data = await res.json();
       if (!res.ok) throw new Error(data.error || "failed");
       document.getElementById("ntName").value = "";
@@ -516,6 +561,7 @@
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ days: doc.proposedChange.days })
       });
+      if (res.status === 401) { showAuthRequired(chatStatus); return; }
       if (!res.ok) throw new Error();
       doc._changeHandled = true;
       renderChat();
@@ -606,6 +652,7 @@
         checkBtn.textContent = "Checking…";
         try {
           var res = await fetch("/api/trips/" + currentTripId + "/watches/" + w.id + "/check", { method: "POST" });
+          if (res.status === 401) { showAuthRequired(document.getElementById("wStatus")); checkBtn.disabled = false; checkBtn.textContent = "Check now"; return; }
           if (!res.ok) throw new Error();
           await refreshWatches();
         } catch (e) {
@@ -614,7 +661,8 @@
         }
       });
       el.querySelector(".watch-remove-btn").addEventListener("click", async function () {
-        await fetch("/api/trips/" + currentTripId + "/watches/" + w.id, { method: "DELETE" });
+        var res = await fetch("/api/trips/" + currentTripId + "/watches/" + w.id, { method: "DELETE" });
+        if (res.status === 401) { showAuthRequired(document.getElementById("wStatus")); return; }
         refreshWatches();
       });
       watchesList.appendChild(el);
@@ -638,6 +686,7 @@
           intervalHours: Number(document.getElementById("wInterval").value)
         })
       });
+      if (res.status === 401) { showAuthRequired(status); return; }
       if (!res.ok) throw new Error();
       document.getElementById("wLabel").value = "";
       document.getElementById("wCriteria").value = "";
@@ -664,6 +713,7 @@
           notes: document.getElementById("dNotes").value
         })
       });
+      if (res.status === 401) { showAuthRequired(status); return; }
       if (!res.ok) throw new Error();
       status.textContent = "Saved.";
       status.className = "chat-status ok";
@@ -676,16 +726,19 @@
 
   document.getElementById("lockBtn").addEventListener("click", async function () {
     if (!confirm("Lock in this trip? It'll move out of active planning; you can still edit and chat about it, and unlock it later if needed.")) return;
-    await fetch("/api/trips/" + currentTripId + "/lock", { method: "POST" });
+    var res = await fetch("/api/trips/" + currentTripId + "/lock", { method: "POST" });
+    if (res.status === 401) { showAuthRequired(document.getElementById("dStatus")); return; }
     loadTrip(currentTripId);
   });
   document.getElementById("unlockBtn").addEventListener("click", async function () {
-    await fetch("/api/trips/" + currentTripId + "/unlock", { method: "POST" });
+    var res = await fetch("/api/trips/" + currentTripId + "/unlock", { method: "POST" });
+    if (res.status === 401) { showAuthRequired(document.getElementById("dStatus")); return; }
     loadTrip(currentTripId);
   });
   document.getElementById("deleteBtn").addEventListener("click", async function () {
     if (!confirm("Delete this trip? This can't be undone.")) return;
-    await fetch("/api/trips/" + currentTripId, { method: "DELETE" });
+    var res = await fetch("/api/trips/" + currentTripId, { method: "DELETE" });
+    if (res.status === 401) { showAuthRequired(document.getElementById("dStatus")); return; }
     goToTrips();
   });
 
