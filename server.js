@@ -116,6 +116,8 @@ app.get('/api/auth/me', identity.attachUser, attachProfile, (req, res) => {
 
 identity.mount(app);
 app.use(attachProfile);
+// Every Anthropic call through this client is now priced and recorded.
+identity.meter(anthropic);
 
 // The admin reset door, moved onto the identity record because that is where
 // the password lives now. Registered before accounts.mount so these win over

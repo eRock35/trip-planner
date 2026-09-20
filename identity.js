@@ -348,6 +348,41 @@ function create(opts) {
     return row;
   }
 
+  /**
+   * Wrap an Anthropic client so every call records what it cost.
+   *
+   * Done at the client rather than at each call site on purpose: there are ten
+   * call sites across five apps, and the one that gets added next year is
+   * exactly the one that would be forgotten. Wrapping the client means a new
+   * route is metered by existing.
+   *
+   * Fire-and-forget: the write is never awaited, so measuring a call cannot
+   * add latency to it, and recordUsage swallows its own errors so a failed
+   * write cannot fail the request it was measuring.
+   *
+   * The Batch API is NOT covered - a batch's usage is not known when it is
+   * submitted, only when its results are read, so metering it belongs with
+   * the collect step rather than here.
+   */
+  function meter(client, opts = {}) {
+    const original = client.messages.create.bind(client.messages);
+    client.messages.create = async (params, ...rest) => {
+      const res = await original(params, ...rest);
+      try {
+        if (res && res.usage) {
+          recordUsage({
+            model: (params && params.model) || null,
+            usage: res.usage,
+            route: opts.route || null,
+            uid: opts.uid || null,
+          }).catch(() => {});
+        }
+      } catch (e) { /* never let measurement break the call */ }
+      return res;
+    };
+    return client;
+  }
+
   /* ---------- passkeys, via the shared WebAuthn module ---------- */
 
   const passkeys = webauthn.create({
@@ -493,6 +528,7 @@ function create(opts) {
     },
     log,
     recordUsage,
+    meter,
     priceOf,
     MIN_PASSWORD,
     COOKIE,
