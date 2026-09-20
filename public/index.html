@@ -1107,10 +1107,14 @@
         body: JSON.stringify({ days: doc.proposedChange.days })
       });
       if (res.status === 401) { showAuthRequired(chatStatus); return; }
-      if (!res.ok) throw new Error();
+      var saved = await res.json().catch(function () { return {}; });
+      if (!res.ok || saved.error) throw new Error(saved.error || "failed");
       doc._changeHandled = true;
       renderChat();
-      renderItinerary(doc.proposedChange.days);
+      // Draw what was SAVED, not what was proposed. The server normalises the
+      // days it stores, so rendering the proposal would briefly show something
+      // slightly different from what a reload will show.
+      renderItinerary(Array.isArray(saved.days) ? saved.days : doc.proposedChange.days);
       setStatus(chatStatus, "");
       toast("Itinerary updated");
     } catch (e) { setStatus(chatStatus, "Couldn't save that. Try again.", "error"); }

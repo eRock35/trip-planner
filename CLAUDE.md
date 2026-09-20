@@ -142,6 +142,14 @@ Apply/Discard card, and only `POST /api/trips/:id/schedule/apply` (fired by
 the user's own tap) actually saves it. Keep this shape if you touch this
 flow — deliberate, not something to let an LLM silently rewrite.
 
+The proposed `days` array is **validated before it is offered**, not only on
+apply (`schedule.js`, a copy of `santa-rosa-beach-trip`'s minus the seed):
+it comes out of a model, so a day with no `blocks` or a date that is not a
+date would render as a broken Itinerary tab needing a deploy to fix. An Apply
+button that leads to a 400 is worse than a proposal never made. `apply`
+returns the saved days and the page draws those rather than the proposal, so
+what you see is what a reload will show.
+
 Runs on `claude-sonnet-5` (tool use + web search).
 
 ### Long answers stream whitespace

@@ -6,6 +6,7 @@ const { createAccounts } = require('./accounts');
 const identityLib = require('./identity');
 const identityStore = require('./identity-store');
 const analytics = require('./analytics');
+const schedule = require('./schedule');
 
 const PORT = process.env.PORT || 8080;
 const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'metal-celerity-236019';
@@ -443,7 +444,11 @@ app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, identity.requireB
       'Use web search for current info - flights, hotels, activities, weather, prices. Be specific and concrete, ' +
       'never invent a price or availability - say so if you cannot verify something. If the user asks you to ' +
       'draft or change the day-by-day itinerary, call the propose_schedule_change tool with the COMPLETE days ' +
-      'array - never call it just to answer a question with no requested plan or change.\n\n' +
+      'array - never call it just to answer a question with no requested plan or change. Keep every day and ' +
+      'every entry the user did not ask you to touch exactly as it was: what you return replaces the whole ' +
+      'itinerary. You have the itinerary below and can change it, so never say you have no itinerary or ask ' +
+      'for one to be shared with you, and when asked for a change make a concrete suggestion and propose it ' +
+      'rather than asking which of several options they want, unless the request is genuinely ambiguous.\n\n' +
       'Current itinerary:\n' + JSON.stringify(trip.days || []);
 
     const response = await completeTurn({
@@ -465,7 +470,9 @@ app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, identity.requireB
     if (toolBlock && toolBlock.input && Array.isArray(toolBlock.input.days) && toolBlock.input.days.length) {
       proposedChange = {
         summary: typeof toolBlock.input.summary === 'string' ? toolBlock.input.summary : 'Itinerary update',
-        days: toolBlock.input.days,
+        // Checked here, not only on apply: an Apply button that leads to a 400
+        // is worse than a proposal that was never offered.
+        days: schedule.validate(toolBlock.input.days),
       };
       if (!answer) {
         answer = "I've drafted a plan: " + proposedChange.summary + ' Review it below and tap Apply to save it.';
@@ -508,15 +515,13 @@ app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, identity.requireB
 
 app.post('/api/trips/:id/schedule/apply', requireLogin, async (req, res) => {
   try {
-    const { days } = req.body || {};
-    if (!Array.isArray(days) || !days.length) {
-      return res.status(400).json({ error: 'days array is required.' });
-    }
+    const days = schedule.validate((req.body || {}).days);
     const owned = await loadOwnedTrip(req, res);
     if (!owned) return;
     await owned.ref.update({ days, updatedAt: new Date().toISOString() });
-    res.json({ ok: true });
+    res.json({ ok: true, days });
   } catch (err) {
+    if (err.status === 400) return res.status(400).json({ error: err.message });
     console.error('POST /api/trips/:id/schedule/apply', err);
     res.status(500).json({ error: 'Could not save the itinerary.' });
   }
