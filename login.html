@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Trip Planner</title>
+<style>
+  :root{
+    --bg:#F2F2F7; --card:#FFFFFF; --fill:rgba(120,120,128,0.12);
+    --label:#000; --label-2:rgba(60,60,67,0.6); --sep:rgba(60,60,67,0.29);
+    --tint:#007AFF; --red:#FF3B30;
+    --shadow:0 1px 2px rgba(0,0,0,.04), 0 10px 24px rgba(0,0,0,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#000; --card:#1C1C1E; --fill:rgba(120,120,128,0.24);
+      --label:#fff; --label-2:rgba(235,235,245,0.6); --sep:rgba(84,84,88,0.65);
+      --tint:#0A84FF; --red:#FF453A;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 24px rgba(0,0,0,.45);
+    }
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{
+    margin:0; min-height:100vh; background:var(--bg); color:var(--label);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
+    display:flex; align-items:center; justify-content:center; padding:24px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{width:100%; max-width:380px;}
+  .hero{text-align:center; margin-bottom:24px;}
+  .hero .eyebrow{font-size:13px; font-weight:600; color:var(--tint); text-transform:uppercase; letter-spacing:.02em; margin:0 0 4px;}
+  .hero h1{font-size:26px; font-weight:700; letter-spacing:-.02em; margin:0;}
+  .card{background:var(--card); border-radius:18px; box-shadow:var(--shadow); padding:20px;}
+  button{font:inherit;}
+  .primary{
+    width:100%; border:none; border-radius:12px; background:var(--tint); color:#fff;
+    font-size:16px; font-weight:600; padding:13px; cursor:pointer;
+  }
+  .primary:disabled{opacity:.5;}
+  .linkish{
+    width:100%; border:none; background:none; color:var(--tint);
+    font-size:14px; font-weight:600; padding:12px 4px 2px; cursor:pointer;
+  }
+  .divider{display:flex; align-items:center; gap:10px; color:var(--label-2); font-size:12px; margin:16px 0;}
+  .divider::before,.divider::after{content:""; flex:1; height:1px; background:var(--sep);}
+  label{display:block; font-size:12.5px; color:var(--label-2); margin:0 0 4px;}
+  input{
+    width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--sep);
+    background:var(--fill); color:var(--label); font-size:16px; margin-bottom:12px;
+  }
+  input:focus{outline:2px solid var(--tint); outline-offset:1px;}
+  .status{min-height:1.2em; font-size:13px; color:var(--label-2); text-align:center; margin-top:12px;}
+  .status.error{color:var(--red);}
+  #pwBlock[hidden]{display:none;}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <p class="eyebrow">Trip Planner</p>
+      <h1>Research &amp; Plan</h1>
+    </div>
+    <div class="card">
+      <button class="primary" id="faceBtn" hidden>Sign in with Face ID</button>
+      <div class="divider" id="divider" hidden>or</div>
+
+      <div id="pwBlock">
+        <label for="u">Username</label>
+        <input id="u" autocomplete="username" autocapitalize="none" autocorrect="off" />
+        <label for="p">Password</label>
+        <input id="p" type="password" autocomplete="current-password" />
+        <button class="primary" id="pwBtn">Sign in</button>
+      </div>
+
+      <button class="linkish" id="showPw" hidden>Use password instead</button>
+      <div class="status" id="status"></div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+  var statusEl = document.getElementById('status');
+  var faceBtn = document.getElementById('faceBtn');
+  var divider = document.getElementById('divider');
+  var pwBlock = document.getElementById('pwBlock');
+  var showPw = document.getElementById('showPw');
+
+  function say(msg, isError){
+    statusEl.textContent = msg || '';
+    statusEl.className = 'status' + (isError ? ' error' : '');
+  }
+  function go(){ window.location.replace('/'); }
+
+  function b64urlToBuf(str){
+    var pad = str.length % 4 ? new Array(5 - (str.length % 4)).join('=') : '';
+    var bin = atob(str.replace(/-/g,'+').replace(/_/g,'/') + pad);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
+  function bufToB64url(buf){
+    var bytes = new Uint8Array(buf), str = '';
+    for (var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
+    return btoa(str).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+  var supported = !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.get);
+
+  // Show the Face ID button only if a passkey actually exists on this domain.
+  fetch('/api/auth/status').then(function(r){ return r.json(); }).then(function(s){
+    if (supported && s.passkeyRegistered){
+      faceBtn.hidden = false;
+      divider.hidden = false;
+      pwBlock.hidden = true;
+      showPw.hidden = false;
+    }
+  }).catch(function(){});
+
+  showPw.addEventListener('click', function(){
+    pwBlock.hidden = false;
+    showPw.hidden = true;
+  });
+
+  faceBtn.addEventListener('click', function(){
+    say('Waiting for Face ID…');
+    faceBtn.disabled = true;
+    fetch('/api/auth/passkey/login/options', {method:'POST'})
+      .then(function(r){ return r.json().then(function(d){ if (!r.ok) throw new Error(d.error || 'failed'); return d; }); })
+      .then(function(options){
+        options.challenge = b64urlToBuf(options.challenge);
+        (options.allowCredentials || []).forEach(function(c){ c.id = b64urlToBuf(c.id); });
+        return navigator.credentials.get({publicKey: options});
+      })
+      .then(function(cred){
+        return fetch('/api/auth/passkey/login/verify', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            id: cred.id,
+            rawId: bufToB64url(cred.rawId),
+            type: cred.type,
+            clientExtensionResults: cred.getClientExtensionResults(),
+            response: {
+              clientDataJSON: bufToB64url(cred.response.clientDataJSON),
+              authenticatorData: bufToB64url(cred.response.authenticatorData),
+              signature: bufToB64url(cred.response.signature),
+              userHandle: cred.response.userHandle ? bufToB64url(cred.response.userHandle) : undefined
+            }
+          })
+        });
+      })
+      .then(function(r){ return r.json().then(function(d){ if (!r.ok) throw new Error(d.error || 'failed'); return d; }); })
+      .then(go)
+      .catch(function(err){
+        faceBtn.disabled = false;
+        say(err && err.name === 'NotAllowedError' ? 'Cancelled.' : 'Face ID sign-in failed — use your password.', true);
+        pwBlock.hidden = false;
+        showPw.hidden = true;
+      });
+  });
+
+  function submitPassword(){
+    var u = document.getElementById('u').value.trim();
+    var p = document.getElementById('p').value;
+    if (!u || !p){ say('Enter your username and password.', true); return; }
+    say('Signing in…');
+    fetch('/api/auth/password', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({username:u, password:p})
+    }).then(function(r){
+      if (!r.ok) throw new Error('bad');
+      return r.json();
+    }).then(go).catch(function(){
+      say('That username or password didn’t work.', true);
+    });
+  }
+  document.getElementById('pwBtn').addEventListener('click', submitPassword);
+  document.getElementById('p').addEventListener('keydown', function(e){
+    if (e.key === 'Enter'){ e.preventDefault(); submitPassword(); }
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,695 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Trip Planner</title>
+<style>
+  :root {
+    --bg: #F2F2F7; --card: #FFFFFF; --fill: rgba(120,120,128,0.12); --fill-2: rgba(120,120,128,0.16);
+    --label: #000000; --label-2: rgba(60,60,67,0.6); --label-3: rgba(60,60,67,0.4);
+    --sep: rgba(60,60,67,0.29);
+    --tint: #007AFF; --red: #FF3B30; --orange: #FF9500; --green: #34C759;
+    --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 10px 24px rgba(0,0,0,0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #000000; --card: #1C1C1E; --fill: rgba(120,120,128,0.24); --fill-2: rgba(120,120,128,0.32);
+      --label: #FFFFFF; --label-2: rgba(235,235,245,0.6); --label-3: rgba(235,235,245,0.4);
+      --sep: rgba(84,84,88,0.65);
+      --tint: #0A84FF; --red: #FF453A; --orange: #FF9F0A; --green: #32D74B;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 10px 24px rgba(0,0,0,0.45);
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: var(--bg); color: var(--label); margin: 0; min-height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    padding-inline: 16px; padding-block: 20px 100px; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+  .title-block { padding: 4px 4px 0; display: flex; align-items: center; justify-content: space-between; }
+  .eyebrow { font-size: 13px; font-weight: 600; color: var(--tint); text-transform: uppercase; letter-spacing: 0.02em; margin: 0 0 2px; }
+  h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin: 0; line-height: 1.1; }
+  .icon-btn {
+    width: 36px; height: 36px; border-radius: 50%; border: none; background: var(--fill); color: var(--tint);
+    font-size: 18px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  }
+  .back-btn { background: none; border: none; color: var(--tint); font: inherit; font-size: 15px; font-weight: 600; padding: 4px 0; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+  .section-header { font-size: 13px; font-weight: 600; color: var(--label-2); text-transform: uppercase; letter-spacing: 0.02em; margin: 0 4px 8px; }
+  .card { background: var(--card); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; }
+  .card-pad { padding: 16px 18px; }
+  p { margin: 0 0 8px; font-size: 15px; line-height: 1.45; }
+  p:last-child { margin-bottom: 0; }
+  .muted { color: var(--label-2); font-size: 13px !important; }
+  input, textarea {
+    width: 100%; font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--sep); background: var(--fill); color: var(--label);
+  }
+  label { display: block; font-size: 13px; color: var(--label-2); margin: 0 2px 4px; }
+  .field { margin-bottom: 12px; }
+  .btn { font: inherit; font-weight: 600; font-size: 15px; border: none; border-radius: 12px; padding: 12px 16px; cursor: pointer; }
+  .btn-primary { background: var(--tint); color: #fff; width: 100%; }
+  .btn-primary:disabled { opacity: 0.5; }
+  .btn-ghost { background: var(--fill); color: var(--label); }
+  .btn-danger { background: none; color: var(--red); }
+
+  /* Trip list */
+  .trip-card { display: block; width: 100%; text-align: left; background: var(--card); border: none; border-radius: 16px; box-shadow: var(--shadow); padding: 14px 16px; cursor: pointer; }
+  .trip-card + .trip-card { margin-top: 10px; }
+  .trip-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+  .trip-card h3 { margin: 0; font-size: 17px; font-weight: 700; }
+  .trip-card .dest { font-size: 13.5px; color: var(--label-2); }
+  .badge { display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; border-radius: 999px; padding: 3px 9px; flex: 0 0 auto; }
+  .badge.planning { background: var(--fill); color: var(--label-2); }
+  .badge.locked { background: var(--green); color: #04280f; }
+  .empty-state { text-align: center; color: var(--label-3); font-size: 14px; padding: 40px 20px; }
+
+  /* Segmented control */
+  .tabbar { position: relative; display: flex; justify-content: space-between; background: var(--fill); border-radius: 10px; padding: 2px; }
+  .tab-thumb { position: absolute; top: 2px; bottom: 2px; left: 2px; width: 0; background: var(--card); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.15); transition: left 0.28s cubic-bezier(0.4,0,0.2,1), width 0.28s cubic-bezier(0.4,0,0.2,1); z-index: 0; }
+  .tabbar button { position: relative; z-index: 1; flex: 0 1 auto; white-space: nowrap; font: inherit; font-weight: 600; font-size: 12px; background: transparent; color: var(--label-2); border: none; border-radius: 8px; padding: 8px 10px; cursor: pointer; text-align: center; }
+  .tabbar button[aria-selected="true"] { color: var(--label); }
+  .tabpanel[hidden] { display: none; }
+  .tabpanel { display: flex; flex-direction: column; gap: 16px; }
+
+  /* Chat */
+  .chat-log { display: flex; flex-direction: column; gap: 10px; min-height: 100px; max-height: 55vh; overflow-y: auto; padding: 4px 2px; }
+  .chat-empty { text-align: center; color: var(--label-3); font-size: 13.5px; padding: 24px 16px; }
+  .msg-row { display: flex; }
+  .msg-row.q { justify-content: flex-end; }
+  .msg-row.a { justify-content: flex-start; }
+  .bubble { max-width: 85%; padding: 9px 13px; border-radius: 18px; font-size: 14.5px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+  .msg-row.q .bubble { background: var(--tint); color: #fff; border-bottom-right-radius: 4px; }
+  .msg-row.a .bubble { background: var(--fill); color: var(--label); border-bottom-left-radius: 4px; }
+  .msg-row.a .bubble.pending { color: var(--label-2); font-style: italic; }
+  .bubble.proposed-change { background: var(--card); border: 1.5px solid var(--tint); max-width: 90%; padding: 12px 14px; }
+  .pc-summary { font-size: 14px; line-height: 1.4; margin-bottom: 10px; }
+  .pc-actions { display: flex; gap: 8px; }
+  .pc-apply, .pc-discard { font: inherit; font-weight: 600; font-size: 13px; border: none; border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+  .pc-apply { background: var(--tint); color: #fff; }
+  .pc-discard { background: var(--fill); color: var(--label); }
+  .chat-input-row { display: flex; gap: 8px; align-items: flex-end; background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 10px; }
+  .chat-input-row textarea { flex: 1 1 auto; min-height: 22px; max-height: 100px; padding: 6px 10px; border: none; border-radius: 14px; resize: none; }
+  .chat-input-row textarea:focus { outline: 2px solid var(--tint); }
+  .chat-send { flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%; border: none; cursor: pointer; background: var(--tint); color: #fff; font-size: 16px; display: flex; align-items: center; justify-content: center; }
+  .chat-send:disabled { opacity: 0.4; }
+  .chat-status { font-size: 12px; color: var(--label-2); min-height: 1.2em; padding: 0 4px; }
+  .chat-status.error { color: var(--red); }
+  .chat-status.ok { color: var(--green); }
+
+  /* Day cards (itinerary) */
+  .day-list { display: flex; flex-direction: column; gap: 10px; }
+  .day { background: var(--card); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+  .day-head { display: flex; align-items: center; gap: 12px; padding: 13px 16px; cursor: pointer; background: none; border: none; width: 100%; text-align: left; font: inherit; color: inherit; }
+  .day-num { font-weight: 700; font-size: 13px; background: var(--tint); color: #fff; border-radius: 50%; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+  .day-head-text { flex: 1 1 auto; min-width: 0; }
+  .day-head-text h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .day-date { color: var(--label-2); font-size: 12.5px; }
+  .day-chevron { flex: 0 0 auto; color: var(--label-3); font-size: 13px; transition: transform 0.25s; }
+  .day.is-open .day-chevron { transform: rotate(90deg); }
+  .day-body { padding: 0 16px 14px; }
+  .blocks { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+  .blocks li { display: grid; grid-template-columns: 110px 1fr; gap: 10px; font-size: 14px; align-items: baseline; }
+  .b-time { color: var(--tint); font-weight: 600; font-size: 12.5px; }
+  .day-tip { border-top: 1px solid var(--sep); padding-top: 10px; font-size: 12.5px; color: var(--label-2); line-height: 1.4; }
+  @media (max-width: 480px) { .blocks li { grid-template-columns: 1fr; gap: 1px; } }
+
+  /* Watches */
+  .watch-card { background: var(--card); border-radius: 14px; box-shadow: var(--shadow); padding: 14px 16px; }
+  .watch-card + .watch-card { margin-top: 10px; }
+  .watch-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
+  .watch-label { font-weight: 600; font-size: 15px; }
+  .watch-kind { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: var(--label-2); background: var(--fill); border-radius: 999px; padding: 2px 8px; }
+  .watch-criteria { font-size: 13px; color: var(--label-2); margin-bottom: 8px; }
+  .watch-result { font-size: 13.5px; line-height: 1.4; background: var(--fill); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+  .watch-meta { font-size: 11.5px; color: var(--label-3); }
+  .watch-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .watch-actions button { font: inherit; font-size: 12.5px; font-weight: 600; border: none; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  .watch-check-btn { background: var(--tint); color: #fff; }
+  .watch-remove-btn { background: none; color: var(--red); }
+
+  footer { text-align: center; color: var(--label-3); font-size: 12px; padding-top: 4px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div id="view-trips">
+    <div class="title-block">
+      <div>
+        <p class="eyebrow">Trip Planner</p>
+        <h1>Your Trips</h1>
+      </div>
+      <button type="button" class="icon-btn" id="newTripBtn" aria-label="New trip">+</button>
+    </div>
+
+    <div id="newTripForm" class="card card-pad" hidden>
+      <div class="field"><label for="ntName">Trip name</label><input id="ntName" placeholder="e.g. Spring break somewhere warm" /></div>
+      <div class="field"><label for="ntDest">Destination (rough is fine)</label><input id="ntDest" placeholder="e.g. Costa Rica, or not sure yet" /></div>
+      <div class="field"><label for="ntDates">When</label><input id="ntDates" placeholder="e.g. Early March 2027" /></div>
+      <button type="button" class="btn btn-primary" id="ntCreateBtn">Start planning</button>
+      <div class="chat-status" id="ntStatus"></div>
+    </div>
+
+    <div id="tripsList"></div>
+  </div>
+
+  <div id="view-trip" hidden>
+    <button type="button" class="back-btn" id="backBtn">&larr; All Trips</button>
+
+    <div class="title-block" style="margin-top:6px;">
+      <div>
+        <p class="eyebrow" id="tripDest"></p>
+        <h1 id="tripName"></h1>
+      </div>
+      <span class="badge" id="tripBadge"></span>
+    </div>
+
+    <nav class="tabbar" role="tablist">
+      <div class="tab-thumb" id="tabThumb"></div>
+      <button role="tab" id="tab-btn-chat" aria-selected="true">Chat</button>
+      <button role="tab" id="tab-btn-itinerary" aria-selected="false">Itinerary</button>
+      <button role="tab" id="tab-btn-watches" aria-selected="false">Watches</button>
+      <button role="tab" id="tab-btn-details" aria-selected="false">Details</button>
+    </nav>
+
+    <div id="tab-chat" class="tabpanel">
+      <div class="chat-log" id="chatLog">
+        <div class="chat-empty" id="chatEmpty">Ask about this trip &mdash; research flights, hotels, activities, or say "plan the days" and I'll draft an itinerary.</div>
+      </div>
+      <div class="chat-status" id="chatStatus"></div>
+      <div class="chat-input-row">
+        <textarea id="chatText" rows="1" placeholder="Message Claude&hellip;" maxlength="4000"></textarea>
+        <button type="button" class="chat-send" id="chatSend" aria-label="Send">&#8593;</button>
+      </div>
+    </div>
+
+    <div id="tab-itinerary" class="tabpanel" hidden>
+      <div id="itineraryEmpty" class="empty-state">No itinerary yet &mdash; ask in Chat to draft one, e.g. "plan a 5-day trip".</div>
+      <div class="day-list" id="dayList"></div>
+    </div>
+
+    <div id="tab-watches" class="tabpanel" hidden>
+      <div class="card card-pad">
+        <div class="field"><label for="wKind">Type</label>
+          <select id="wKind" style="width:100%; font:inherit; font-size:16px; padding:10px 12px; border-radius:10px; border:1px solid var(--sep); background:var(--fill); color:var(--label);">
+            <option value="flight">Flight</option>
+            <option value="hotel">Hotel</option>
+            <option value="airbnb">Airbnb</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="field"><label for="wLabel">What to watch</label><input id="wLabel" placeholder="e.g. ATL &rarr; SJO nonstop" /></div>
+        <div class="field"><label for="wCriteria">What you're looking for</label><input id="wCriteria" placeholder="e.g. under $400 roundtrip" /></div>
+        <div class="field"><label for="wUrl">Listing link (optional)</label><input id="wUrl" placeholder="https://&hellip;" /></div>
+        <div class="field"><label for="wInterval">Check every</label>
+          <select id="wInterval" style="width:100%; font:inherit; font-size:16px; padding:10px 12px; border-radius:10px; border:1px solid var(--sep); background:var(--fill); color:var(--label);">
+            <option value="6">6 hours</option>
+            <option value="24" selected>Day</option>
+            <option value="72">3 days</option>
+            <option value="168">Week</option>
+          </select>
+        </div>
+        <button type="button" class="btn btn-primary" id="wAddBtn">Add watch</button>
+        <div class="chat-status" id="wStatus"></div>
+      </div>
+      <div id="watchesEmpty" class="empty-state" hidden>Nothing being watched yet.</div>
+      <div id="watchesList"></div>
+    </div>
+
+    <div id="tab-details" class="tabpanel" hidden>
+      <div class="card card-pad">
+        <div class="field"><label for="dName">Trip name</label><input id="dName" /></div>
+        <div class="field"><label for="dDest">Destination</label><input id="dDest" /></div>
+        <div class="field"><label for="dDates">When</label><input id="dDates" /></div>
+        <div class="field"><label for="dNotes">Notes</label><textarea id="dNotes" rows="4"></textarea></div>
+        <button type="button" class="btn btn-ghost" id="dSaveBtn" style="width:100%; margin-bottom:10px;">Save details</button>
+        <button type="button" class="btn btn-primary" id="lockBtn" style="margin-bottom:10px;">Lock in this trip</button>
+        <button type="button" class="btn btn-ghost" id="unlockBtn" style="width:100%; margin-bottom:10px;" hidden>Unlock (back to planning)</button>
+        <button type="button" class="btn btn-danger" id="deleteBtn">Delete trip</button>
+        <div class="chat-status" id="dStatus"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>Trip Planner &middot; research, plan, and watch prices &mdash; lock a trip in when it's booked</footer>
+</div>
+
+<script>
+(function () {
+  function escapeHtml(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function renderMarkdown(src) {
+    if (src == null || src === "") return "";
+    var text = escapeHtml(String(src));
+    var parked = [];
+    text = text.replace(/```[\s\S]*?```/g, function (m) {
+      parked.push(m.replace(/^```[^\n]*\n?/, "").replace(/```$/, ""));
+      return "\u0000P" + (parked.length - 1) + "\u0000";
+    });
+    text = text.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+    text = text.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, function (_, label, url) {
+      var safe = url.replace(/"/g, "%22").replace(/'/g, "%27");
+      return '<a href="' + safe + '" target="_blank" rel="noopener noreferrer">' + label + "</a>";
+    });
+    text = text.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+    var out = [], para = [];
+    text.split("\n").forEach(function (line) {
+      var t = line.trim();
+      if (!t) { if (para.length) { out.push("<p>" + para.join("<br>") + "</p>"); para = []; } return; }
+      para.push(t);
+    });
+    if (para.length) out.push("<p>" + para.join("<br>") + "</p>");
+    return out.join("").replace(/\u0000P(\d+)\u0000/g, function (_, i) {
+      return '<pre><code>' + parked[Number(i)] + "</code></pre>";
+    });
+  }
+
+  /* ---------- Routing: #/trips  or  #/trip/<id> ---------- */
+  var viewTrips = document.getElementById("view-trips");
+  var viewTrip = document.getElementById("view-trip");
+  var currentTripId = null;
+  var currentTrip = null;
+  var qaDocs = [];
+  var watches = [];
+  var itineraryDays = [];
+
+  function parseHash() {
+    var h = (location.hash || "").replace(/^#\/?/, "");
+    var m = h.match(/^trip\/(.+)$/);
+    return m ? { view: "trip", id: m[1] } : { view: "trips" };
+  }
+
+  function goToTrips() { location.hash = "#/trips"; }
+  function goToTrip(id) { location.hash = "#/trip/" + id; }
+
+  window.addEventListener("hashchange", route);
+  document.getElementById("backBtn").addEventListener("click", goToTrips);
+
+  function route() {
+    var r = parseHash();
+    if (r.view === "trip") {
+      viewTrips.hidden = true;
+      viewTrip.hidden = false;
+      loadTrip(r.id);
+    } else {
+      viewTrip.hidden = true;
+      viewTrips.hidden = false;
+      loadTripsList();
+    }
+  }
+
+  /* ---------- Trips list ---------- */
+  var newTripForm = document.getElementById("newTripForm");
+  document.getElementById("newTripBtn").addEventListener("click", function () {
+    newTripForm.hidden = !newTripForm.hidden;
+  });
+
+  document.getElementById("ntCreateBtn").addEventListener("click", async function () {
+    var name = document.getElementById("ntName").value.trim();
+    var status = document.getElementById("ntStatus");
+    if (!name) { status.textContent = "Give it a name first."; status.className = "chat-status error"; return; }
+    status.textContent = "Creating…";
+    status.className = "chat-status";
+    try {
+      var res = await fetch("/api/trips", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name,
+          destination: document.getElementById("ntDest").value.trim(),
+          dateRange: document.getElementById("ntDates").value.trim()
+        })
+      });
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || "failed");
+      document.getElementById("ntName").value = "";
+      document.getElementById("ntDest").value = "";
+      document.getElementById("ntDates").value = "";
+      newTripForm.hidden = true;
+      status.textContent = "";
+      goToTrip(data.id);
+    } catch (e) {
+      status.textContent = "Couldn't create that trip — try again.";
+      status.className = "chat-status error";
+    }
+  });
+
+  async function loadTripsList() {
+    var list = document.getElementById("tripsList");
+    list.innerHTML = '<p class="muted">Loading…</p>';
+    try {
+      var res = await fetch("/api/trips");
+      var trips = await res.json();
+      if (!res.ok) throw new Error();
+      if (!trips.length) {
+        list.innerHTML = '<div class="empty-state">No trips yet. Tap + to start planning one.</div>';
+        return;
+      }
+      list.innerHTML = "";
+      trips.forEach(function (t) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "trip-card";
+        btn.innerHTML =
+          '<div class="trip-card-top"><h3>' + escapeHtml(t.name) + '</h3><span class="badge ' + (t.status === "locked" ? "locked" : "planning") + '">' + (t.status === "locked" ? "Locked in" : "Planning") + '</span></div>' +
+          '<div class="dest">' + escapeHtml([t.destination, t.dateRange].filter(Boolean).join(" · ") || "No details yet") + '</div>';
+        btn.addEventListener("click", function () { goToTrip(t.id); });
+        list.appendChild(btn);
+      });
+    } catch (e) {
+      list.innerHTML = '<div class="empty-state">Couldn’t load trips — try reloading.</div>';
+    }
+  }
+
+  /* ---------- Trip detail: tabs ---------- */
+  var tripTabs = ["chat", "itinerary", "watches", "details"];
+  var thumb = document.getElementById("tabThumb");
+  function selectTripTab(name) {
+    tripTabs.forEach(function (t) {
+      document.getElementById("tab-" + t).hidden = t !== name;
+      document.getElementById("tab-btn-" + t).setAttribute("aria-selected", String(t === name));
+    });
+    var btn = document.getElementById("tab-btn-" + name);
+    thumb.style.left = btn.offsetLeft + "px";
+    thumb.style.width = btn.offsetWidth + "px";
+  }
+  tripTabs.forEach(function (t) {
+    document.getElementById("tab-btn-" + t).addEventListener("click", function () { selectTripTab(t); });
+  });
+
+  async function loadTrip(id) {
+    currentTripId = id;
+    qaDocs = []; watches = []; itineraryDays = [];
+    selectTripTab("chat");
+    try {
+      var res = await fetch("/api/trips/" + id);
+      if (!res.ok) { goToTrips(); return; }
+      currentTrip = await res.json();
+    } catch (e) { goToTrips(); return; }
+
+    document.getElementById("tripName").textContent = currentTrip.name || "Untitled trip";
+    document.getElementById("tripDest").textContent = [currentTrip.destination, currentTrip.dateRange].filter(Boolean).join(" · ") || "Trip Planner";
+    var badge = document.getElementById("tripBadge");
+    badge.textContent = currentTrip.status === "locked" ? "Locked in" : "Planning";
+    badge.className = "badge " + (currentTrip.status === "locked" ? "locked" : "planning");
+
+    document.getElementById("dName").value = currentTrip.name || "";
+    document.getElementById("dDest").value = currentTrip.destination || "";
+    document.getElementById("dDates").value = currentTrip.dateRange || "";
+    document.getElementById("dNotes").value = currentTrip.notes || "";
+    document.getElementById("lockBtn").hidden = currentTrip.status === "locked";
+    document.getElementById("unlockBtn").hidden = currentTrip.status !== "locked";
+
+    itineraryDays = Array.isArray(currentTrip.days) ? currentTrip.days : [];
+    renderItinerary(itineraryDays);
+    refreshChat();
+    refreshWatches();
+  }
+
+  /* ---------- Itinerary ---------- */
+  var dayList = document.getElementById("dayList");
+  var itineraryEmpty = document.getElementById("itineraryEmpty");
+  var checkIconSvg = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="4,13 9,18 20,6"/></svg>';
+
+  function renderItinerary(days) {
+    itineraryDays = days;
+    dayList.innerHTML = "";
+    itineraryEmpty.hidden = !!days.length;
+    var todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0);
+    days.forEach(function (d, i) {
+      var dayDate = /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? new Date(d.date + "T00:00:00") : null;
+      var isPast = dayDate ? dayDate.getTime() < todayMidnight.getTime() : false;
+
+      var el = document.createElement("div");
+      el.className = "day" + (i === 0 ? " is-open" : "");
+      var blocksHtml = (d.blocks || []).map(function (b) {
+        return '<li><span class="b-time">' + escapeHtml(b[0]) + '</span><span>' + escapeHtml(b[1]) + '</span></li>';
+      }).join("");
+      el.innerHTML =
+        '<button type="button" class="day-head" aria-expanded="' + (i === 0) + '">' +
+          '<span class="day-num">' + (isPast ? checkIconSvg : (i + 1)) + '</span>' +
+          '<span class="day-head-text"><h3>' + escapeHtml(d.title) + '</h3><span class="day-date">' + escapeHtml(d.dateLabel) + '</span></span>' +
+          '<span class="day-chevron">&#9656;</span>' +
+        '</button>' +
+        '<div class="day-body"' + (i === 0 ? "" : " hidden") + '>' +
+          '<ul class="blocks">' + blocksHtml + '</ul>' +
+          (d.tip ? '<p class="day-tip">' + escapeHtml(d.tip) + '</p>' : '') +
+        '</div>';
+      var headBtn = el.querySelector(".day-head");
+      var body = el.querySelector(".day-body");
+      headBtn.addEventListener("click", function () {
+        var open = el.classList.toggle("is-open");
+        body.hidden = !open;
+        headBtn.setAttribute("aria-expanded", String(open));
+      });
+      dayList.appendChild(el);
+    });
+  }
+
+  /* ---------- Chat ---------- */
+  var chatLog = document.getElementById("chatLog");
+  var chatEmpty = document.getElementById("chatEmpty");
+  var chatStatus = document.getElementById("chatStatus");
+  var chatText = document.getElementById("chatText");
+  var chatSend = document.getElementById("chatSend");
+
+  async function refreshChat() {
+    try {
+      var res = await fetch("/api/trips/" + currentTripId + "/messages");
+      if (!res.ok) return;
+      var data = await res.json();
+      if (Array.isArray(data)) {
+        qaDocs = data;
+        qaDocs.sort(function (a, b) { return (a.askedAt || "").localeCompare(b.askedAt || ""); });
+        renderChat();
+      }
+    } catch (e) {}
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible" && currentTripId) refreshChat();
+  });
+  window.addEventListener("pageshow", function () { if (currentTripId) refreshChat(); });
+
+  function renderChat() {
+    if (!qaDocs.length) {
+      chatEmpty.hidden = false;
+      chatLog.innerHTML = "";
+      chatLog.appendChild(chatEmpty);
+      return;
+    }
+    chatEmpty.hidden = true;
+    var html = "";
+    qaDocs.forEach(function (doc, idx) {
+      html += '<div class="msg-row q"><div class="bubble">' + escapeHtml(doc.question || "") + "</div></div>";
+      if (doc.answer) {
+        html += '<div class="msg-row a"><div class="bubble">' + renderMarkdown(doc.answer) + "</div></div>";
+      } else {
+        html += '<div class="msg-row a"><div class="bubble pending">Waiting for a reply&hellip;</div></div>';
+      }
+      if (doc.proposedChange && !doc._changeHandled) {
+        html += '<div class="msg-row a"><div class="bubble proposed-change">' +
+          '<div class="pc-summary">' + escapeHtml(doc.proposedChange.summary || "Itinerary update") + '</div>' +
+          '<div class="pc-actions">' +
+            '<button type="button" class="pc-apply" data-idx="' + idx + '">Apply</button>' +
+            '<button type="button" class="pc-discard" data-idx="' + idx + '">Discard</button>' +
+          '</div></div></div>';
+      }
+    });
+    chatLog.innerHTML = html;
+    chatLog.scrollTop = chatLog.scrollHeight;
+    chatLog.querySelectorAll(".pc-apply").forEach(function (btn) {
+      btn.addEventListener("click", function () { applyProposedChange(Number(btn.dataset.idx)); });
+    });
+    chatLog.querySelectorAll(".pc-discard").forEach(function (btn) {
+      btn.addEventListener("click", function () { discardProposedChange(Number(btn.dataset.idx)); });
+    });
+  }
+
+  async function applyProposedChange(idx) {
+    var doc = qaDocs[idx];
+    if (!doc || !doc.proposedChange) return;
+    chatStatus.textContent = "Saving…";
+    chatStatus.className = "chat-status";
+    try {
+      var res = await fetch("/api/trips/" + currentTripId + "/schedule/apply", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: doc.proposedChange.days })
+      });
+      if (!res.ok) throw new Error();
+      doc._changeHandled = true;
+      renderChat();
+      renderItinerary(doc.proposedChange.days);
+      chatStatus.textContent = "Itinerary updated.";
+      chatStatus.className = "chat-status ok";
+    } catch (e) {
+      chatStatus.textContent = "Couldn't save that — try again.";
+      chatStatus.className = "chat-status error";
+    }
+  }
+  function discardProposedChange(idx) {
+    var doc = qaDocs[idx];
+    if (!doc) return;
+    doc._changeHandled = true;
+    renderChat();
+  }
+
+  function autoGrowChatText() {
+    chatText.style.height = "auto";
+    chatText.style.height = Math.min(chatText.scrollHeight, 100) + "px";
+  }
+  chatText.addEventListener("input", autoGrowChatText);
+  chatText.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); chatSend.click(); }
+  });
+
+  chatSend.addEventListener("click", async function () {
+    var text = chatText.value.trim();
+    if (!text || !currentTripId) return;
+    chatSend.disabled = true;
+    chatStatus.textContent = "Sending…";
+    chatStatus.className = "chat-status";
+    var entry = { question: text, answer: null, askedAt: new Date().toISOString() };
+    qaDocs.push(entry);
+    renderChat();
+    try {
+      var res = await fetch("/api/trips/" + currentTripId + "/chat", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: text })
+      });
+      if (res.status === 401) { chatStatus.textContent = "Please log in to use chat."; chatStatus.className = "chat-status error"; return; }
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || "failed");
+      entry.answer = data.answer;
+      entry.proposedChange = data.proposedChange || null;
+      renderChat();
+      chatStatus.textContent = "";
+      chatText.value = "";
+      autoGrowChatText();
+    } catch (e) {
+      chatStatus.textContent = "Couldn't send that — try again.";
+      chatStatus.className = "chat-status error";
+    } finally {
+      chatSend.disabled = false;
+    }
+  });
+
+  /* ---------- Watches ---------- */
+  var watchesList = document.getElementById("watchesList");
+  var watchesEmpty = document.getElementById("watchesEmpty");
+
+  async function refreshWatches() {
+    try {
+      var res = await fetch("/api/trips/" + currentTripId + "/watches");
+      if (!res.ok) return;
+      watches = await res.json();
+      renderWatches();
+    } catch (e) {}
+  }
+
+  function renderWatches() {
+    watchesEmpty.hidden = !!watches.length;
+    watchesList.innerHTML = "";
+    watches.forEach(function (w) {
+      var el = document.createElement("div");
+      el.className = "watch-card";
+      var intervalLabel = { 6: "6 hours", 24: "day", 72: "3 days", 168: "week" }[w.intervalHours] || (w.intervalHours + "h");
+      el.innerHTML =
+        '<div class="watch-top"><span class="watch-label">' + escapeHtml(w.label) + '</span><span class="watch-kind">' + escapeHtml(w.kind) + '</span></div>' +
+        (w.criteria ? '<div class="watch-criteria">' + escapeHtml(w.criteria) + '</div>' : '') +
+        (w.lastResult ? '<div class="watch-result">' + escapeHtml(w.lastResult) + '</div>' : '<div class="muted" style="padding:0 2px 8px;">Not checked yet.</div>') +
+        '<div class="watch-meta">' + (w.lastCheckedAt ? "Last checked " + new Date(w.lastCheckedAt).toLocaleString() : "Never checked") + ' · every ' + intervalLabel + '</div>' +
+        '<div class="watch-actions"><button type="button" class="watch-check-btn" data-id="' + w.id + '">Check now</button><button type="button" class="watch-remove-btn" data-id="' + w.id + '">Remove</button></div>';
+      var checkBtn = el.querySelector(".watch-check-btn");
+      checkBtn.addEventListener("click", async function () {
+        checkBtn.disabled = true;
+        checkBtn.textContent = "Checking…";
+        try {
+          var res = await fetch("/api/trips/" + currentTripId + "/watches/" + w.id + "/check", { method: "POST" });
+          if (!res.ok) throw new Error();
+          await refreshWatches();
+        } catch (e) {
+          checkBtn.disabled = false;
+          checkBtn.textContent = "Check now";
+        }
+      });
+      el.querySelector(".watch-remove-btn").addEventListener("click", async function () {
+        await fetch("/api/trips/" + currentTripId + "/watches/" + w.id, { method: "DELETE" });
+        refreshWatches();
+      });
+      watchesList.appendChild(el);
+    });
+  }
+
+  document.getElementById("wAddBtn").addEventListener("click", async function () {
+    var status = document.getElementById("wStatus");
+    var label = document.getElementById("wLabel").value.trim();
+    if (!label) { status.textContent = "Say what to watch first."; status.className = "chat-status error"; return; }
+    status.textContent = "Adding…";
+    status.className = "chat-status";
+    try {
+      var res = await fetch("/api/trips/" + currentTripId + "/watches", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: document.getElementById("wKind").value,
+          label: label,
+          criteria: document.getElementById("wCriteria").value.trim(),
+          url: document.getElementById("wUrl").value.trim(),
+          intervalHours: Number(document.getElementById("wInterval").value)
+        })
+      });
+      if (!res.ok) throw new Error();
+      document.getElementById("wLabel").value = "";
+      document.getElementById("wCriteria").value = "";
+      document.getElementById("wUrl").value = "";
+      status.textContent = "";
+      refreshWatches();
+    } catch (e) {
+      status.textContent = "Couldn't add that — try again.";
+      status.className = "chat-status error";
+    }
+  });
+
+  /* ---------- Details / lock ---------- */
+  document.getElementById("dSaveBtn").addEventListener("click", async function () {
+    var status = document.getElementById("dStatus");
+    status.textContent = "Saving…"; status.className = "chat-status";
+    try {
+      var res = await fetch("/api/trips/" + currentTripId, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: document.getElementById("dName").value.trim(),
+          destination: document.getElementById("dDest").value.trim(),
+          dateRange: document.getElementById("dDates").value.trim(),
+          notes: document.getElementById("dNotes").value
+        })
+      });
+      if (!res.ok) throw new Error();
+      status.textContent = "Saved.";
+      status.className = "chat-status ok";
+      loadTrip(currentTripId);
+    } catch (e) {
+      status.textContent = "Couldn't save — try again.";
+      status.className = "chat-status error";
+    }
+  });
+
+  document.getElementById("lockBtn").addEventListener("click", async function () {
+    if (!confirm("Lock in this trip? It'll move out of active planning; you can still edit and chat about it, and unlock it later if needed.")) return;
+    await fetch("/api/trips/" + currentTripId + "/lock", { method: "POST" });
+    loadTrip(currentTripId);
+  });
+  document.getElementById("unlockBtn").addEventListener("click", async function () {
+    await fetch("/api/trips/" + currentTripId + "/unlock", { method: "POST" });
+    loadTrip(currentTripId);
+  });
+  document.getElementById("deleteBtn").addEventListener("click", async function () {
+    if (!confirm("Delete this trip? This can't be undone.")) return;
+    await fetch("/api/trips/" + currentTripId, { method: "DELETE" });
+    goToTrips();
+  });
+
+  route();
+})();
+</script>
+</body></html>
