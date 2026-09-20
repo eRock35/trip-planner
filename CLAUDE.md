@@ -163,9 +163,24 @@ Cloud Run Admin API v2). See `college-football-app`'s
   `SITE_LOGIN_USERNAME` / `SITE_LOGIN_PASSWORD` are **dead** since the move to
   multi-user — nothing reads them. They're still mounted on the service; drop
   them (and their secrets) on a future deploy.
-- No custom domain, same reasoning as `santa-rosa-beach-trip`: the default
-  `*.run.app` URL doesn't publish a dedicated cert to public Certificate
-  Transparency logs the way a custom domain mapping would.
+- Custom domain `trip.strongtechnicalconsulting.com`, mapped 2026-09-20.
+
+  This reverses an earlier note that said no custom domain, copying
+  `santa-rosa-beach-trip`'s reasoning that a mapping publishes the hostname to
+  public Certificate Transparency logs. That argument never really transferred
+  to this app: the repo is public, the app is open to registration, and its
+  `*.run.app` URL is already linked from the public landing page. There was no
+  quiet URL here to protect. Erik asked for the subdomain and created the
+  mapping himself.
+
+  **That reasoning still holds for `santa-rosa-beach-trip`**, which is private,
+  holds family PII, and is deliberately unlinked. Don't carry this change over
+  to it.
+
+  A mapping cannot be created by the deployer service account — every API
+  attempt fails with "Caller is not authorized to administer the domain" even
+  though the domain is verified. It needs a real Google user identity via the
+  Cloud Run console, so this is one of the few steps Erik does by hand.
 
 ## Still to do
 
