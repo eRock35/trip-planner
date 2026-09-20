@@ -148,6 +148,7 @@
 
   <div class="authbar">
     <span class="authbar-text" id="authBarText"></span>
+    <button type="button" class="authbar-btn" id="pwChangeBtn" hidden>Password</button>
     <button type="button" class="authbar-btn" id="adminBtn" hidden>Requests</button>
     <button type="button" class="authbar-btn" id="authBarBtn"></button>
   </div>
@@ -325,9 +326,12 @@
       authBarBtn.textContent = "Log in";
       adminBtn.hidden = true;
       aiBanner.hidden = true;
+      if (pwChangeBtn) pwChangeBtn.hidden = true;
       return;
     }
-    authBarText.textContent = "Signed in as " + (me && me.displayName ? me.displayName : "you");
+    if (pwChangeBtn) pwChangeBtn.hidden = false;
+    authBarText.textContent = "Signed in as " + (me && me.displayName ? me.displayName : "you")
+      + (me && me.mustChangePassword ? " — using a temporary password" : "");
     authBarBtn.textContent = "Log out";
     adminBtn.hidden = !(me && me.isAdmin);
 
@@ -343,6 +347,33 @@
   }
 
   function aiReady() { return !!(me && me.aiAccess === "approved"); }
+
+  // Changing your own password. The server takes the current one, or lets a
+  // passkey-proved session through without it - so forgetting the password
+  // is recoverable by anyone who set up Face ID.
+  var pwChangeBtn = document.getElementById("pwChangeBtn");
+  if (pwChangeBtn) pwChangeBtn.addEventListener("click", async function () {
+    var current = window.prompt("Your current password — leave blank if you signed in with Face ID:") || "";
+    if (current === null) return;
+    var next = window.prompt("New password (at least 10 characters):") || "";
+    if (!next) return;
+    if (next.length < 10) { window.alert("Password must be at least 10 characters."); return; }
+    pwChangeBtn.disabled = true;
+    try {
+      var r = await fetch("/api/auth/password", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword: current, newPassword: next })
+      });
+      var d = await r.json();
+      if (!r.ok) throw new Error(d.error || "failed");
+      if (me) me.mustChangePassword = false;
+      window.alert("Password changed.");
+      renderAuthBar();
+    } catch (e) {
+      window.alert((e && e.message) || "Couldn't change the password.");
+    }
+    pwChangeBtn.disabled = false;
+  });
 
   async function refreshAuthStatus() {
     try {
@@ -406,10 +437,46 @@
         }
         row.appendChild(who);
 
+        if (u.resetRequestedAt) {
+          var rq = document.createElement("div");
+          rq.className = "note";
+          rq.textContent = "Asked for a password reset";
+          who.appendChild(rq);
+        }
+
         var pill = document.createElement("span");
         pill.className = "pill";
         pill.textContent = u.aiAccess;
         row.appendChild(pill);
+
+        // There is no email service here, so a reset is read out by hand:
+        // the password comes back exactly once and is never stored in clear.
+        var resetBtn = document.createElement("button");
+        resetBtn.type = "button";
+        resetBtn.className = "authbar-btn";
+        resetBtn.textContent = u.resetRequestedAt ? "Reset password ●" : "Reset password";
+        resetBtn.addEventListener("click", async function () {
+          if (!window.confirm("Replace " + u.email + "'s password with a new temporary one?\n\nTheir current password stops working immediately.")) return;
+          resetBtn.disabled = true;
+          try {
+            var rr = await fetch("/api/admin/reset-password", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userId: u.id })
+            });
+            var dd = await rr.json();
+            if (!rr.ok) throw new Error(dd.error || "failed");
+            var out = document.createElement("div");
+            out.className = "note";
+            out.textContent = "Temporary password for " + dd.email + ": " + dd.password +
+              " — give it to them now, it is not shown again.";
+            who.appendChild(out);
+            resetBtn.textContent = "Reset done";
+          } catch (e) {
+            resetBtn.disabled = false;
+            resetBtn.textContent = "Reset failed — retry";
+          }
+        });
+        row.appendChild(resetBtn);
 
         if (!u.isAdmin) {
           [["Approve", "approved"], ["Deny", "denied"]].forEach(function (pair) {

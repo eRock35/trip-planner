@@ -117,6 +117,8 @@ function publicUser(uid, d) {
     createdAt: d.createdAt || null,
     aiRequestedAt: d.aiRequestedAt || null,
     aiDecidedAt: d.aiDecidedAt || null,
+    resetRequestedAt: d.resetRequestedAt || null,
+    mustChangePassword: !!d.mustChangePassword,
   };
 }
 
@@ -131,15 +133,39 @@ function createAccounts(opts) {
   const users = () => db.collection('users');
   const creds = () => db.collection('webauthn-credentials');
 
-  function issueSession(res, uid) {
+  // `via` records HOW this session was proved: 'password' or 'passkey'. It is
+  // what lets someone who has forgotten their password set a new one without
+  // producing the old one - a passkey is at least as strong a proof, and
+  // without this the only way back in is the admin.
+  function issueSession(res, uid, via) {
     const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
-    setCookie(res, 'session', makeToken({ sub: uid, exp }, sessionSecret), SESSION_TTL_SECONDS);
+    setCookie(res, 'session', makeToken({ sub: uid, via: via || 'password', exp }, sessionSecret), SESSION_TTL_SECONDS);
   }
 
   function sessionUid(req) {
     if (!sessionSecret) return null;
     const p = readToken(parseCookies(req).session, sessionSecret);
     return p ? p.sub : null;
+  }
+
+  function sessionVia(req) {
+    if (!sessionSecret) return null;
+    const p = readToken(parseCookies(req).session, sessionSecret);
+    return p ? (p.via || 'password') : null;
+  }
+
+  // A temporary password handed out by the admin. Readable rather than
+  // maximally dense - it gets relayed by hand, and a misread character is a
+  // second round trip.
+  function tempPassword() {
+    const alphabet = 'abcdefghijkmnpqrstuvwxyz23456789';
+    const bytes = crypto.randomBytes(18);
+    let out = '';
+    for (let i = 0; i < 18; i += 1) {
+      out += alphabet[bytes[i] % alphabet.length];
+      if (i % 6 === 5 && i !== 17) out += '-';
+    }
+    return out; // 18 chars from a 32-char alphabet, comfortably over the 10 minimum
   }
 
   async function loadUser(uid) {
@@ -219,7 +245,7 @@ function createAccounts(opts) {
           if (e && e.code === 6) return res.status(409).json({ error: 'That email is already registered.' });
           throw e;
         }
-        issueSession(res, uid);
+        issueSession(res, uid, 'password');
         const u = await loadUser(uid);
         res.json({ ok: true, user: publicUser(uid, u) });
       } catch (err) {
@@ -238,11 +264,94 @@ function createAccounts(opts) {
         if (!u || !passwordMatches(password, u.passwordSalt, u.passwordHash)) {
           return res.status(401).json({ error: 'Email or password is incorrect.' });
         }
-        issueSession(res, uid);
+        issueSession(res, uid, 'password');
         res.json({ ok: true, user: publicUser(uid, u) });
       } catch (err) {
         console.error('POST /api/auth/login', err);
         res.status(500).json({ error: 'Sign-in failed.' });
+      }
+    });
+
+    // --- password change and reset ----------------------------------------
+    // Changing your own password needs the current one, OR a session proved
+    // by passkey. Without that second door, forgetting your password means
+    // waiting on the admin even though you can still prove who you are.
+    app.post('/api/auth/password', requireLogin, async (req, res) => {
+      try {
+        const currentPassword = (req.body && req.body.currentPassword) || '';
+        const newPassword = (req.body && req.body.newPassword) || '';
+        if (String(newPassword).length < 10) {
+          return res.status(400).json({ error: 'Password must be at least 10 characters.' });
+        }
+        const uid = sessionUid(req);
+        const u = await loadUser(uid);
+        if (!u) return res.status(401).json({ error: 'not signed in' });
+
+        const byPasskey = sessionVia(req) === 'passkey';
+        if (!byPasskey && !passwordMatches(currentPassword, u.passwordSalt, u.passwordHash)) {
+          return res.status(401).json({ error: 'Your current password is incorrect.' });
+        }
+
+        const { salt, hash } = hashPassword(newPassword);
+        await users().doc(uid).update({
+          passwordSalt: salt,
+          passwordHash: hash,
+          mustChangePassword: false,
+          resetRequestedAt: null,
+          passwordChangedAt: new Date().toISOString(),
+        });
+        // Re-issue so the cookie reflects the change and any temp-password
+        // session stops being one.
+        issueSession(res, uid, byPasskey ? 'passkey' : 'password');
+        res.json({ ok: true });
+      } catch (err) {
+        console.error('POST /api/auth/password', err);
+        res.status(500).json({ error: 'Could not change the password.' });
+      }
+    });
+
+    // Flags the account for the admin. There is no email service on this
+    // project, so a reset cannot be self-served by a link - this is the
+    // request half, and the admin issues the password.
+    app.post('/api/auth/reset-request', async (req, res) => {
+      try {
+        const email = normalizeEmail(req.body && req.body.email);
+        const uid = uidFor(email);
+        const u = await loadUser(uid);
+        if (u) {
+          await users().doc(uid).update({ resetRequestedAt: new Date().toISOString() });
+        }
+        // Same answer whether or not that account exists - otherwise this
+        // route tells a stranger which emails are registered.
+        res.json({ ok: true });
+      } catch (err) {
+        console.error('POST /api/auth/reset-request', err);
+        res.json({ ok: true });
+      }
+    });
+
+    // The admin issues a temporary password and reads it out to the person.
+    // Returned exactly once and never stored in the clear.
+    app.post('/api/admin/reset-password', requireLogin, requireAdmin, async (req, res) => {
+      try {
+        const { userId } = req.body || {};
+        if (!userId) return res.status(400).json({ error: 'userId is required.' });
+        const target = await loadUser(userId);
+        if (!target) return res.status(404).json({ error: 'No such user.' });
+
+        const password = tempPassword();
+        const { salt, hash } = hashPassword(password);
+        await users().doc(userId).update({
+          passwordSalt: salt,
+          passwordHash: hash,
+          mustChangePassword: true,
+          resetRequestedAt: null,
+          passwordChangedAt: new Date().toISOString(),
+        });
+        res.json({ ok: true, password, email: target.email });
+      } catch (err) {
+        console.error('POST /api/admin/reset-password', err);
+        res.status(500).json({ error: 'Could not reset that password.' });
       }
     });
 
@@ -429,7 +538,7 @@ function createAccounts(opts) {
           await doc.ref.update({ lastUsedAt: new Date().toISOString() });
         }
         clearCookie(res, 'auth_challenge');
-        issueSession(res, stored.userId);
+        issueSession(res, stored.userId, 'passkey');
         const u = await loadUser(stored.userId);
         if (!u) return res.status(401).json({ error: 'That passkey\'s account no longer exists.' });
         res.json({ ok: true, user: publicUser(stored.userId, u) });

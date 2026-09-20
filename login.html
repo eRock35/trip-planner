@@ -79,6 +79,7 @@
       </div>
 
       <button class="linkish" id="showPw" hidden>Use email instead</button>
+      <button class="linkish" id="forgot">Forgot your password?</button>
       <button class="linkish" id="toggleMode">Need an account? Create one</button>
       <div class="status" id="status"></div>
     </div>
@@ -214,6 +215,24 @@
       say((err && err.message) || 'That didn’t work.', true);
     });
   }
+  // No email service on this project, so a reset cannot arrive as a link.
+  // This flags the account for the admin, who issues a temporary password.
+  document.getElementById('forgot').addEventListener('click', function(){
+    var u = document.getElementById('u').value.trim();
+    if (!u){ say('Enter your email first, then tap this again.', true); return; }
+    say('Sending…');
+    fetch('/api/auth/reset-request', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ email: u })
+    }).then(function(){
+      // Deliberately the same message whether or not that account exists.
+      say('If that email has an account, the admin has been asked to reset it. ' +
+          'If you have Face ID set up on this device, you can sign in with it now and change your password yourself.');
+    }).catch(function(){
+      say('Couldn’t send that request — try again.', true);
+    });
+  });
+
   document.getElementById('pwBtn').addEventListener('click', submitPassword);
   document.getElementById('p').addEventListener('keydown', function(e){
     if (e.key === 'Enter'){ e.preventDefault(); submitPassword(); }

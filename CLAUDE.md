@@ -79,6 +79,32 @@ The access model is Erik's explicit call, and the reason matters:
   an optional note); the admin sees pending requests in the app and approves or
   denies. States: `none` → `pending` → `approved` | `denied`.
 
+### Forgetting a password
+
+There is **no email service on this project**, so a reset cannot arrive as a
+link. Two doors instead, and the reason for each:
+
+- **Passkey.** `POST /api/auth/password` takes the current password *or* a
+  session proved by passkey. The session cookie carries `via`
+  (`'password' | 'passkey'`) for exactly this; a passkey is at least as strong
+  a proof as the password it is replacing. Without this door, anyone who
+  forgets their password waits on the admin even though they can still prove
+  who they are. A password-proved session gets no such shortcut — it must
+  produce the current password, or a stolen session could take the account.
+- **Admin.** `POST /api/auth/reset-request` flags the account
+  (`resetRequestedAt`), the admin sees it in the same panel as AI-access
+  requests, and `POST /api/admin/reset-password` issues a temporary password
+  returned **exactly once** and never stored in the clear. It sets
+  `mustChangePassword`, which the auth bar surfaces until they change it.
+
+`reset-request` answers identically whether or not the account exists —
+otherwise it tells a stranger which emails are registered.
+
+The gap this leaves, deliberately: a user with no passkey who forgets their
+password depends on the admin. That is the price of having no mail sender,
+and it is the right trade at this size — adding one is a standing monthly
+cost for a handful of users.
+
 Without that second gate, any stranger who found the URL could run Sonnet 5
 with web search on Erik's API key. **Never put an Anthropic call behind
 `requireLogin` alone** — it goes behind `requireAiAccess`, and the cron sweep
