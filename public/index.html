@@ -1146,11 +1146,23 @@
     renderChat();
     chatText.value = ""; autoGrowChatText(); chatSend.disabled = true;
     scrollChatToEnd();
-    // Without a timeout, a hung or very slow request left the bubble waiting
-    // forever with no visible error.
-    var timeoutMs = 60000;
+    // A question that makes Claude search the web measured 121 seconds end to
+    // end in a live probe: seven tool calls, three searches, then the writing.
+    // The old 60s ceiling aborted every one of those before the server had
+    // finished, so a working request looked like a broken app. The server is
+    // allowed 900s, so the client should not be the thing that gives up first.
+    var timeoutMs = 240000;
     var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
     var timer = controller ? setTimeout(function () { controller.abort(); }, timeoutMs) : null;
+    // Two minutes of nothing reads as a hang, so say what is happening.
+    var waited = 0;
+    var ticker = setInterval(function () {
+      waited += 10;
+      if (waited < 25) setStatus(chatStatus, "Searching the web\u2026");
+      else if (waited < 70) setStatus(chatStatus, "Still searching \u2014 this one takes a minute or two\u2026");
+      else setStatus(chatStatus, "Writing it up\u2026");
+    }, 10000);
+    setStatus(chatStatus, "Searching the web\u2026");
     try {
       var res = await fetch("/api/trips/" + currentTripId + "/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -1173,16 +1185,18 @@
       if (!res.ok) throw new Error(data.error || "failed");
       entry.answer = data.answer;
       entry.proposedChange = data.proposedChange || null;
+      setStatus(chatStatus, "");
       renderChat();
       scrollChatToEnd();
     } catch (e) {
       var timedOut = e && e.name === "AbortError";
-      setStatus(chatStatus, timedOut ? "That's taking too long. Try again in a moment." : "Couldn't send that. Try again.", "error");
-      entry.answer = timedOut ? "⚠️ No reply after a minute. Try again." : "⚠️ Couldn't reach the server. Try again.";
+      setStatus(chatStatus, timedOut ? "That took over four minutes with no reply. Try again, or ask something narrower." : "Couldn't send that. Try again.", "error");
+      entry.answer = timedOut ? "⚠️ No reply after four minutes. Try again." : "⚠️ Couldn't reach the server. Try again.";
       renderChat();
       chatText.value = text; autoGrowChatText();
     } finally {
       if (timer) clearTimeout(timer);
+      clearInterval(ticker);
       chatSend.disabled = !chatText.value.trim();
     }
   });
