@@ -328,6 +328,48 @@ app.post('/api/trips/:id/unlock', requireLogin, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Keeping a long answer alive on a phone.
+//
+// COPY of the same helper in santa-rosa-beach-trip's server.js, added for the
+// same measured reason: a chat question that searches the web takes two or
+// three minutes, and for all of it not one byte crosses the wire. iOS Safari
+// on a mobile network drops a connection that idle, reports "Load failed",
+// and the app looks broken while the server is still working happily.
+//
+// So the response starts immediately and drips a space every few seconds
+// until the real body is ready. Leading whitespace is legal JSON, so the
+// browser still parses it with an unchanged res.json().
+//
+// The cost: headers go out before the outcome is known, so a failure cannot
+// use a status code. It comes back as 200 with an { error } body, and the
+// client checks for that. Everything that CAN fail with a status - the 400,
+// the sign-in and access gates, the 404 for someone else's trip - therefore
+// has to happen BEFORE this is called.
+// ---------------------------------------------------------------------------
+const HEARTBEAT_MS = 5000;
+
+function streamedJson(res) {
+  res.status(200);
+  res.set('Content-Type', 'application/json; charset=utf-8');
+  res.set('Cache-Control', 'no-store');
+  // Ask any proxy in the path not to buffer us, which would undo the point.
+  res.set('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  // One byte straight away, not after the first interval: flushed headers
+  // alone do not always wake a buffering proxy.
+  const beat = () => { try { res.write(' '); } catch (e) { /* client went away */ } };
+  beat();
+  const timer = setInterval(beat, HEARTBEAT_MS);
+  let done = false;
+  return function send(payload) {
+    if (done) return;
+    done = true;
+    clearInterval(timer);
+    try { res.end(JSON.stringify(payload)); } catch (e) { /* client went away */ }
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Chat - per trip. Same propose-then-confirm shape as santa-rosa-beach-trip:
 // the model can draft a full day-by-day plan, but nothing is saved to the
 // trip until the user taps Apply in the UI.
@@ -380,6 +422,7 @@ app.get('/api/trips/:id/messages', requireLogin, async (req, res) => {
 });
 
 app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, identity.requireBudget, async (req, res) => {
+  let send = null;
   try {
     const { question } = req.body || {};
     if (!question) return res.status(400).json({ error: 'question is required.' });
@@ -388,6 +431,9 @@ app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, identity.requireB
     if (!owned) return;
     const tripRef = owned.ref;
     const trip = owned.data;
+
+    // Past this line nothing can fail with a status code, so start the drip.
+    send = streamedJson(res);
 
     const systemPrompt =
       'You are helping research and plan a trip: "' + (trip.name || 'Untitled trip') + '"' +
@@ -443,7 +489,7 @@ app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, identity.requireB
     });
     await tripRef.update({ updatedAt: new Date().toISOString() });
 
-    res.json({ answer, proposedChange });
+    send({ answer, proposedChange });
   } catch (err) {
     console.error('POST /api/trips/:id/chat', err);
     // Same reason as the self-test above: without this the reason is lost.
@@ -455,6 +501,7 @@ app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, identity.requireB
         message: String(err.message || err).slice(0, 600),
       });
     } catch (e) { /* never let the diagnostic break the response */ }
+    if (send) return send({ error: 'Chat request failed.' });
     res.status(500).json({ error: 'Chat request failed.' });
   }
 });
@@ -606,15 +653,19 @@ app.delete('/api/trips/:id/watches/:watchId', requireLogin, async (req, res) => 
 });
 
 app.post('/api/trips/:id/watches/:watchId/check', requireLogin, requireAiAccess, identity.requireBudget, async (req, res) => {
+  let send = null;
   try {
     const owned = await loadOwnedTrip(req, res);
     if (!owned) return;
     const watchDoc = await owned.ref.collection('watches').doc(req.params.watchId).get();
     if (!watchDoc.exists) return res.status(404).json({ error: 'Watch not found.' });
+    // A manual check searches the web too, so it waits just as long as chat.
+    send = streamedJson(res);
     const result = await runWatchCheck(owned.data, watchDoc);
-    res.json({ ok: true, result });
+    send({ ok: true, result });
   } catch (err) {
     console.error('POST /api/trips/:id/watches/:watchId/check', err);
+    if (send) return send({ error: 'Check failed.' });
     res.status(500).json({ error: 'Check failed.' });
   }
 });

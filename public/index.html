@@ -1154,7 +1154,9 @@
     // The old 60s ceiling aborted every one of those before the server had
     // finished, so a working request looked like a broken app. The server is
     // allowed 900s, so the client should not be the thing that gives up first.
-    var timeoutMs = 240000;
+    // The server drips whitespace while it works, so the connection itself no
+    // longer goes idle - this ceiling is now only a last resort.
+    var timeoutMs = 600000;
     var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
     var timer = controller ? setTimeout(function () { controller.abort(); }, timeoutMs) : null;
     // Two minutes of nothing reads as a hang, so say what is happening.
@@ -1184,8 +1186,10 @@
         renderChat();
         return;
       }
-      var data = await res.json();
-      if (!res.ok) throw new Error(data.error || "failed");
+      var data = await res.json().catch(function () { return {}; });
+      // The server's headers are already gone by the time it knows how the
+      // request went, so a failure arrives as a 200 carrying { error }.
+      if (!res.ok || data.error) throw new Error(data.error || "failed");
       entry.answer = data.answer;
       entry.proposedChange = data.proposedChange || null;
       setStatus(chatStatus, "");
@@ -1193,8 +1197,8 @@
       scrollChatToEnd();
     } catch (e) {
       var timedOut = e && e.name === "AbortError";
-      setStatus(chatStatus, timedOut ? "That took over four minutes with no reply. Try again, or ask something narrower." : "Couldn't send that. Try again.", "error");
-      entry.answer = timedOut ? "⚠️ No reply after four minutes. Try again." : "⚠️ Couldn't reach the server. Try again.";
+      setStatus(chatStatus, timedOut ? "That took over ten minutes with no reply. Try again, or ask something narrower." : "Couldn't send that. Try again.", "error");
+      entry.answer = timedOut ? "⚠️ No reply after ten minutes. Try again." : "⚠️ Couldn't reach the server. Try again.";
       renderChat();
       chatText.value = text; autoGrowChatText();
     } finally {
@@ -1251,7 +1255,10 @@
             if (res.status === 403) showAiRequired($("wStatus")); else showAuthRequired($("wStatus"));
             checkBtn.disabled = false; checkBtn.textContent = "Check now"; return;
           }
-          if (!res.ok) throw new Error();
+          // A check that searches the web has its headers out long before it
+          // knows the result, so a failure comes back as a 200 with { error }.
+          var body = await res.json().catch(function () { return {}; });
+          if (!res.ok || body.error) throw new Error();
           await refreshWatches();
         } catch (e) { checkBtn.disabled = false; checkBtn.textContent = "Check now"; toast("Check failed"); }
       });

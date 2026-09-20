@@ -144,6 +144,27 @@ flow — deliberate, not something to let an LLM silently rewrite.
 
 Runs on `claude-sonnet-5` (tool use + web search).
 
+### Long answers stream whitespace
+
+Chat and the manual watch check (`POST /api/trips/:id/watches/:wid/check`)
+both take two or three minutes when the model searches the web, and for all
+of it nothing crosses the wire. iOS Safari on a mobile network drops a
+connection that idle, so a working request looks like a broken app. This was
+measured on `santa-rosa-beach-trip` — 176 seconds for one good answer — and
+the fix is copied here verbatim.
+
+`streamedJson(res)` sends headers plus one space immediately, then a space
+every five seconds until the body is ready. Leading whitespace is legal JSON,
+so the client still uses a plain `res.json()`.
+
+**The contract:** headers go out before the outcome is known, so failures on
+those two routes come back as `200` with an `{ error }` body, never a 500.
+Everything that fails with a status — the 400, `requireLogin`,
+`requireAiAccess`, `requireBudget`, and `loadOwnedTrip`'s 404 — must stay
+*above* the `streamedJson` call, and the frontend checks
+`!res.ok || data.error`. The cron sweep is untouched: nothing is waiting on
+it, so it keeps ordinary status codes.
+
 ## Watches: user sets the schedule without touching Cloud Scheduler
 
 Each watch has its own `intervalHours` (6h / day / 3 days / week, chosen in
