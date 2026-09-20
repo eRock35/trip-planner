@@ -41,7 +41,15 @@
 // a duplicate instead of needing a uniqueness index Firestore does not have.
 
 const crypto = require('crypto');
+const { AsyncLocalStorage } = require('async_hooks');
 const webauthn = require('./identity-webauthn');
+
+// The metered Anthropic client is built once per process but serves every
+// visitor, so "who is this call for" cannot be baked into it. This carries the
+// current request across the awaits between the route and the SDK call, which
+// is what lets usage be charged to the right person without threading a uid
+// through every function that might one day call a model.
+const requestContext = new AsyncLocalStorage();
 
 const USERS = 'users';
 const EVENTS = 'events';
@@ -92,6 +100,48 @@ function priceOf(model, usage, batch = false) {
       cacheRead * p.input * CACHE_READ_MULTIPLIER) /
     million;
   return batch ? dollars / 2 : dollars;
+}
+
+/* ------------------------------------------------------------------ *
+ * The shared budget
+ * ------------------------------------------------------------------ */
+
+// One allowance per PERSON, spendable across every app - not one per app.
+// Five separate $2 budgets would be $10 and would let someone who exhausted
+// one simply move to the next, which is the whole thing this is meant to stop.
+//
+// Denominated in dollars rather than calls because that is what it actually
+// costs: one Opus request with a long document is worth many Haiku ones, and a
+// call-count budget prices them the same.
+const FREE_ALLOWANCE_USD = Number(process.env.FREE_ALLOWANCE_USD || 2);
+
+// Spending is recorded AFTER a call, so the last one allowed can overshoot by
+// its own cost. Bounded, and the alternative - reserving an estimate up front
+// and reconciling after - is a great deal of machinery for a couple of cents.
+function budgetFor(user) {
+  if (!user) {
+    // Not signed in. Each app decides whether anonymous use is allowed at all;
+    // this only says there is no personal allowance to draw on.
+    return { unlimited: false, allowanceUsd: 0, spentUsd: 0, remainingUsd: 0, reason: 'signed-out' };
+  }
+  // The owner is never metered - it is his API key.
+  if (user.admin === true) {
+    return { unlimited: true, allowanceUsd: Infinity, spentUsd: Number(user.spentUsd || 0), remainingUsd: Infinity, reason: 'owner' };
+  }
+  // A paid plan covers its own usage; the allowance is for everyone else.
+  if (accessLevel(user, 'dataviz') === 'pro' || user.plan === 'pro') {
+    return { unlimited: true, allowanceUsd: Infinity, spentUsd: Number(user.spentUsd || 0), remainingUsd: Infinity, reason: 'pro' };
+  }
+  const allowance = FREE_ALLOWANCE_USD + Number(user.toppedUpUsd || 0);
+  const spent = Number(user.spentUsd || 0);
+  return {
+    unlimited: false,
+    allowanceUsd: allowance,
+    spentUsd: spent,
+    remainingUsd: Math.max(0, allowance - spent),
+    toppedUpUsd: Number(user.toppedUpUsd || 0),
+    reason: 'allowance',
+  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -344,6 +394,43 @@ function create(opts) {
     return row;
   }
 
+  /** Runs each request inside a context the meter can read. Mounted by
+   *  identity.mount, so an app gets it by wiring identity at all. */
+  function trackRequests(req, _res, next) {
+    requestContext.run({ req }, next);
+  }
+
+  /** The signed-in person for the request currently being served, if any. */
+  function currentUid() {
+    const store = requestContext.getStore();
+    return (store && store.req && store.req.user && store.req.user.id) || null;
+  }
+
+  /** What this person may still spend. */
+  function budget(req) {
+    return budgetFor(req && req.user);
+  }
+
+  /**
+   * Refuse a model call when the allowance is gone. Put this in front of every
+   * route that spends, not just the obvious one - the budget is only real if
+   * nothing can route around it.
+   *
+   * A request with no user passes through: whether anonymous use is allowed is
+   * each app's own decision, made by its own gate. This one only enforces a
+   * personal allowance, and there isn't one to enforce.
+   */
+  function requireBudget(req, res, next) {
+    const b = budgetFor(req.user);
+    if (!req.user || b.unlimited || b.remainingUsd > 0) return next();
+    log('budget.exhausted', req, { detail: `spent ${b.spentUsd.toFixed(2)} of ${b.allowanceUsd.toFixed(2)}`, ok: false });
+    return res.status(402).json({
+      error: 'You have used your credit.',
+      detail: `Your $${b.allowanceUsd.toFixed(2)} of credit is spent. Top up to keep going — it works across every app.`,
+      budget: { allowanceUsd: b.allowanceUsd, spentUsd: b.spentUsd, remainingUsd: 0 },
+    });
+  }
+
   /** One row per model call, priced. Also fire-and-forget. */
   async function recordUsage({ model, usage, route, uid, batch = false, calls = 1 }) {
     const row = {
@@ -361,6 +448,12 @@ function create(opts) {
       costUsd: priceOf(model, usage, batch),
     };
     try { await store.add(USAGE, row); } catch (e) { /* never break the call it measured */ }
+    // Charge it to the person, atomically. Without this the ledger would be a
+    // sum over an unbounded collection on every request; with a read-modify-
+    // write it would lose charges whenever two apps billed at once.
+    if (uid && typeof row.costUsd === 'number' && row.costUsd > 0 && store.bump) {
+      try { await store.bump(USERS, uid, { spentUsd: row.costUsd, callCount: 1 }); } catch (e) { /* same */ }
+    }
     return row;
   }
 
@@ -390,7 +483,10 @@ function create(opts) {
             model: (params && params.model) || null,
             usage: res.usage,
             route: opts.route || null,
-            uid: opts.uid || null,
+            // Who to charge. `whoFor` lets an app hand over the current
+            // request, since one client serves every visitor; scheduled work
+            // has nobody to charge and is left unattributed.
+            uid: (opts.whoFor && opts.whoFor()) || opts.uid || currentUid(),
           }).catch(() => {});
         }
       } catch (e) { /* never let measurement break the call */ }
@@ -428,6 +524,7 @@ function create(opts) {
   /* ---------- routes ---------- */
 
   function mount(expressApp) {
+    expressApp.use(trackRequests);
     expressApp.use(attachUser);
 
     expressApp.post(`${mountPath}/register`, async (req, res) => {
@@ -494,6 +591,7 @@ function create(opts) {
         access: req.user.access || {},
         requests: req.user.requests || {},
         admin: req.user.admin === true,
+        budget: budgetFor(req.user),
         createdAt: req.user.createdAt || null,
       });
     });
@@ -598,6 +696,11 @@ function create(opts) {
     log,
     recordUsage,
     meter,
+    budget,
+    budgetFor,
+    requireBudget,
+    trackRequests,
+    currentUid,
     priceOf,
     MIN_PASSWORD,
     COOKIE,
@@ -605,4 +708,4 @@ function create(opts) {
   };
 }
 
-module.exports = { create, priceOf, PRICES, uidFor, makeHash, matches, accessLevel, hasAccess, pendingRequest, USERS, EVENTS, USAGE, COOKIE, MIN_PASSWORD };
+module.exports = { create, priceOf, PRICES, uidFor, makeHash, matches, accessLevel, hasAccess, pendingRequest, budgetFor, FREE_ALLOWANCE_USD, USERS, EVENTS, USAGE, COOKIE, MIN_PASSWORD };

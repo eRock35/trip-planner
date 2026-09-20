@@ -379,7 +379,7 @@ app.get('/api/trips/:id/messages', requireLogin, async (req, res) => {
   }
 });
 
-app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, async (req, res) => {
+app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, identity.requireBudget, async (req, res) => {
   try {
     const { question } = req.body || {};
     if (!question) return res.status(400).json({ error: 'question is required.' });
@@ -605,7 +605,7 @@ app.delete('/api/trips/:id/watches/:watchId', requireLogin, async (req, res) => 
   }
 });
 
-app.post('/api/trips/:id/watches/:watchId/check', requireLogin, requireAiAccess, async (req, res) => {
+app.post('/api/trips/:id/watches/:watchId/check', requireLogin, requireAiAccess, identity.requireBudget, async (req, res) => {
   try {
     const owned = await loadOwnedTrip(req, res);
     if (!owned) return;

@@ -41,6 +41,20 @@ const store = {
     const snap = await client().collection(collection).get();
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   },
+  /** Atomic add on numeric fields. The spend ledger is written on every model
+   *  call, sometimes concurrently by different apps for the same account, so a
+   *  read-modify-write would quietly lose charges under any parallelism.
+   *  Firestore's own increment is the only way to get this right. */
+  async bump(collection, id, deltas) {
+    const { FieldValue } = require('@google-cloud/firestore');
+    const patch = {};
+    for (const [field, by] of Object.entries(deltas)) {
+      if (typeof by === 'number' && Number.isFinite(by)) patch[field] = FieldValue.increment(by);
+    }
+    if (!Object.keys(patch).length) return;
+    await client().collection(collection).doc(id).set(patch, { merge: true });
+  },
+
   async add(collection, value) {
     const id = autoId();
     await client().collection(collection).doc(id).set(value);
