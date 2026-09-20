@@ -313,6 +313,15 @@ app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, async (req, res) 
     res.json({ answer, proposedChange });
   } catch (err) {
     console.error('POST /api/trips/:id/chat', err);
+    // Same reason as the self-test above: without this the reason is lost.
+    try {
+      await db.collection('control').doc('last-chat-error').set({
+        at: new Date().toISOString(),
+        status: err.status || null,
+        name: err.name || null,
+        message: String(err.message || err).slice(0, 600),
+      });
+    } catch (e) { /* never let the diagnostic break the response */ }
     res.status(500).json({ error: 'Chat request failed.' });
   }
 });
@@ -461,6 +470,47 @@ app.post('/api/trips/:id/watches/:watchId/check', requireLogin, requireAiAccess,
 // Skips every watch on a locked trip: a booked trip isn't being shopped
 // anymore. Capped per run so one slow tick can't balloon into a huge bill.
 const MAX_CHECKS_PER_RUN = 20;
+
+// Diagnostic: exercise the Anthropic call twice, once with the web_search
+// tool and once without, and write both outcomes to Firestore. Cloud Logging
+// is not readable by this project's service account, so a 500 from the chat
+// route is otherwise a dead end - the user sees "Chat request failed" and the
+// reason never leaves the container. Isolating the tool matters because that
+// is the only thing chat uses that a working scan does not.
+app.post('/api/cron/check-watches', requireLoginOrCron, async (req, res, next) => {
+  if (req.query.selftest !== '1') return next();
+  const probe = async (label, tools) => {
+    const started = Date.now();
+    try {
+      const r = await anthropic.messages.create({
+        model: 'claude-sonnet-5',
+        max_tokens: 128,
+        tools,
+        messages: [{ role: 'user', content: 'Reply with the single word OK.' }],
+      });
+      return {
+        label, ok: true, ms: Date.now() - started,
+        stopReason: r.stop_reason,
+        text: r.content.filter((b) => b.type === 'text').map((b) => b.text).join(' ').slice(0, 120),
+        blocks: r.content.map((b) => b.type),
+      };
+    } catch (err) {
+      return {
+        label, ok: false, ms: Date.now() - started,
+        status: err.status || null,
+        name: err.name || null,
+        message: String(err.message || err).slice(0, 600),
+      };
+    }
+  };
+  const out = {
+    at: new Date().toISOString(),
+    withSearch: await probe('with web_search', [{ type: 'web_search_20260209', name: 'web_search', max_uses: 1 }]),
+    withoutTools: await probe('no tools', undefined),
+  };
+  await db.collection('control').doc('ai-selftest').set(out);
+  res.json(out);
+});
 
 app.post('/api/cron/check-watches', requireLoginOrCron, async (req, res) => {
   try {
