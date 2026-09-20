@@ -145,18 +145,29 @@ Cloud Run Admin API v2). See `college-football-app`'s
 
 ## Still to do
 
-- Firestore database `trip-planner` doesn't exist yet — create it (Native
-  mode, `us-central1`) before first deploy.
-- Not deployed to Cloud Run yet.
-- Cloud Scheduler job `trip-planner-check-watches`, hourly, POSTing to
-  `/api/cron/check-watches` with header `X-Cron-Key: <cron-secret>` — the
-  deployer account has lacked permission to create Scheduler jobs on every
-  project so far (needs `roles/cloudscheduler.admin`); same blocker as
-  `college-football-app`'s docs describe.
 - Runtime service account: same known compromise as the other two apps
-  (currently would run as the broad-privilege deployer account, not a
-  scoped-down one) — see `college-football-app`'s CLAUDE.md for the right
-  fix and why it's not done yet.
+  (currently runs as the broad-privilege deployer account
+  `cover-sheet-deployer@`, not a scoped-down one) — see
+  `college-football-app`'s CLAUDE.md for the right fix and why it's not done
+  yet.
 - Once a real trip exists and is locked in, decide whether "promote to a
   bespoke app" is ever actually wanted before building it — see the note
   above.
+
+## Deployed (2026-09-20)
+
+- Cloud Run service `trip-planner` in `us-central1`, project
+  `metal-celerity-236019`.
+- URL: `https://trip-planner-u4h4ftn3fa-uc.a.run.app` (public to browse;
+  writes gated — see "Sign-in" above). `allUsers` holds `roles/run.invoker`.
+- Image: `us-central1-docker.pkg.dev/metal-celerity-236019/erik-projects/trip-planner`,
+  pinned by digest in the service spec — a floating `:latest` tag does not
+  trigger a new revision.
+- Firestore database `trip-planner` (Native mode, `us-central1`) exists.
+- Secrets in Secret Manager: `trip-planner-login-username`,
+  `trip-planner-login-password`, `trip-planner-cron-secret`,
+  `trip-planner-session-secret`. `ANTHROPIC_API_KEY` is the shared one.
+- Cloud Scheduler job `trip-planner-check-watches` exists: hourly at `:00`
+  America/New_York, POSTing to `/api/cron/check-watches` with the
+  `X-Cron-Key` header. Verified end to end with a forced run — it returned
+  clean and wrote `control/watch-cron` (`checked: 0`, no watches yet).
