@@ -273,9 +273,9 @@ app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, async (req, res) 
       'array - never call it just to answer a question with no requested plan or change.\n\n' +
       'Current itinerary:\n' + JSON.stringify(trip.days || []);
 
-    const response = await anthropic.messages.create({
+    const response = await completeTurn({
       model: 'claude-sonnet-5',
-      max_tokens: 4096,
+      max_tokens: 8192,
       system: systemPrompt,
       tools: [
         { type: 'web_search_20260209', name: 'web_search', max_uses: 5 },
@@ -298,7 +298,13 @@ app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, async (req, res) 
         answer = "I've drafted a plan: " + proposedChange.summary + ' Review it below and tap Apply to save it.';
       }
     }
-    if (!answer) answer = "I didn't have anything to add to that — try rephrasing?";
+    if (!answer) {
+      // Distinguish "nothing to say" from "ran out of room": the first is an
+      // answer, the second is a failure wearing an answer's clothes.
+      answer = response.stop_reason === 'max_tokens'
+        ? "That search ran long and I ran out of room before writing the answer. Ask again, or narrow it a little."
+        : "I didn't have anything to add to that — try rephrasing?";
+    }
 
     const askedAt = new Date().toISOString();
     await tripRef.collection('messages').add({
@@ -347,6 +353,29 @@ app.post('/api/trips/:id/schedule/apply', requireLogin, async (req, res) => {
 // Anthropic call with web search; a manual check hits that directly, and the
 // batch route below is what a single Cloud Scheduler tick fans out to.
 // ---------------------------------------------------------------------------
+// A turn that uses the server-side web_search tool does not always finish in
+// one response. When the search runs long the API returns stop_reason
+// "pause_turn" and expects to be handed its own output back so it can carry
+// on; when search results eat max_tokens the model may not have written
+// anything yet. Either way every content block is a tool block, so filtering
+// for text yields nothing and the user gets "I didn't have anything to add to
+// that" for a question the model was halfway through answering.
+//
+// The same defect was fixed in santa-rosa-beach-trip. Both apps call web
+// search the same way, so both needed the same continuation.
+const MAX_TURN_CONTINUATIONS = 4;
+
+async function completeTurn(params) {
+  const messages = params.messages.slice();
+  let response;
+  for (let i = 0; i <= MAX_TURN_CONTINUATIONS; i++) {
+    response = await anthropic.messages.create(Object.assign({}, params, { messages }));
+    if (response.stop_reason !== 'pause_turn') break;
+    messages.push({ role: 'assistant', content: response.content });
+  }
+  return response;
+}
+
 const MAX_HISTORY_ENTRIES = 20;
 
 async function runWatchCheck(tripData, watchDoc) {
@@ -363,9 +392,9 @@ async function runWatchCheck(tripData, watchDoc) {
     'whether that is a meaningful change from last time (if you have a prior result to compare). Never invent ' +
     'a price - say so if you cannot verify one.';
 
-  const response = await anthropic.messages.create({
+  const response = await completeTurn({
     model: 'claude-sonnet-5',
-    max_tokens: 1024,
+    max_tokens: 2048,
     tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 4 }],
     messages: [{ role: 'user', content: prompt }],
   });
@@ -503,10 +532,35 @@ app.post('/api/cron/check-watches', requireLoginOrCron, async (req, res, next) =
       };
     }
   };
+  // A third probe that looks like a real question rather than a ping: the
+  // first two prove the account and the tool work, this one proves a turn
+  // that actually searches comes back with text in it.
+  const realistic = async () => {
+    const started = Date.now();
+    try {
+      const r = await completeTurn({
+        model: 'claude-sonnet-5',
+        max_tokens: 8192,
+        tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }],
+        messages: [{ role: 'user', content: 'What is the weather usually like in Destin, Florida in late March, and what are two things to do there with young kids?' }],
+      });
+      const text = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n\n');
+      return {
+        label: 'realistic search question', ok: true, ms: Date.now() - started,
+        stopReason: r.stop_reason, blocks: r.content.map((b) => b.type),
+        textLength: text.length, preview: text.slice(0, 160),
+      };
+    } catch (err) {
+      return { label: 'realistic search question', ok: false, ms: Date.now() - started,
+               status: err.status || null, message: String(err.message || err).slice(0, 600) };
+    }
+  };
+
   const out = {
     at: new Date().toISOString(),
     withSearch: await probe('with web_search', [{ type: 'web_search_20260209', name: 'web_search', max_uses: 1 }]),
     withoutTools: await probe('no tools', undefined),
+    realistic: await realistic(),
   };
   await db.collection('control').doc('ai-selftest').set(out);
   res.json(out);
