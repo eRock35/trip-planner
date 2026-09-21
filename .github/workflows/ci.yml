@@ -1,0 +1,30 @@
+name: CI
+
+# There was no CI here until 2026-09-21: every check was a person running
+# things by hand, which meant a broken push stayed broken until someone
+# noticed. These are the same suites that gate a deploy locally.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci || npm install
+
+      - name: Syntax-check every server file
+        run: |
+          find . -name '*.js' -not -path './node_modules/*' -not -path './public/*' \
+            -maxdepth 3 -print0 | xargs -0 -n1 node --check
+
+      - name: Suites
+        run: npm test
