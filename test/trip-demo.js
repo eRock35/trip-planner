@@ -35,6 +35,25 @@ const jar = (r) => (r.headers.getSetCookie() || []).map((c) => c.split(';')[0]).
   ok('...including the itinerary', r.status === 403, String(r.status));
   r = await fetch(B + '/api/trips/demo', { headers: { cookie: user } });
   ok('a signed-in user can still read it', r.status === 200);
+  // Copying the example into an account.
+  r = await post('/api/trips/demo/copy', {});
+  ok('copying needs a session', r.status === 401, String(r.status));
+  r = await post('/api/trips/demo/copy', {}, user);
+  const copy = await r.json();
+  ok('a signed-in user can copy the example', r.status === 200 && copy.id, JSON.stringify(copy));
+  r = await fetch(B + '/api/trips/' + copy.id, { headers: { cookie: user } });
+  const mine = await r.json();
+  ok('the copy is theirs, and editable', r.status === 200 && mine.demo !== true);
+  ok('...it arrives in planning, not locked', mine.status === 'planning', mine.status);
+  ok('...with the itinerary', Array.isArray(mine.days) && mine.days.length === 5, String((mine.days || []).length));
+  ok('...and remembers where it came from', mine.copiedFrom === 'demo');
+  r = await fetch(B + '/api/trips/' + copy.id + '/watches', { headers: { cookie: user } });
+  const copiedWatches = await r.json();
+  ok('...and the watches came too', copiedWatches.length === 2, String(copiedWatches.length));
+  ok('...with their history left behind', copiedWatches.every((w) => !w.history || !w.history.length));
+  r = await post('/api/trips/' + copy.id + '/lock', {}, user);
+  ok('the copy is writable, unlike the example', r.status === 200, String(r.status));
+
   r = await fetch(B + '/healthz');
   ok('frame-ancestors is set for the landing page', /frame-ancestors[^;]*strongtechnicalconsulting\.com/.test(r.headers.get('content-security-policy') || ''), r.headers.get('content-security-policy'));
   console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
