@@ -43,6 +43,7 @@ class FakeFirestore {
       },
       count() { return { get: async () => ({ data: () => ({ count: 0 }) }) }; },
       async add(value) {
+        noNestedArrays(value);
         const id = 'a' + Math.random().toString(36).slice(2, 11);
         store.set(name + '/' + id, JSON.parse(JSON.stringify(value)));
         return this.doc(id); // callers read the ref back, so return a real one
@@ -51,8 +52,8 @@ class FakeFirestore {
         const key = name + '/' + (id || 'auto' + Math.random().toString(36).slice(2));
         return { id: key.slice(name.length + 1),
           async get() { const d = store.get(key); return { exists: d !== undefined, id: key.slice(name.length + 1), data: () => d }; },
-          async set(v, o) { store.set(key, o && o.merge ? applyIncrements(store.get(key), v) : JSON.parse(JSON.stringify(v))); },
-          async update(v) { store.set(key, Object.assign({}, store.get(key) || {}, v)); },
+          async set(v, o) { noNestedArrays(v); store.set(key, o && o.merge ? applyIncrements(store.get(key), v) : JSON.parse(JSON.stringify(v))); },
+          async update(v) { noNestedArrays(v); store.set(key, Object.assign({}, store.get(key) || {}, v)); },
           async delete() { store.delete(key); },
           collection: (sub) => new FakeFirestore({ databaseId: 'sub' }).collection(key + '/' + sub) };
       },
@@ -60,6 +61,43 @@ class FakeFirestore {
     return mk();
   }
   batch() { const ops = []; return { set(r, v, o) { ops.push([r, v, o]); }, delete(r) { ops.push([r, null]); }, async commit() { for (const [r, v, o] of ops) v === null ? await r.delete() : await r.set(v, o); } }; }
+}
+
+
+/**
+ * Firestore refuses to store an array inside an array, and the fake has to
+ * refuse it too.
+ *
+ * This is not pedantry about a fake. `days[].blocks` is a list of [time, plan]
+ * PAIRS, so writing an itinerary back is exactly an array of arrays - and
+ * every Apply in the vacation app and the trip planner failed in production
+ * with
+ *
+ *     3 INVALID_ARGUMENT: Property array contains an invalid nested entity.
+ *
+ * while every test passed, because the fake happily stored the shape the real
+ * database rejects. A fake that accepts more than the real thing does not
+ * catch bugs; it hides them, and it hid this one from the day the schedule
+ * moved into Firestore.
+ */
+function noNestedArrays(value, path = '') {
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      const item = value[i];
+      if (Array.isArray(item)) {
+        throw Object.assign(
+          new Error(`3 INVALID_ARGUMENT: Property array contains an invalid nested entity. (at ${path || 'root'}[${i}])`),
+          { code: 3 },
+        );
+      }
+      noNestedArrays(item, `${path}[${i}]`);
+    }
+    return value;
+  }
+  if (value && typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) noNestedArrays(v, path ? `${path}.${k}` : k);
+  }
+  return value;
 }
 
 function install() {

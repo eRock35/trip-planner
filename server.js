@@ -244,6 +244,18 @@ function requireLoginOrCron(req, res, next) {
 // touches a specific trip goes through this - that is what keeps one user's
 // trips invisible to another. 404 rather than 403 on someone else's trip, so
 // the API doesn't confirm that an id exists.
+/** A trip as the page and the model expect it: `days` back in [time, plan]
+ *  pairs, whatever shape the document is in. Applied at every read, because a
+ *  trip written by toStore() and handed out raw would render an itinerary of
+ *  blank rows. */
+function tripOut(id, data) {
+  const out = { id, ...data };
+  if (Array.isArray(data && data.days) && data.days.length) {
+    try { out.days = schedule.fromStore(data.days); } catch (e) { out.days = []; }
+  }
+  return out;
+}
+
 async function loadOwnedTrip(req, res) {
   // The example trip is served from code (see demo.js) and every route that
   // would change a trip comes through here, so this one check covers all of
@@ -316,7 +328,7 @@ app.post('/api/trips', requireLogin, async (req, res) => {
       lockedAt: null,
     });
     const doc = await ref.get();
-    res.json({ id: doc.id, ...doc.data() });
+    res.json(tripOut(doc.id, doc.data()));
   } catch (err) {
     console.error('POST /api/trips', err);
     res.status(500).json({ error: 'Could not create trip.' });
@@ -351,7 +363,10 @@ app.post(`/api/trips/${demo.DEMO_ID}/copy`, requireLogin, async (req, res) => {
       destination: demo.DEMO_TRIP.destination,
       dateRange: demo.DEMO_TRIP.dateRange,
       notes: demo.DEMO_TRIP.notes,
-      days: demo.DEMO_TRIP.days,
+      // The example's itinerary goes through toStore like any other: written
+      // raw, the nested arrays make "Start my own from this" fail with the
+      // same INVALID_ARGUMENT that broke Apply.
+      days: schedule.toStore(demo.DEMO_TRIP.days),
       status: 'planning',
       ownerId: req.user.uid,
       copiedFrom: demo.DEMO_ID,
@@ -379,7 +394,7 @@ app.get('/api/trips/:id', requireLogin, async (req, res) => {
   try {
     const owned = await loadOwnedTrip(req, res);
     if (!owned) return;
-    res.json({ id: owned.doc.id, ...owned.data });
+    res.json(tripOut(owned.doc.id, owned.data));
   } catch (err) {
     console.error('GET /api/trips/:id', err);
     res.status(500).json({ error: 'Failed to load trip.' });
@@ -536,7 +551,16 @@ app.get('/api/trips/:id/messages', requireLogin, async (req, res) => {
     if (!owned) return;
     const snap = await owned.ref.collection('messages')
       .orderBy('askedAt', 'asc').limit(200).get();
-    res.json(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    res.json(snap.docs.map((d) => {
+      const m = { id: d.id, ...d.data() };
+      // Back into [time, plan] pairs, or the Apply card on an old message
+      // would draw a row of blanks and save one.
+      if (m.proposedChange && Array.isArray(m.proposedChange.days)) {
+        try { m.proposedChange = { ...m.proposedChange, days: schedule.fromStore(m.proposedChange.days) }; }
+        catch (e) { m.proposedChange = null; }
+      }
+      return m;
+    }));
   } catch (err) {
     console.error('GET /api/trips/:id/messages', err);
     res.status(500).json({ error: 'Failed to load chat history.' });
@@ -552,7 +576,11 @@ app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, identity.requireB
     const owned = await loadOwnedTrip(req, res);
     if (!owned) return;
     const tripRef = owned.ref;
-    const trip = owned.data;
+    // tripOut, not owned.data: the stored `blocks` are {time, plan} maps and
+    // the model is told - correctly - that a block is a [time, plan] pair.
+    // Showing it one shape and demanding another is how a model starts
+    // "correcting" an itinerary nobody asked it to touch.
+    const trip = tripOut(owned.doc.id, owned.data);
 
     // Past this line nothing can fail with a status code, so start the drip.
     send = streamedJson(res);
@@ -613,7 +641,13 @@ app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, identity.requireB
     await tripRef.collection('messages').add({
       question,
       answer,
-      proposedChange,
+      // The proposal is stored too, so reopening the trip still shows the
+      // Apply card - and it carries `days`, so it needs the same nested-array
+      // treatment the trip itself does. Without it the whole chat turn fails
+      // on the write, AFTER the model has been paid for and answered.
+      proposedChange: proposedChange
+        ? { ...proposedChange, days: schedule.toStore(proposedChange.days) }
+        : null,
       askedAt,
       answeredAt: new Date().toISOString(),
     });
@@ -641,7 +675,11 @@ app.post('/api/trips/:id/schedule/apply', requireLogin, async (req, res) => {
     const days = schedule.validate((req.body || {}).days);
     const owned = await loadOwnedTrip(req, res);
     if (!owned) return;
-    await owned.ref.update({ days, updatedAt: new Date().toISOString() });
+    // toStore, not days: Firestore cannot hold an array inside an array, and
+    // `blocks` is a list of [time, plan] pairs. Writing the pairs straight in
+    // fails with "Property array contains an invalid nested entity", which is
+    // what Apply had been doing every time. See schedule.js.
+    await owned.ref.update({ days: schedule.toStore(days), updatedAt: new Date().toISOString() });
     res.json({ ok: true, days });
   } catch (err) {
     if (err.status === 400) return res.status(400).json({ error: err.message });
