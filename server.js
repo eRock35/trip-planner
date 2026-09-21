@@ -120,11 +120,16 @@ async function attachProfile(req, _res, next) {
 /** The cron sweep's version of the same question, by uid rather than request.
  *  Without this, a watch owned by someone the shared panel approved would be
  *  skipped every hour with no sign of why. */
-async function ownerMaySpend(uid) {
-  if (!uid) return false;
-  if (await accounts.isApprovedUid(uid)) return true;
+/** May this account spend, and on which tier? Returns null when it may not.
+ *  The shared record is loaded either way, so the sweep can tier a watch the
+ *  same way the app tiers a request the owner made themselves. */
+async function ownerAccount(uid) {
+  if (!uid) return null;
   const shared = await identityStore.store.get('users', uid).catch(() => null);
-  return grantedByIdentity(shared ? { id: uid, ...shared } : null);
+  const account = shared ? { id: uid, ...shared } : null;
+  if (grantedByIdentity(account)) return account || { id: uid };
+  if (await accounts.isApprovedUid(uid)) return account || { id: uid };
+  return null;
 }
 
 // Registered before identity.mount so it wins /api/auth/me: the page needs
@@ -403,6 +408,9 @@ function streamedJson(res) {
 // the model can draft a full day-by-day plan, but nothing is saved to the
 // trip until the user taps Apply in the UI.
 // ---------------------------------------------------------------------------
+// One place to change what each tier runs on.
+const MODEL_TIERS = { free: 'claude-haiku-4-5', paid: 'claude-sonnet-5' };
+
 const SCHEDULE_TOOL = {
   name: 'propose_schedule_change',
   description:
@@ -479,14 +487,16 @@ app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, identity.requireB
       'rather than asking which of several options they want, unless the request is genuinely ambiguous.\n\n' +
       'Current itinerary:\n' + JSON.stringify(trip.days || []);
 
+    // Free accounts run on Haiku, which costs half what Sonnet does and is
+    // plenty for trip chat; the owner, Pro, and anyone on their own key get
+    // Sonnet. planFor also hands back the web-search tool version this model
+    // accepts - Haiku 400s on the newer one, so they must move together.
+    const plan = identityLib.planFor(req.user, MODEL_TIERS);
     const response = await completeTurn({
-      model: 'claude-sonnet-5',
+      model: plan.model,
       max_tokens: 8192,
       system: systemPrompt,
-      tools: [
-        { type: 'web_search_20260209', name: 'web_search', max_uses: 5 },
-        SCHEDULE_TOOL,
-      ],
+      tools: [plan.webSearch, SCHEDULE_TOOL],
       messages: [{ role: 'user', content: question }],
     });
 
@@ -585,7 +595,7 @@ async function completeTurn(params) {
 
 const MAX_HISTORY_ENTRIES = 20;
 
-async function runWatchCheck(tripData, watchDoc) {
+async function runWatchCheck(tripData, watchDoc, account) {
   const w = watchDoc.data();
   const prompt =
     'Trip: "' + (tripData.name || 'Untitled trip') + '"' +
@@ -599,10 +609,13 @@ async function runWatchCheck(tripData, watchDoc) {
     'whether that is a meaningful change from last time (if you have a prior result to compare). Never invent ' +
     'a price - say so if you cannot verify one.';
 
+  // Same tiering as chat, and the same reason the tool comes from planFor
+  // rather than being written out here: Haiku rejects the newer search tool.
+  const plan = identityLib.planFor(account, Object.assign({ maxUses: 4 }, MODEL_TIERS));
   const response = await completeTurn({
-    model: 'claude-sonnet-5',
+    model: plan.model,
     max_tokens: 2048,
-    tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 4 }],
+    tools: [plan.webSearch],
     messages: [{ role: 'user', content: prompt }],
   });
   const text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n\n');
@@ -694,7 +707,7 @@ app.post('/api/trips/:id/watches/:watchId/check', requireLogin, requireAiAccess,
     if (!watchDoc.exists) return res.status(404).json({ error: 'Watch not found.' });
     // A manual check searches the web too, so it waits just as long as chat.
     send = streamedJson(res);
-    const result = await runWatchCheck(owned.data, watchDoc);
+    const result = await runWatchCheck(owned.data, watchDoc, req.user);
     send({ ok: true, result });
   } catch (err) {
     console.error('POST /api/trips/:id/watches/:watchId/check', err);
@@ -795,9 +808,10 @@ app.post('/api/cron/check-watches', requireLoginOrCron, async (req, res) => {
       // watch would be billing Erik's key every hour.
       const ownerId = tripDoc.data().ownerId;
       if (!approvalCache.has(ownerId)) {
-        approvalCache.set(ownerId, await ownerMaySpend(ownerId));
+        approvalCache.set(ownerId, await ownerAccount(ownerId));
       }
-      if (!approvalCache.get(ownerId)) {
+      const ownerRecord = approvalCache.get(ownerId);
+      if (!ownerRecord) {
         skippedUnapproved += 1;
         continue;
       }
@@ -810,7 +824,7 @@ app.post('/api/cron/check-watches', requireLoginOrCron, async (req, res) => {
         const lastMs = w.lastCheckedAt ? new Date(w.lastCheckedAt).getTime() : 0;
         if (now - lastMs < dueMs) continue;
         try {
-          const result = await runWatchCheck(tripDoc.data(), watchDoc);
+          const result = await runWatchCheck(tripDoc.data(), watchDoc, ownerRecord);
           results.push({ tripId: tripDoc.id, watchId: watchDoc.id, result });
         } catch (e) {
           console.error('watch check failed', tripDoc.id, watchDoc.id, e);

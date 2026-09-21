@@ -209,6 +209,52 @@ function parseCookies(req) {
 /** The cookie is set on the PARENT domain so every subdomain sees it. Locally
  *  (127.0.0.1, or any host that is not under the base domain) it falls back to
  *  a host-only cookie, which is what makes this testable off Cloud Run. */
+/* ------------------------------------------------------------------ *
+ * Which model, and which web-search tool that model can actually use
+ * ------------------------------------------------------------------ */
+
+// Haiku 4.5 is $1/$5 per million tokens against Sonnet 5's $2/$10 and Opus 5's
+// $5/$25. For chat it is plenty, and half the bill is half the bill - so the
+// free allowance buys roughly twice as much conversation for the same money.
+// Anyone who is paying, one way or another - the owner, a Pro subscription, or
+// their own API key - gets the better model.
+//
+// THE TRAP, measured against the live API before this was written: Haiku 4.5
+// returns 400 on web_search_20260209 ("does not support programmatic tool
+// calling"). The newer search tool needs Opus 4.6+ or Sonnet 4.6+. So the
+// model and the search tool have to move together or every free-tier chat
+// breaks the moment the model is downgraded - which is why planFor hands back
+// both and no call site picks a tool type on its own.
+const SEARCH_MODERN = 'web_search_20260209';
+const SEARCH_BASIC = 'web_search_20250305';
+const MODERN_SEARCH = /^claude-(opus-(5|4-8|4-7|4-6)|sonnet-(5|4-6)|fable-5)/;
+
+function webSearchFor(model, maxUses) {
+  return {
+    type: MODERN_SEARCH.test(String(model || '')) ? SEARCH_MODERN : SEARCH_BASIC,
+    name: 'web_search',
+    max_uses: maxUses,
+  };
+}
+
+/**
+ * Pick the model for this request, and the search tool that goes with it.
+ *
+ * @param user          req.user, or null for an anonymous visitor (free).
+ * @param opts.free     model for the shared allowance and for signed-out use.
+ * @param opts.paid     model for the owner, Pro, and bring-your-own-key.
+ * @param opts.maxUses  web_search max_uses, default 5.
+ */
+function planFor(user, opts) {
+  const paid = budgetFor(user).unlimited;
+  const model = (paid && opts.paid) || opts.free;
+  return {
+    model,
+    tier: paid ? 'paid' : 'free',
+    webSearch: webSearchFor(model, opts.maxUses === undefined ? 5 : opts.maxUses),
+  };
+}
+
 /** Where someone sends money. Checkout is built once, on dataviz, and the
  *  balance it tops up is shared, so every app points at the same place rather
  *  than growing its own Stripe integration. TOP_UP_URL overrides it; without
@@ -724,4 +770,6 @@ function create(opts) {
   };
 }
 
-module.exports = { create, priceOf, PRICES, uidFor, makeHash, matches, accessLevel, hasAccess, pendingRequest, budgetFor, FREE_ALLOWANCE_USD, USERS, EVENTS, USAGE, COOKIE, MIN_PASSWORD };
+module.exports = {
+  planFor,
+  webSearchFor, create, priceOf, PRICES, uidFor, makeHash, matches, accessLevel, hasAccess, pendingRequest, budgetFor, FREE_ALLOWANCE_USD, USERS, EVENTS, USAGE, COOKIE, MIN_PASSWORD };
