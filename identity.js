@@ -149,7 +149,12 @@ function budgetFor(user) {
   }
   // Their key, their bill. Not metered here, but usage is still recorded so
   // the dashboard can show what they ran - it just is not charged to anyone.
-  if (user.byok && user.byok.blob) {
+  //
+  // Gated on the membership, because the fee is for the platform rather than
+  // for tokens, and a key on file does not stop someone using the hosting,
+  // the account and the apps. A lapsed member keeps their key on file and
+  // falls back to the free allowance rather than losing it.
+  if (user.byok && user.byok.blob && paysPlatformFee(user)) {
     return { unlimited: true, allowanceUsd: Infinity, spentUsd: Number(user.spentUsd || 0), remainingUsd: Infinity, reason: 'byok' };
   }
   // There is no third branch here, and that is the point: nobody but the
@@ -176,6 +181,26 @@ function budgetFor(user) {
     member: isMember(user),
     reason: isMember(user) ? 'member' : 'allowance',
   };
+}
+
+/**
+ * May this person spend beyond the free tier at all?
+ *
+ * The membership is a platform fee, not a bundle of tokens: it buys the
+ * better model, the bigger search budget, and the RIGHT to put money or your
+ * own key behind the apps. Free use needs no membership; going past free
+ * does, whether you pay for tokens or bring your own.
+ *
+ * The reasoning is that someone on their own key still uses the hosting, the
+ * account system, the sync and the apps themselves, and was paying nothing
+ * for any of it. Someone who exhausts the free tier and stops costs nothing
+ * and is charged nothing - they keep every feature that is not a model call,
+ * for as long as they like.
+ */
+function paysPlatformFee(user) {
+  if (!user) return false;
+  if (user.admin === true) return true;      // it is his platform
+  return isMember(user);
 }
 
 /**
@@ -582,6 +607,25 @@ function create(opts) {
    *    still counts. A ceiling meant to keep strangers from draining the key
    *    should not lock out the person paying for it.
    */
+  /**
+   * A daily ceiling on what the free tier costs, across everyone.
+   *
+   * **Deliberately switched off.** It was briefly set to $2/day on
+   * trip-planner and that was a mistake worth writing down rather than just
+   * reverting: the per-user free allowance is also $2, so the first person to
+   * use their whole trial consumed the entire day's free tier and the second
+   * signup that day was refused before their first answer. Two numbers that
+   * happen to be equal made a free tier into a lottery, invisibly.
+   *
+   * The per-user allowance is the real control. This exists for the one thing
+   * it cannot do - someone registering throwaway accounts to farm the free $2
+   * repeatedly - and is one environment variable away if that ever starts
+   * happening. The code being here is not an invitation to switch it on;
+   * leaving the variable unset is the decision.
+   *
+   * If it is ever set, set it to a MULTIPLE of FREE_ALLOWANCE_USD, or it caps
+   * the number of people who may try the apps each day rather than the money.
+   */
   const DAILY_CAP_USD = Number(process.env.FREE_TIER_DAILY_CAP_USD || 0);
 
   const today = () => new Date().toISOString().slice(0, 10);
@@ -800,6 +844,11 @@ function create(opts) {
    *  have one on file, otherwise null, meaning "the service's own key". */
   async function apiKeyFor(user) {
     if (!user || !user.byok || !user.byok.blob) return null;
+    // Same gate as budgetFor's byok branch, and it has to be both: this is
+    // what actually routes a call to their key, and budgetFor is only what
+    // decides whether to meter it. Split them and a lapsed member would run
+    // on their own key while being charged to the shared allowance.
+    if (!paysPlatformFee(user)) return null;
     return byok.decrypt(user.id, user.byok.blob);
   }
 
@@ -924,6 +973,10 @@ function create(opts) {
         access: req.user.access || {},
         requests: req.user.requests || {},
         admin: req.user.admin === true,
+        // Whether the monthly fee is paid. The account page needs it to say
+        // what a key or a top-up will cost BEFORE someone pastes a secret
+        // into a box and gets a 402 for their trouble.
+        member: paysPlatformFee(req.user),
         budget: budgetFor(req.user),
         // The last four characters and when it was added - never the key.
         byok: {
@@ -971,6 +1024,15 @@ function create(opts) {
         if (!req.user) return res.status(401).json({ error: 'Sign in first.' });
         if (!byok.enabled()) {
           return res.status(503).json({ error: 'Storing keys is not switched on for this deployment.' });
+        }
+        if (!paysPlatformFee(req.user)) {
+          return res.status(402).json({
+            error: 'Bringing your own key is part of the membership.',
+            detail: 'The monthly fee covers the apps, the account and the hosting - your key covers the tokens. ' +
+              'Join and you can add a key right away.',
+            membership: true,
+            topUpUrl: topUpUrl(),
+          });
         }
         const supplied = String((req.body || {}).key || '').trim();
         // Prove it works before storing it: a typo caught here beats a failed
@@ -1169,4 +1231,4 @@ function create(opts) {
 
 module.exports = {
   planFor,
-  webSearchFor, create, priceOf, PRICES, isMember, paidTier, uidFor, makeHash, matches, accessLevel, hasAccess, pendingRequest, budgetFor, FREE_ALLOWANCE_USD, USERS, EVENTS, USAGE, COOKIE, MIN_PASSWORD };
+  webSearchFor, create, priceOf, PRICES, isMember, paysPlatformFee, paidTier, uidFor, makeHash, matches, accessLevel, hasAccess, pendingRequest, budgetFor, FREE_ALLOWANCE_USD, USERS, EVENTS, USAGE, COOKIE, MIN_PASSWORD };
