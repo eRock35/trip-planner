@@ -236,6 +236,15 @@ Cloud Run Admin API v2). See `college-football-app`'s
   `SITE_LOGIN_USERNAME` / `SITE_LOGIN_PASSWORD` are **dead** since the move to
   multi-user — nothing reads them. They're still mounted on the service; drop
   them (and their secrets) on a future deploy.
+- Runs as **`trip-planner-run@metal-celerity-236019.iam.gserviceaccount.com`**
+  since 2026-09-21, not the shared deployer account. It holds
+  `roles/datastore.user` conditioned to the `trip-planner` and `identity`
+  databases, `secretAccessor` on the six secrets this service mounts, and
+  `logging.logWriter` — nothing else. **Add a secret or a database here and you
+  must bind it to that account**, or the next revision will not start: Cloud
+  Run resolves secret env vars before it reports a revision ready. The deployer
+  holds no IAM-admin rights, so that binding is Erik's to make. The record is
+  in `eriks-projects/docs/phase4-runtime-service-accounts.md`.
 - Custom domain `trip.strongtechnicalconsulting.com`, mapped 2026-09-20.
 
   This reverses an earlier note that said no custom domain, copying
@@ -257,11 +266,6 @@ Cloud Run Admin API v2). See `college-football-app`'s
 
 ## Still to do
 
-- Runtime service account: same known compromise as the other two apps
-  (currently runs as the broad-privilege deployer account
-  `cover-sheet-deployer@`, not a scoped-down one) — see
-  `college-football-app`'s CLAUDE.md for the right fix and why it's not done
-  yet.
 - Once a real trip exists and is locked in, decide whether "promote to a
   bespoke app" is ever actually wanted before building it — see the note
   above.
