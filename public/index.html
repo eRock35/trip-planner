@@ -304,8 +304,9 @@
   <!-- Analytics. Serves an inert file unless GA_MEASUREMENT_ID is set on
        the service, so local runs and browser tests send nothing. -->
   <script src="/analytics.js" async></script>
+<link rel="stylesheet" href="/desktop.css">
 </head>
-<body>
+<body class="dk">
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
@@ -429,7 +430,7 @@
   </div>
 </main>
 
-<nav class="tabbar" id="tabbar" role="tablist" aria-label="Trip sections" hidden>
+<nav class="tabbar dk-tabbar" id="tabbar" role="tablist" aria-label="Trip sections" hidden>
   <div class="tabbar-inner">
     <button type="button" role="tab" class="tab" id="tab-btn-chat" aria-selected="true" aria-controls="tab-chat"><svg><use href="#i-chat"/></svg>Chat</button>
     <button type="button" role="tab" class="tab" id="tab-btn-itinerary" aria-selected="false" aria-controls="tab-itinerary"><svg><use href="#i-cal"/></svg>Itinerary</button>
@@ -438,7 +439,7 @@
   </div>
 </nav>
 
-<div class="composer" id="composer" hidden>
+<div class="composer dk-composer" id="composer" hidden>
   <div class="composer-inner">
     <textarea id="chatText" rows="1" placeholder="Message" maxlength="4000" enterkeyhint="send" aria-label="Message"></textarea>
     <button type="button" class="send" id="chatSend" aria-label="Send" disabled><svg><use href="#i-up"/></svg></button>
