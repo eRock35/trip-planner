@@ -43,6 +43,7 @@
 const crypto = require('crypto');
 const { AsyncLocalStorage } = require('async_hooks');
 const webauthn = require('./identity-webauthn');
+const byokLib = require('./byok');
 
 // The metered Anthropic client is built once per process but serves every
 // visitor, so "who is this call for" cannot be baked into it. This carries the
@@ -127,6 +128,11 @@ function budgetFor(user) {
   // The owner is never metered - it is his API key.
   if (user.admin === true) {
     return { unlimited: true, allowanceUsd: Infinity, spentUsd: Number(user.spentUsd || 0), remainingUsd: Infinity, reason: 'owner' };
+  }
+  // Their key, their bill. Not metered here, but usage is still recorded so
+  // the dashboard can show what they ran - it just is not charged to anyone.
+  if (user.byok && user.byok.blob) {
+    return { unlimited: true, allowanceUsd: Infinity, spentUsd: Number(user.spentUsd || 0), remainingUsd: Infinity, reason: 'byok' };
   }
   // A paid plan covers its own usage; the allowance is for everyone else.
   if (accessLevel(user, 'dataviz') === 'pro' || user.plan === 'pro') {
@@ -494,7 +500,7 @@ function create(opts) {
   }
 
   /** One row per model call, priced. Also fire-and-forget. */
-  async function recordUsage({ model, usage, route, uid, batch = false, calls = 1 }) {
+  async function recordUsage({ model, usage, route, uid, batch = false, calls = 1, byok = false }) {
     const row = {
       at: new Date().toISOString(),
       app: appName,
@@ -508,12 +514,15 @@ function create(opts) {
       cacheReadTokens: Number((usage && usage.cache_read_input_tokens) || 0),
       cacheWriteTokens: Number((usage && usage.cache_creation_input_tokens) || 0),
       costUsd: priceOf(model, usage, batch),
+      // Their key paid for this one. The row is still written, because the
+      // dashboard should show what ran, but nobody is billed for it.
+      byok: Boolean(byok),
     };
     try { await store.add(USAGE, row); } catch (e) { /* never break the call it measured */ }
     // Charge it to the person, atomically. Without this the ledger would be a
     // sum over an unbounded collection on every request; with a read-modify-
     // write it would lose charges whenever two apps billed at once.
-    if (uid && typeof row.costUsd === 'number' && row.costUsd > 0 && store.bump) {
+    if (!byok && uid && typeof row.costUsd === 'number' && row.costUsd > 0 && store.bump) {
       try { await store.bump(USERS, uid, { spentUsd: row.costUsd, callCount: 1 }); } catch (e) { /* same */ }
     }
     return row;
@@ -545,6 +554,7 @@ function create(opts) {
             model: (params && params.model) || null,
             usage: res.usage,
             route: opts.route || null,
+            byok: Boolean(client.__byok),
             // Who to charge. `whoFor` lets an app hand over the current
             // request, since one client serves every visitor; scheduled work
             // has nobody to charge and is left unattributed.
@@ -555,6 +565,47 @@ function create(opts) {
       return res;
     };
     return client;
+  }
+
+  /* ---------- bring your own key ---------- */
+
+  const byok = byokLib.create({
+    secret: () => process.env.BYOK_ENCRYPTION_KEY || '',
+    // Overridable so a test can point validation at a stand-in rather than
+    // spending a real round trip to Anthropic on every run.
+    validateUrl: process.env.BYOK_VALIDATE_URL || undefined,
+  });
+
+  /** The Anthropic key this request should run on: the user's own if they
+   *  have one on file, otherwise null, meaning "the service's own key". */
+  async function apiKeyFor(user) {
+    if (!user || !user.byok || !user.byok.blob) return null;
+    return byok.decrypt(user.id, user.byok.blob);
+  }
+
+  /** A metered Anthropic client for this request.
+   *
+   *  Apps build one client at startup with the service key. A user on their
+   *  own key needs a different client, so this returns either the shared one
+   *  or a per-key client, cached by key so a busy user does not construct a
+   *  new one per request. `__byok` rides on the client because that is what
+   *  the meter reads to decide whether to charge anyone.
+   *
+   *  @param fallback the app's own client, used when the user has no key.
+   *  @param make     (apiKey) => client, so identity never imports the SDK.
+   */
+  const keyClients = new Map();
+  async function clientFor(user, fallback, make) {
+    const apiKey = await apiKeyFor(user);
+    if (!apiKey) return fallback;
+    if (!keyClients.has(apiKey)) {
+      // Cap it so a stream of bad keys cannot grow this without bound.
+      if (keyClients.size > 200) keyClients.clear();
+      const client = meter(make(apiKey));
+      client.__byok = true;
+      keyClients.set(apiKey, client);
+    }
+    return keyClients.get(apiKey);
   }
 
   /* ---------- passkeys, via the shared WebAuthn module ---------- */
@@ -654,6 +705,13 @@ function create(opts) {
         requests: req.user.requests || {},
         admin: req.user.admin === true,
         budget: budgetFor(req.user),
+        // The last four characters and when it was added - never the key.
+        byok: {
+          supported: byok.enabled(),
+          present: Boolean(req.user.byok && req.user.byok.blob),
+          last4: (req.user.byok && req.user.byok.last4) || null,
+          addedAt: (req.user.byok && req.user.byok.addedAt) || null,
+        },
         createdAt: req.user.createdAt || null,
       });
     });
@@ -683,6 +741,51 @@ function create(opts) {
       await store.set(USERS, s.uid, { ...user, password: makeHash(next), passwordChangedAt: new Date().toISOString() });
       await log('password.change', req, { uid: s.uid, email: user.email, detail: `via ${s.via}` });
       res.json({ ok: true });
+    });
+
+    /* ---- bring your own key ---- */
+
+    expressApp.post(`${mountPath}/byok`, async (req, res) => {
+      try {
+        if (!req.user) return res.status(401).json({ error: 'Sign in first.' });
+        if (!byok.enabled()) {
+          return res.status(503).json({ error: 'Storing keys is not switched on for this deployment.' });
+        }
+        const supplied = String((req.body || {}).key || '').trim();
+        // Prove it works before storing it: a typo caught here beats a failed
+        // answer an hour from now that looks like the app is broken.
+        const check = await byok.validate(supplied);
+        if (!check.ok) return res.status(400).json({ error: check.error });
+
+        const record = { blob: byok.encrypt(req.user.id, supplied), last4: byok.last4(supplied), addedAt: new Date().toISOString() };
+        await store.set(USERS, req.user.id, Object.assign({}, await getUser(req.user.id), { byok: record }));
+        await log('byok.added', req, { uid: req.user.id, detail: '...' + record.last4 });
+        // Never echo the key back, not even the one they just sent.
+        res.json({ ok: true, byok: { present: true, last4: record.last4, addedAt: record.addedAt } });
+      } catch (err) {
+        console.error('POST byok', err);
+        res.status(err.status || 500).json({ error: 'Could not save that key.' });
+      }
+    });
+
+    expressApp.delete(`${mountPath}/byok`, async (req, res) => {
+      try {
+        if (!req.user) return res.status(401).json({ error: 'Sign in first.' });
+        const current = await getUser(req.user.id);
+        if (current) {
+          const next = Object.assign({}, current);
+          delete next.byok;
+          await store.set(USERS, req.user.id, next);
+        }
+        // Any cached client built from it dies with it, or the key would keep
+        // working for as long as the process lived.
+        keyClients.clear();
+        await log('byok.removed', req, { uid: req.user.id });
+        res.json({ ok: true, byok: { present: false } });
+      } catch (err) {
+        console.error('DELETE byok', err);
+        res.status(500).json({ error: 'Could not remove that key.' });
+      }
     });
 
     // Ask for access to THIS app. There is no app key in the body on purpose:
@@ -761,6 +864,9 @@ function create(opts) {
     budget,
     budgetFor,
     requireBudget,
+    apiKeyFor,
+    clientFor,
+    byokEnabled: byok.enabled,
     trackRequests,
     currentUid,
     priceOf,

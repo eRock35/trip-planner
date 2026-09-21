@@ -145,6 +145,16 @@ app.get('/api/auth/me', identity.attachUser, attachProfile, (req, res) => {
     aiAccess: req.user.aiAccess || 'none',
     isAdmin: !!req.user.isAdmin,
     mustChangePassword: !!req.user.mustChangePassword,
+    // This route shadows identity's own /me (registered first, on purpose -
+    // aiAccess and isAdmin are this app's business). Anything identity
+    // reports that the page needs has to be repeated here or it is invisible.
+    budget: identityLib.budgetFor(req.user),
+    byok: {
+      supported: identity.byokEnabled(),
+      present: Boolean(req.user.byok && req.user.byok.blob),
+      last4: (req.user.byok && req.user.byok.last4) || null,
+      addedAt: (req.user.byok && req.user.byok.addedAt) || null,
+    },
   });
 });
 
@@ -498,7 +508,7 @@ app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, identity.requireB
       system: systemPrompt,
       tools: [plan.webSearch, SCHEDULE_TOOL],
       messages: [{ role: 'user', content: question }],
-    });
+    }, req.user);
 
     const textBlocks = response.content.filter((b) => b.type === 'text');
     const toolBlock = response.content.find((b) => b.type === 'tool_use' && b.name === 'propose_schedule_change');
@@ -582,11 +592,19 @@ app.post('/api/trips/:id/schedule/apply', requireLogin, async (req, res) => {
 // search the same way, so both needed the same continuation.
 const MAX_TURN_CONTINUATIONS = 4;
 
-async function completeTurn(params) {
+/** The client this request should use: the caller's own key if they have one
+ *  on file, otherwise the app's. Built here rather than at startup, because
+ *  one process serves everyone. */
+function clientFor(user) {
+  return identity.clientFor(user, anthropic, (apiKey) => new Anthropic({ apiKey }));
+}
+
+async function completeTurn(params, user) {
+  const client = await clientFor(user);
   const messages = params.messages.slice();
   let response;
   for (let i = 0; i <= MAX_TURN_CONTINUATIONS; i++) {
-    response = await anthropic.messages.create(Object.assign({}, params, { messages }));
+    response = await client.messages.create(Object.assign({}, params, { messages }));
     if (response.stop_reason !== 'pause_turn') break;
     messages.push({ role: 'assistant', content: response.content });
   }
@@ -617,7 +635,7 @@ async function runWatchCheck(tripData, watchDoc, account) {
     max_tokens: 2048,
     tools: [plan.webSearch],
     messages: [{ role: 'user', content: prompt }],
-  });
+  }, account);
   const text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n\n');
 
   const now = new Date().toISOString();
