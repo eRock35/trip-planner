@@ -668,7 +668,15 @@
       var res = await fetch("/api/auth/me");
       var data = await res.json();
       isSignedIn = !!(data && data.signedIn);
-      me = (data && data.user) || null;
+      // /api/auth/me answers with the account's fields at the TOP level -
+      // there is no `user` envelope, and reading for one meant `me` was null
+      // for everybody. Everything downstream then read as its default: the
+      // banner told the owner his AI research was off while the server said
+      // approved, the account sheet called him "You" with no address, and
+      // `isAdmin` was false, which hid the access-requests panel from the one
+      // person who can use it. Nothing was wrong with the gates; the page was
+      // reading a field the server never sent.
+      me = isSignedIn ? data : null;
     } catch (e) { isSignedIn = false; me = null; }
     renderAuthBar();
   }
