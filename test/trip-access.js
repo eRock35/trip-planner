@@ -62,9 +62,12 @@ const uidOf = (e) => Buffer.from(e.toLowerCase()).toString('base64url');
   let r = await post(`/api/trips/${trip.id}/chat`, { question: 'hi' }, granted);
   ok('a granted account can actually chat', r.status === 200, String(r.status));
 
+  // A stranger is not "approved" and it no longer matters: approval stopped
+  // being the gate on 2026-09-21. Anyone who registers can spend their own
+  // allowance and buys more; what a grant still does is described above.
   const st = await (await post('/api/trips', { name: 'S', destination: 'Y' }, stranger)).json();
   r = await post(`/api/trips/${st.id}/chat`, { question: 'hi' }, stranger);
-  ok('a stranger still gets the ask-for-access 403', r.status === 403, String(r.status));
+  ok('a stranger can chat on their own allowance', r.status === 200, String(r.status));
 
   // Out of credit carries somewhere to go.
   const sk2 = 'users/' + uidOf('stranger@example.com');

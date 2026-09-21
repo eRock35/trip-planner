@@ -61,7 +61,7 @@ need it.
 - `control/watch-cron` — single doc, `{lastRunAt, checked}` from the most
   recent batch run.
 
-## Sign-in: open registration, approval-gated AI
+## Sign-in: open registration, metered AI
 
 **This app is multi-user.** Anyone can register (email + password, at least 10
 characters); a passkey can be added afterwards from inside the app for Face ID.
@@ -74,10 +74,9 @@ The access model is Erik's explicit call, and the reason matters:
 - **Everyone who signs up gets the free features immediately** — create trips,
   edit them, add and schedule watches, lock and unlock. None of that costs
   anything.
-- **Anything that calls Claude requires `aiAccess === 'approved'`**, which only
-  the admin grants by hand. A user asks via `POST /api/ai-access/request` (with
-  an optional note); the admin sees pending requests in the app and approves or
-  denies. States: `none` → `pending` → `approved` | `denied`.
+- **Anything that calls Claude is metered, not approved** — see "Spending is
+  metered, not approved" below. It used to require `aiAccess === 'approved'`,
+  granted by the admin by hand.
 
 ### Forgetting a password
 
@@ -105,12 +104,47 @@ password depends on the admin. That is the price of having no mail sender,
 and it is the right trade at this size — adding one is a standing monthly
 cost for a handful of users.
 
-Without that second gate, any stranger who found the URL could run Sonnet 5
-with web search on Erik's API key. **Never put an Anthropic call behind
-`requireLogin` alone** — it goes behind `requireAiAccess`, and the cron sweep
-checks the trip owner's approval with `accounts.isApprovedUid()`. There are
-exactly two call sites (trip chat, and `runWatchCheck`); all three paths to
-them are gated.
+### Spending is metered, not approved (2026-09-21)
+
+**This reverses the rule that used to sit here**, which said an Anthropic call
+must never be behind `requireLogin` alone and had to go behind
+`requireAiAccess`. That rule was right when it was written and is wrong now,
+and the difference is worth being precise about rather than quietly dropping.
+
+It was written when "ask Erik" was the *only* thing standing between a
+stranger and Sonnet 5 with web search on Erik's key. Since then two controls
+exist that did not:
+
+- **`identity.requireBudget`** — every account has a dollar allowance
+  (`FREE_ALLOWANCE_USD`, $2), every model call is priced and charged to it,
+  and an exhausted one gets a 402 carrying a top-up link. A human approving
+  people one at a time is a worse version of this: slower, and it never
+  actually bounded anything.
+- **`identity.requireDailyCap`** — a ceiling on what the whole app spends in a
+  day, because the per-user budget bounds ONE account and accounts are free.
+  A uid is derived from an email address, so someone willing to register
+  repeatedly collects the free allowance repeatedly; no amount of per-user
+  accounting closes that, and this is the thing that does. Set by
+  `DAILY_SPEND_CAP_USD` on the service, off when unset.
+
+So the gate on both call sites (trip chat, `runWatchCheck`) is now
+`requireLogin, requireBudget, requireDailyCap`, and the cron sweep asks
+`ownerAccount()` whether the owner has credit rather than whether the admin
+approved them. **The replacement rule: never put an Anthropic call behind
+`requireLogin` alone — it goes behind `requireBudget` AND `requireDailyCap`.**
+The instinct the old rule encoded is still correct; only the mechanism moved.
+
+Two deliberate exemptions in the ceiling: spend on someone's own key never
+counts toward it and is never blocked by it, and an unlimited account (the
+owner) is not blocked although its spend still counts. A ceiling meant to stop
+strangers draining the key should not lock out the person paying for it.
+
+`accounts.requireAiAccess` still exists and is on no route. Do not put it back
+in front of a model call.
+
+`aiAccess` is still written and still shown in the admin panel, and it no
+longer gates anything. Leaving the field costs nothing and removing it would
+rewrite every existing record for no gain.
 
 ### The shared account can grant AI access here (2026-09-20)
 
@@ -186,7 +220,7 @@ so the client still uses a plain `res.json()`.
 **The contract:** headers go out before the outcome is known, so failures on
 those two routes come back as `200` with an `{ error }` body, never a 500.
 Everything that fails with a status — the 400, `requireLogin`,
-`requireAiAccess`, `requireBudget`, and `loadOwnedTrip`'s 404 — must stay
+`requireBudget`, `requireDailyCap` and `loadOwnedTrip`'s 404 — must stay
 *above* the `streamedJson` call, and the frontend checks
 `!res.ok || data.error`. The cron sweep is untouched: nothing is waiting on
 it, so it keeps ordinary status codes.
@@ -232,7 +266,8 @@ Cloud Run Admin API v2). See `college-football-app`'s
   apps, same as always.
 - Env vars: `GOOGLE_CLOUD_PROJECT`, `FIRESTORE_DATABASE_ID=trip-planner`,
   `SESSION_SECRET` (any long random string, signs session/challenge cookies),
-  `CRON_SECRET`, `ADMIN_EMAIL` (secret `trip-planner-admin-email`).
+  `CRON_SECRET`, `ADMIN_EMAIL` (secret `trip-planner-admin-email`),
+  `DAILY_SPEND_CAP_USD` (the ceiling over everyone; unset means no ceiling).
   `SITE_LOGIN_USERNAME` / `SITE_LOGIN_PASSWORD` are **dead** since the move to
   multi-user — nothing reads them. They're still mounted on the service; drop
   them (and their secrets) on a future deploy.

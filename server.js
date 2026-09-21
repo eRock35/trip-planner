@@ -48,7 +48,10 @@ const accounts = createAccounts({
   adminEmail: ADMIN_EMAIL,
 });
 
-const { requireLogin, requireAiAccess } = accounts;
+const { requireLogin } = accounts;
+// `accounts.requireAiAccess` still exists and is deliberately on no route -
+// see "Spending is metered, not approved" in CLAUDE.md. Do not put it back in
+// front of a model call: the budget and the daily ceiling are the gate now.
 
 app.get('/healthz', (req, res) => res.status(200).send('ok'));
 // Cloud Run's edge swallows /healthz: in production it returns a 404 with no
@@ -133,18 +136,25 @@ async function attachProfile(req, _res, next) {
   next();
 }
 
-/** The cron sweep's version of the same question, by uid rather than request.
- *  Without this, a watch owned by someone the shared panel approved would be
- *  skipped every hour with no sign of why. */
-/** May this account spend, and on which tier? Returns null when it may not.
- *  The shared record is loaded either way, so the sweep can tier a watch the
- *  same way the app tiers a request the owner made themselves. */
+/**
+ * May this account spend, and on which tier? Returns null when it may not.
+ *
+ * The sweep's version of the gate the routes use, asked by uid rather than by
+ * request - and it has to be the same question, or a watch would be checked
+ * hourly for someone the app would refuse to their face.
+ *
+ * That question is now "is there credit left", not "did the admin approve
+ * them". A watch runs on its owner's own allowance and stops when that is
+ * gone, which is a limit that enforces itself every hour without anyone
+ * deciding anything. The shared record is loaded either way, so the sweep can
+ * tier a watch the same way the app tiers a request its owner made by hand.
+ */
 async function ownerAccount(uid) {
   if (!uid) return null;
   const shared = await identityStore.store.get('users', uid).catch(() => null);
-  const account = shared ? { id: uid, ...shared } : null;
-  if (grantedByIdentity(account)) return account || { id: uid };
-  if (await accounts.isApprovedUid(uid)) return account || { id: uid };
+  const account = shared ? { id: uid, ...shared } : { id: uid };
+  const budget = identityLib.budgetFor(account);
+  if (budget.unlimited || budget.remainingUsd > 0) return account;
   return null;
 }
 
@@ -567,7 +577,7 @@ app.get('/api/trips/:id/messages', requireLogin, async (req, res) => {
   }
 });
 
-app.post('/api/trips/:id/chat', requireLogin, requireAiAccess, identity.requireBudget, async (req, res) => {
+app.post('/api/trips/:id/chat', requireLogin, identity.requireBudget, identity.requireDailyCap, async (req, res) => {
   let send = null;
   try {
     const { question } = req.body || {};
@@ -829,7 +839,7 @@ app.delete('/api/trips/:id/watches/:watchId', requireLogin, async (req, res) => 
   }
 });
 
-app.post('/api/trips/:id/watches/:watchId/check', requireLogin, requireAiAccess, identity.requireBudget, async (req, res) => {
+app.post('/api/trips/:id/watches/:watchId/check', requireLogin, identity.requireBudget, identity.requireDailyCap, async (req, res) => {
   let send = null;
   try {
     const owned = await loadOwnedTrip(req, res);
@@ -926,7 +936,7 @@ app.post('/api/cron/check-watches', requireLoginOrCron, async (req, res) => {
     const tripsSnap = await db.collection('trips').where('status', '==', 'planning').get();
     const now = Date.now();
     let checked = 0;
-    let skippedUnapproved = 0;
+    let skippedNoCredit = 0;
     const results = [];
     // Owner -> approved? cached per run, so N trips for one owner is one read.
     const approvalCache = new Map();
@@ -935,15 +945,16 @@ app.post('/api/cron/check-watches', requireLoginOrCron, async (req, res) => {
       if (checked >= MAX_CHECKS_PER_RUN) break;
 
       // A watch check spends an Anthropic call, so the trip's owner must hold
-      // approved AI access. Without this, anyone who signed up and added a
-      // watch would be billing Erik's key every hour.
+      // credit left. Without this an account with an exhausted allowance
+      // would keep billing the shared key every hour - the one place where
+      // spending happens with nobody watching.
       const ownerId = tripDoc.data().ownerId;
       if (!approvalCache.has(ownerId)) {
         approvalCache.set(ownerId, await ownerAccount(ownerId));
       }
       const ownerRecord = approvalCache.get(ownerId);
       if (!ownerRecord) {
-        skippedUnapproved += 1;
+        skippedNoCredit += 1;
         continue;
       }
 
@@ -965,8 +976,8 @@ app.post('/api/cron/check-watches', requireLoginOrCron, async (req, res) => {
     }
 
     await db.collection('control').doc('watch-cron').set(
-      { lastRunAt: new Date().toISOString(), checked, skippedUnapproved }, { merge: true });
-    res.json({ checked, skippedUnapproved, results });
+      { lastRunAt: new Date().toISOString(), checked, skippedNoCredit }, { merge: true });
+    res.json({ checked, skippedNoCredit, results });
   } catch (err) {
     console.error('POST /api/cron/check-watches', err);
     res.status(500).json({ error: 'Batch check failed.' });

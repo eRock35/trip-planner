@@ -56,9 +56,11 @@ const uidOf = (e) => Buffer.from(e.toLowerCase()).toString('base64url');
   r = await fetch(B + '/api/trips', { headers: { cookie: h.session(SECRET, 'guest@example.com') } });
   ok('a session from a SIBLING app is accepted', r.status === 200, String(r.status));
 
-  // the AI gate is still separate from being signed in
+  // Spending is metered rather than approved since 2026-09-21, so a signed-in
+  // account gets past the gate and is then stopped by the trip not existing.
+  // The 404 is the point: nothing refused them for who they are.
   r = await post('/api/trips/nonexistent/chat', { question: 'hi' }, guest);
-  ok('an unapproved account cannot spend tokens', r.status === 403, String(r.status));
+  ok('a signed-in account is not refused for lacking approval', r.status === 404, String(r.status));
 
   // admin reset writes to identity, where the password now lives
   r = await post('/api/auth/reset-request', { email: 'guest@example.com' });
