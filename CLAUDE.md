@@ -255,6 +255,64 @@ Everything that fails with a status — the 400, `requireLogin`,
 `!res.ok || data.error`. The cron sweep is untouched: nothing is waiting on
 it, so it keeps ordinary status codes.
 
+## Reading Gmail for bookings (2026-09-21)
+
+Trip Planner can look through someone's booking confirmations and offer to
+turn them into trips. Consent is the feature, not the paperwork around it, and
+three rules hold the shape together — each enforced in code rather than
+promised in copy:
+
+1. **The query is fixed.** `gmail.js` compiles it from `TRAVEL_SENDERS`, a
+   curated list of airline, hotel, rail and booking domains, plus a 12-month
+   window. `searchQuery()` takes no caller input, deliberately: an earlier
+   shape let a request add terms, which would have made the consent screen a
+   lie the first time anyone used it. The account page prints that same
+   constant, so the promise and the query cannot drift.
+2. **Message bodies are never written down.** Fetched, read once by the
+   extractor, dropped with the request. The only durable record is a trip
+   somebody chose to import.
+3. **Nothing becomes a trip without a tap.** `/api/gmail/scan` proposes and
+   `/api/gmail/import` writes — the same confirm-before-save shape as the
+   itinerary chat, and for the same reason.
+
+**The uncomfortable part is said out loud.** Google has no read scope narrower
+than `gmail.readonly`, so the token we hold *can* read everything. The consent
+sheet says exactly that — "Google's own screen will say read your email,
+because that is the only permission it offers" — and then says what this app
+actually does with it. Holding a capability we never exercise is a promise;
+a promise a user cannot inspect is worth very little, so the limits are named,
+numbered and served from the code that enforces them.
+
+The refresh token is stored encrypted through `byok.js` (AES-256-GCM, uid as
+additional authenticated data, so a row copied between accounts fails to
+decrypt rather than quietly working). Disconnecting **revokes at Google
+first**, then forgets locally — dropping our copy while Google still believes
+the app has access is the dishonest version.
+
+The OAuth `state` is HMAC-signed with `SESSION_SECRET`, carries the uid and
+expires in ten minutes. Without it, a crafted callback link could hang someone
+else's mailbox off your account.
+
+### It cannot go past 100 users without a security assessment
+
+`gmail.readonly` is a **restricted** scope. Offering it publicly requires
+Google app verification *plus* an annual third-party security assessment
+(CASA), which is a real recurring cost. So the OAuth app runs in **testing
+mode**: up to 100 users, each added by address in the Cloud Console, who see
+an "unverified app" warning once.
+
+That ceiling is a product decision, not a bug. Do not try to lift it by
+widening scopes or by asking users to work around the warning. If the feature
+ever needs to be public, the honest path is the assessment — or a Google
+Workspace *internal* app, which skips verification for users inside the
+domain.
+
+- Env: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (Secret Manager),
+  `GOOGLE_REDIRECT_URI` (`https://trip.strongtechnicalconsulting.com/api/gmail/callback`),
+  and `BYOK_ENCRYPTION_KEY`, which the token vault shares with BYOK.
+  Missing any of them and the feature reports itself unavailable rather than
+  half-working.
+
 ## Watches: user sets the schedule without touching Cloud Scheduler
 
 Each watch has its own `intervalHours` (6h / day / 3 days / week, chosen in
