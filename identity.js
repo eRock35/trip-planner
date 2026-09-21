@@ -81,6 +81,19 @@ const PRICES = {
 const CACHE_WRITE_MULTIPLIER = 1.25;
 const CACHE_READ_MULTIPLIER = 0.1;
 
+// Web search bills per search, on top of tokens: $10 per 1,000 searches.
+// This was missing, and it is not a rounding error - it is usually the LARGER
+// half of a research answer's cost. A trip-planner question on Sonnet runs
+// about 8k input and 1.5k output, which is $0.031 of tokens; five searches is
+// $0.05 on top. The ledger was charging people for the third of the bill it
+// could see and eating the rest, and raising max_uses makes the gap grow
+// rather than shrink.
+//
+// Web FETCH is free (tokens only), so it is deliberately not priced here.
+// An errored search is not billed by Anthropic either, and does not appear in
+// the counter, so nothing extra is needed to exclude it.
+const WEB_SEARCH_USD = 0.01;
+
 /**
  * @param usage   the `usage` object off an Anthropic response
  * @param batch   true for a Batch API call, which bills at half price
@@ -100,7 +113,11 @@ function priceOf(model, usage, batch = false) {
       cacheWrite * p.input * CACHE_WRITE_MULTIPLIER +
       cacheRead * p.input * CACHE_READ_MULTIPLIER) /
     million;
-  return batch ? dollars / 2 : dollars;
+  // The batch discount is on tokens. Searches are not discounted, so they are
+  // added after the halving rather than before it.
+  const tokens = batch ? dollars / 2 : dollars;
+  const searches = Number((usage.server_tool_use || {}).web_search_requests || 0);
+  return tokens + searches * WEB_SEARCH_USD;
 }
 
 /* ------------------------------------------------------------------ *
@@ -249,15 +266,31 @@ function webSearchFor(model, maxUses) {
  * @param user          req.user, or null for an anonymous visitor (free).
  * @param opts.free     model for the shared allowance and for signed-out use.
  * @param opts.paid     model for the owner, Pro, and bring-your-own-key.
- * @param opts.maxUses  web_search max_uses, default 5.
+ * @param opts.maxUses  one search budget for both tiers, when an app wants that.
+ *
+ * The search budget is per tier, because searches cost real money per use and
+ * five of them was not enough to answer a research question. Asked to price a
+ * week's travel for four people, the model spent its five searches, said "I
+ * hit a search tool limit just now, so I don't have live flight/hotel prices
+ * in hand", and offered a framework instead of an answer - which is the whole
+ * job, not done. Paid gets a budget that can actually finish; free stays tight
+ * because the $2 allowance is real money and searches are most of what spends
+ * it.
  */
+const FREE_SEARCHES = Number(process.env.FREE_MAX_SEARCHES || 4);
+const PAID_SEARCHES = Number(process.env.PAID_MAX_SEARCHES || 14);
+
 function planFor(user, opts) {
   const paid = budgetFor(user).unlimited;
   const model = (paid && opts.paid) || opts.free;
+  const maxUses = opts.maxUses !== undefined
+    ? opts.maxUses
+    : (paid ? PAID_SEARCHES : FREE_SEARCHES);
   return {
     model,
     tier: paid ? 'paid' : 'free',
-    webSearch: webSearchFor(model, opts.maxUses === undefined ? 5 : opts.maxUses),
+    maxUses,
+    webSearch: webSearchFor(model, maxUses),
   };
 }
 
