@@ -37,10 +37,15 @@ const uidOf = (e) => Buffer.from(e.toLowerCase()).toString('base64url');
 
   const owner = jar(await post('/api/auth/register', { email: 'boss@example.com', password: 'a-long-password-1' }));
   const free = jar(await post('/api/auth/register', { email: 'free@example.com', password: 'a-long-password-2' }));
-  const pro = jar(await post('/api/auth/register', { email: 'pro@example.com', password: 'a-long-password-3' }));
+  const granted = jar(await post('/api/auth/register', { email: 'granted@example.com', password: 'a-long-password-3' }));
+  const member = jar(await post('/api/auth/register', { email: 'member@example.com', password: 'a-long-password-4' }));
   for (const [email, patch] of [
     ['free@example.com', { access: { 'trip-planner': 'member' } }],
-    ['pro@example.com', { access: { 'trip-planner': 'member', dataviz: 'pro' } }],
+    // An app-scoped grant. It unlocks that app's features and buys nothing
+    // else - it used to buy the better model domain-wide, on the owner's key.
+    ['granted@example.com', { access: { 'trip-planner': 'member', dataviz: 'pro' } }],
+    // The $5 membership, which is what actually buys the better model.
+    ['member@example.com', { access: { 'trip-planner': 'member' }, plan: 'member' }],
   ]) {
     const k = 'users/' + uidOf(email);
     ids.set(k, Object.assign({}, ids.get(k), patch));
@@ -62,8 +67,15 @@ const uidOf = (e) => Buffer.from(e.toLowerCase()).toString('base64url');
   ok('the owner runs on Sonnet', c.model === 'claude-sonnet-5', c.model);
   ok('...with the newer search tool', c.tools.includes('web_search_20260209'), JSON.stringify(c.tools));
 
-  c = await ask(pro);
-  ok('a Pro account runs on Sonnet', c.model === 'claude-sonnet-5', c.model);
+  // An app-scoped grant is not a domain-wide entitlement. `access['dataviz']`
+  // once drove budgetFor(), which handed three accounts unlimited spend on the
+  // owner's API key in every app - including this one. Whichever way that
+  // clause is written back, this assertion fails.
+  c = await ask(granted);
+  ok('an app grant does NOT buy the better model', c.model === 'claude-haiku-4-5', c.model);
+
+  c = await ask(member);
+  ok('a membership does', c.model === 'claude-sonnet-5', c.model);
 
   ok('the schedule tool survives the swap', c.tools.includes('propose_schedule_change'), JSON.stringify(c.tools));
 

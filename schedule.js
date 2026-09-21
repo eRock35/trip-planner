@@ -48,4 +48,40 @@ function bad(message) {
   return Object.assign(new Error(message), { status: 400 });
 }
 
-module.exports = { validate, MAX_DAYS, MAX_BLOCKS };
+
+/* ------------------------------------------------------------------ *
+ * The Firestore boundary
+ * ------------------------------------------------------------------ */
+
+/**
+ * Firestore cannot store an array inside an array. `blocks` is a list of
+ * [time, plan] PAIRS, so `days` is an array of maps each holding an array of
+ * arrays, and writing it back gets
+ *
+ *     3 INVALID_ARGUMENT: Property array contains an invalid nested entity.
+ *
+ * which surfaced as "Could not save the schedule." on every single Apply.
+ * Nothing was wrong with the plan, the validation or the model - the shape
+ * simply cannot be written, so Apply had never once worked since the schedule
+ * moved into Firestore.
+ *
+ * The pair is the right shape for everything else: the page renders from it,
+ * the model proposes it, the seed is written in it. So it is converted here,
+ * at the one place that talks to the database, rather than changed everywhere
+ * else to suit the store.
+ */
+function toStore(days) {
+  return validate(days).map((day) => ({
+    ...day,
+    blocks: day.blocks.map((b) => ({ time: b[0], plan: b[1] })),
+  }));
+}
+
+/** ...and back. validate() already accepts a {time, plan} map as well as a
+ *  pair, so reading through it converts and sanity-checks in one pass - which
+ *  also means a stored document that predates toStore() still loads. */
+function fromStore(days) {
+  return validate(days);
+}
+
+module.exports = { validate, toStore, fromStore, MAX_DAYS, MAX_BLOCKS };
