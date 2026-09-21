@@ -120,12 +120,23 @@ exist that did not:
   and an exhausted one gets a 402 carrying a top-up link. A human approving
   people one at a time is a worse version of this: slower, and it never
   actually bounded anything.
-- **`identity.requireDailyCap`** — a ceiling on what the whole app spends in a
-  day, because the per-user budget bounds ONE account and accounts are free.
-  A uid is derived from an email address, so someone willing to register
+- **`identity.requireDailyCap`** — a ceiling on what the **free tier** spends
+  in a day, because the per-user budget bounds ONE account and accounts are
+  free. A uid is derived from an email address, so someone willing to register
   repeatedly collects the free allowance repeatedly; no amount of per-user
   accounting closes that, and this is the thing that does. Set by
-  `DAILY_SPEND_CAP_USD` on the service, off when unset.
+  `FREE_TIER_DAILY_CAP_USD` (**$2** on this service), off when unset.
+
+  **Free tier, not all spend, and the distinction is the whole design.** A
+  ceiling low enough to be a real limit on strangers is low enough to lock out
+  a paying customer by lunchtime if it counts them too. Anyone spending their
+  own money — the owner, a bring-your-own-key user, a member, or anyone who
+  has topped up — neither counts toward the ceiling nor is blocked by it.
+  Spend with nobody to charge does count, because that is the shared key
+  paying for it.
+
+  The 503 carries a top-up link. Someone who wants this enough to hit the
+  ceiling is the person most worth telling that paying removes it.
 
 So the gate on both call sites (trip chat, `runWatchCheck`) is now
 `requireLogin, requireBudget, requireDailyCap`, and the cron sweep asks
@@ -134,10 +145,10 @@ approved them. **The replacement rule: never put an Anthropic call behind
 `requireLogin` alone — it goes behind `requireBudget` AND `requireDailyCap`.**
 The instinct the old rule encoded is still correct; only the mechanism moved.
 
-Two deliberate exemptions in the ceiling: spend on someone's own key never
-counts toward it and is never blocked by it, and an unlimited account (the
-owner) is not blocked although its spend still counts. A ceiling meant to stop
-strangers draining the key should not lock out the person paying for it.
+A ceiling meant to stop strangers draining the key must not lock out the
+person paying for it, so everyone who pays — by the month, by topping up, or
+by bringing their own key — is outside it in both directions: their spend is
+not counted and they are not blocked.
 
 `accounts.requireAiAccess` still exists and is on no route. Do not put it back
 in front of a model call.
@@ -267,7 +278,8 @@ Cloud Run Admin API v2). See `college-football-app`'s
 - Env vars: `GOOGLE_CLOUD_PROJECT`, `FIRESTORE_DATABASE_ID=trip-planner`,
   `SESSION_SECRET` (any long random string, signs session/challenge cookies),
   `CRON_SECRET`, `ADMIN_EMAIL` (secret `trip-planner-admin-email`),
-  `DAILY_SPEND_CAP_USD` (the ceiling over everyone; unset means no ceiling).
+  `FREE_TIER_DAILY_CAP_USD` (the free tier's daily ceiling, $2; unset means
+  no ceiling).
   `SITE_LOGIN_USERNAME` / `SITE_LOGIN_PASSWORD` are **dead** since the move to
   multi-user — nothing reads them. They're still mounted on the service; drop
   them (and their secrets) on a future deploy.

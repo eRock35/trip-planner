@@ -582,10 +582,35 @@ function create(opts) {
    *    still counts. A ceiling meant to keep strangers from draining the key
    *    should not lock out the person paying for it.
    */
-  const DAILY_CAP_USD = Number(process.env.DAILY_SPEND_CAP_USD || 0);
+  const DAILY_CAP_USD = Number(process.env.FREE_TIER_DAILY_CAP_USD || 0);
 
   const today = () => new Date().toISOString().slice(0, 10);
-  const capDocId = () => `spend-${appName}-${today()}`;
+  const capDocId = () => `free-spend-${appName}-${today()}`;
+
+  /**
+   * Is this person spending their OWN money?
+   *
+   * The distinction the ceiling turns on, and getting it wrong is the whole
+   * failure mode: a ceiling low enough to be a real limit on strangers is low
+   * enough to lock out a paying customer by lunchtime, if it counts them too.
+   * Someone who bought credit or pays the monthly fee is not who this is for.
+   *
+   * Nobody at all - a scheduled sweep with no user to charge - counts as free.
+   * Unattributed spend on the shared key is exactly what a ceiling is for.
+   */
+  function spendsOwnMoney(user) {
+    if (!user) return false;
+    if (budgetFor(user).unlimited) return true;            // the owner, or their own key
+    if (isMember(user)) return true;                       // pays the monthly fee
+    return Number(user.toppedUpUsd || 0) > 0;              // bought credit
+  }
+
+  /** The signed-in person for the request being served, whole rather than by
+   *  id - recordUsage has to know what tier the spend came out of. */
+  function currentUser() {
+    const store = requestContext.getStore();
+    return (store && store.req && store.req.user) || null;
+  }
 
   // Read through a short cache. The counter is a single document and this
   // sits in front of routes that then spend minutes in a model, so a few
@@ -614,18 +639,29 @@ function create(opts) {
 
   function dailyCapUsd() { return DAILY_CAP_USD; }
 
-  /** Refuse when the app has spent its day. Put it AFTER requireBudget, so
-   *  someone out of their own credit is told that rather than this. */
+  /**
+   * Refuse when the FREE tier has spent its day.
+   *
+   * Put it after requireBudget, so someone out of their own credit is told
+   * that rather than this - "you have used your credit" is actionable and
+   * "the free tier is busy" is not, when both are true.
+   *
+   * Anyone spending their own money goes straight through. That is the point:
+   * this bounds what strangers cost, and a customer is not a stranger.
+   */
   async function requireDailyCap(req, res, next) {
     if (!DAILY_CAP_USD) return next();
-    const b = budgetFor(req.user);
-    if (b.unlimited) return next();              // the owner, or their own key
+    if (spendsOwnMoney(req.user)) return next();
     const spent = await spentTodayUsd();
     if (spent < DAILY_CAP_USD) return next();
-    log('daily-cap.reached', req, { detail: `${spent.toFixed(2)} of ${DAILY_CAP_USD.toFixed(2)}`, ok: false });
+    log('free-tier-cap.reached', req, { detail: `${spent.toFixed(2)} of ${DAILY_CAP_USD.toFixed(2)}`, ok: false });
     return res.status(503).json({
-      error: 'Research is paused for today.',
-      detail: 'This app has hit its daily limit across everyone using it. It resets at midnight UTC.',
+      error: 'The free tier is used up for today.',
+      // Not a wall, a till. Someone who wants this enough to hit the ceiling
+      // is the person most worth telling that paying removes it entirely.
+      detail: 'Free use across everyone has hit its daily limit, and it resets at midnight UTC. ' +
+        'Credit and membership are not capped - top up and it works right away.',
+      topUpUrl: topUpUrl(),
       retryAfterDay: true,
     });
   }
@@ -672,10 +708,14 @@ function create(opts) {
       if (uid) {
         try { await store.bump(USERS, uid, { spentUsd: row.costUsd, callCount: 1 }); } catch (e) { /* same */ }
       }
-      // The app's own running total for the day, which the ceiling reads.
-      // Counted even when there is no uid - scheduled work has nobody to
-      // charge, and it is exactly as real on the invoice.
-      try { await store.bump(CONTROL, capDocId(), { usd: row.costUsd, calls: 1 }); } catch (e) { /* same */ }
+      // The FREE tier's running total for the day, which the ceiling reads.
+      // Only free-tier spend counts: a member's usage filling the free tier's
+      // daily allowance would lock out the very people it is there to serve,
+      // and would make the number mean nothing. Spend with nobody to charge
+      // counts, because that is the shared key paying for it.
+      if (!spendsOwnMoney(currentUser())) {
+        try { await store.bump(CONTROL, capDocId(), { usd: row.costUsd, calls: 1 }); } catch (e) { /* same */ }
+      }
     }
     return row;
   }
