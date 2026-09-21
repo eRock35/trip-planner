@@ -92,13 +92,22 @@
 
   /** Type into a field the way a person does - one character at a time,
    *  with the input event each app already listens for. */
+  // React tracks a controlled input's value through the element's own
+  // property setter, so a plain `el.value = x` is invisible to it and its
+  // onChange never fires. Going through the prototype's setter works for
+  // React and plain DOM alike.
+  function setValue(el, v) {
+    var proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    var d = Object.getOwnPropertyDescriptor(proto, "value");
+    if (d && d.set) d.set.call(el, v); else el.value = v;
+  }
   function type(el, text, cps) {
     var i = 0, per = 1000 / (cps || 22);
-    el.value = "";
+    setValue(el, "");
     return new Promise(function (resolve) {
       (function next() {
         if (i >= text.length) return resolve();
-        el.value = text.slice(0, ++i);
+        setValue(el, text.slice(0, ++i));
         el.dispatchEvent(new Event("input", { bubbles: true }));
         setTimeout(next, per + (Math.random() * 40 - 20));
       })();
@@ -134,5 +143,5 @@
     ".tour-on textarea,.tour-on input{caret-color:transparent}.tour-on *:focus{outline:none!important}";
   document.head.appendChild(css);
 
-  window.Tour = { active: active, run: run, wait: wait, until: until, scrollTo: scrollTo, scrollThrough: scrollThrough, tap: tap, type: type, ring: ring };
+  window.Tour = { active: active, run: run, wait: wait, until: until, scrollTo: scrollTo, scrollThrough: scrollThrough, tap: tap, type: type, setValue: setValue, ring: ring };
 })();
