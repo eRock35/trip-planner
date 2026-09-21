@@ -15,7 +15,16 @@ class FakeFirestore {
       limit(n) { return mk(filters, order, n); },
       async get() {
         let rows = [];
-        for (const [k, v] of store) if (k.startsWith(name + '/')) rows.push({ id: k.slice(name.length + 1), data: () => v, exists: true });
+        // Real query snapshots carry .ref, and app code uses it to reach a
+        // subcollection (trip -> watches). Without it the harness silently
+        // returned parents with no children and a test looked like a bug in
+        // the app.
+        const self = this;
+        for (const [k, v] of store) if (k.startsWith(name + '/')) {
+          const id = k.slice(name.length + 1);
+          if (id.includes('/')) continue;            // a subcollection doc, not one of ours
+          rows.push({ id, data: () => v, exists: true, get ref() { return self.doc(id); } });
+        }
         for (const [f, op, val] of filters) rows = rows.filter((r) => {
           const got = r.data()[f];
           if (op === '==') return got === val;
