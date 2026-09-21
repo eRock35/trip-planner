@@ -338,6 +338,43 @@ app.get(`/api/trips/${demo.DEMO_ID}/watches`, (req, res) => {
   res.json(demo.DEMO_WATCHES.map((w, i) => Object.assign({ id: 'demo-' + i }, w)));
 });
 
+// Copy the example into an account. The demo is the best introduction this
+// app has, and the shortest path from browsing it to using it is not making
+// someone retype five days of plan. Everything comes across except what
+// belongs to the example: it arrives as a fresh trip in planning, with the
+// chat and the watch history left behind.
+app.post(`/api/trips/${demo.DEMO_ID}/copy`, requireLogin, async (req, res) => {
+  try {
+    const now = new Date().toISOString();
+    const doc = await db.collection('trips').add({
+      name: demo.DEMO_TRIP.name,
+      destination: demo.DEMO_TRIP.destination,
+      dateRange: demo.DEMO_TRIP.dateRange,
+      notes: demo.DEMO_TRIP.notes,
+      days: demo.DEMO_TRIP.days,
+      status: 'planning',
+      ownerId: req.user.uid,
+      copiedFrom: demo.DEMO_ID,
+      createdAt: now,
+      updatedAt: now,
+    });
+    // The watches come too - they are the part people would not think to
+    // recreate, and they are what makes the app do something while you sleep.
+    for (const w of demo.DEMO_WATCHES) {
+      await doc.collection('watches').add({
+        kind: w.kind, label: w.label, criteria: w.criteria, url: w.url,
+        intervalHours: w.intervalHours,
+        lastCheckedAt: null, lastResult: null, history: [],
+      });
+    }
+    identity.log('trip.copied', req, { detail: demo.DEMO_ID });
+    res.json({ id: doc.id, ok: true });
+  } catch (err) {
+    console.error('POST /api/trips/demo/copy', err);
+    res.status(500).json({ error: 'Could not copy the example.' });
+  }
+});
+
 app.get('/api/trips/:id', requireLogin, async (req, res) => {
   try {
     const owned = await loadOwnedTrip(req, res);

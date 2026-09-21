@@ -367,7 +367,9 @@
       </div>
       <span class="badge" id="tripBadge"></span>
       <div class="demo-banner" id="demoBanner" hidden>
-        <b>This is an example trip.</b> Everything here is read-only. <a href="/login">Sign in</a> to plan one of your own.
+        <span id="demoText"><b>This is an example trip.</b> Everything here is read-only. <a href="/login">Sign in</a> to plan one of your own.</span>
+        <button type="button" class="btn btn-primary btn-sm" id="demoCopyBtn" hidden style="margin-top:8px">Start my own from this</button>
+        <span class="status" id="demoCopyStatus"></span>
       </div>
     </div>
 
@@ -825,6 +827,23 @@
     setStatus(statusEl, state === "pending" ? "Your AI access request is still being reviewed." : "AI research isn't on for your account yet. Request access from the Account menu.", "error");
   }
 
+  $("demoCopyBtn").addEventListener("click", async function () {
+    var btn = this, status = $("demoCopyStatus");
+    btn.disabled = true;
+    setStatus(status, "Copying\u2026");
+    try {
+      var res = await fetch("/api/trips/demo/copy", { method: "POST" });
+      var data = await res.json().catch(function () { return {}; });
+      if (res.status === 401) { showAuthRequired(status); btn.disabled = false; return; }
+      if (!res.ok || data.error) throw new Error(data.error || "Could not copy that.");
+      toast("Copied \u2014 it is yours now");
+      goToTrip(data.id);
+    } catch (e) {
+      setStatus(status, (e && e.message) || "Could not copy that.", "error");
+      btn.disabled = false;
+    }
+  });
+
   /* ---------- Routing: #/trips  or  #/trip/<id> ---------- */
   var viewTrips = $("view-trips"), viewTrip = $("view-trip");
   var tabbar = $("tabbar"), composer = $("composer"), backBtn = $("backBtn"), newTripBtn = $("newTripBtn");
@@ -916,6 +935,12 @@
      at a time with a 403, say so once at the top and take the buttons away. */
   function setDemoMode(on) {
     $("demoBanner").hidden = !on;
+    // Signed in, the useful offer is not "sign in" - it is "take this one".
+    var canCopy = on && isSignedIn;
+    $("demoCopyBtn").hidden = !canCopy;
+    if (canCopy) {
+      $("demoText").innerHTML = "<b>This is an example trip.</b> Read-only \u2014 but you can copy it into your own and edit from there.";
+    }
     var text = $("chatText");
     text.disabled = on;
     text.placeholder = on ? "Sign in to chat about a trip of your own" : "Message";
