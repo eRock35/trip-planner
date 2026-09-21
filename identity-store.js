@@ -34,6 +34,15 @@ const store = {
   async set(collection, id, value) {
     await client().collection(collection).doc(id).set(value);
   },
+  /** Merge fields into a document without touching the rest of it.
+   *
+   *  `set` above overwrites, which is right for a whole record and wrong for
+   *  a patch - entitlement writes land on the identity record alongside the
+   *  password hash, the access map and the spend ledger, and an overwrite
+   *  would take those with it. */
+  async merge(collection, id, patch) {
+    await client().collection(collection).doc(id).set(patch, { merge: true });
+  },
   async remove(collection, id) {
     await client().collection(collection).doc(id).delete();
   },

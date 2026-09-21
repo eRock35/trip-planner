@@ -152,7 +152,18 @@ function budgetFor(user) {
     return { unlimited: true, allowanceUsd: Infinity, spentUsd: Number(user.spentUsd || 0), remainingUsd: Infinity, reason: 'byok' };
   }
   // A paid plan covers its own usage; the allowance is for everyone else.
-  if (accessLevel(user, 'dataviz') === 'pro' || user.plan === 'pro') {
+  //
+  // Keyed off `plan`, which is domain-wide, and NOT off access['dataviz'].
+  // That clause used to be here and it was the same mistake as writing the
+  // plan to DataViz's own database: an app-scoped grant driving a
+  // domain-wide entitlement. "dataviz: pro" is meant to unlock DataViz's own
+  // features - your own data instead of the samples - and it was instead
+  // handing out unlimited spend on the owner's API key in Trip Planner,
+  // Football, Friction and Hopscotch as well. Three accounts held it.
+  //
+  // DataViz's own feature gate still reads the grant, via hasAccess() in its
+  // isPro(). Only the BILLING question moved.
+  if (user.plan === 'pro') {
     return { unlimited: true, allowanceUsd: Infinity, spentUsd: Number(user.spentUsd || 0), remainingUsd: Infinity, reason: 'pro' };
   }
   const allowance = FREE_ALLOWANCE_USD + Number(user.toppedUpUsd || 0);
