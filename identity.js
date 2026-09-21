@@ -787,6 +787,7 @@ function create(opts) {
           addedAt: (req.user.byok && req.user.byok.addedAt) || null,
         },
         createdAt: req.user.createdAt || null,
+        displayName: req.user.displayName || '',
       });
     });
 
@@ -883,6 +884,73 @@ function create(opts) {
       await store.set(USERS, s.uid, { ...user, requests });
       await log('access.requested', req, { uid: s.uid, email: user.email, detail: appName });
       res.json({ ok: true, requested: appName });
+    });
+
+    /* ---------- the account itself ---------- */
+
+    // A display name, and nothing else. Email is the account's identity - it
+    // derives the uid every app's data is keyed by, so changing it would
+    // orphan every trip, project and slip that person owns. Renaming an
+    // address is therefore an admin job with a migration, not a text field.
+    expressApp.post(`${mountPath}/profile`, async (req, res) => {
+      const s = session(req);
+      if (!s) return res.status(401).json({ error: 'Sign in first.' });
+      const user = await getUser(s.uid);
+      if (!user) return res.status(401).json({ error: 'Sign in first.' });
+      const displayName = String((req.body || {}).displayName || '').trim().slice(0, 80);
+      await store.set(USERS, s.uid, { ...user, displayName });
+      await log('profile.changed', req, { uid: s.uid, email: user.email });
+      res.json({ ok: true, displayName });
+    });
+
+    /**
+     * Delete the account.
+     *
+     * Proof is the same standard as changing the password, and for the same
+     * reason: a stolen cookie must not be able to do something permanent. A
+     * passkey-proved session is enough on its own; a password-proved one has
+     * to produce the password.
+     *
+     * What this removes is the IDENTITY: the record, the passkeys, the stored
+     * API key, the access grants. It cannot remove what lives in each app's
+     * own database - trips, projects, slips - because identity has no reach
+     * into those and no list of them. The page says so plainly rather than
+     * implying a deletion that did not happen.
+     *
+     * The record is removed rather than tombstoned, deliberately. A tombstone
+     * would block the address from ever registering again, which is a strange
+     * punishment for leaving; the cost is that re-registering the same address
+     * derives the same uid and reclaims whatever app data still references it.
+     * For personal email addresses, which are not recycled between people,
+     * "the same address is the same person" is the right assumption - and it
+     * is the assumption every app here already makes by deriving uid from
+     * email in the first place.
+     */
+    expressApp.delete(`${mountPath}/account`, async (req, res) => {
+      const s = session(req);
+      if (!s) return res.status(401).json({ error: 'Sign in first.' });
+      const user = await getUser(s.uid);
+      if (!user) return res.status(401).json({ error: 'Sign in first.' });
+
+      const supplied = (req.body || {}).password;
+      const proved = s.via === 'passkey' || (supplied && matches(supplied, user.password));
+      if (!proved) {
+        return res.status(403).json({ error: 'Enter your password to delete the account.' });
+      }
+
+      // Passkeys first. A credential left behind with no account to point at
+      // is a key to a door that no longer exists - and `available` counts
+      // them, so the next person on this device would be offered a Face ID
+      // sign-in that can only fail.
+      const mine = (await passkeys.list()).filter((c) => c.ownerId === s.uid);
+      for (const cred of mine) await store.remove(webauthn.COLLECTION, cred.id).catch(() => {});
+
+      await store.remove(USERS, s.uid);
+      // Logged with the email spelled out, because after this there is no
+      // record to look the uid up in.
+      await log('account.deleted', null, { uid: s.uid, email: user.email, detail: `${mine.length} passkey(s)` });
+      clearSessionCookie(res, req, baseDomain);
+      res.json({ ok: true, passkeysRemoved: mine.length });
     });
 
     passkeys.mount(expressApp);

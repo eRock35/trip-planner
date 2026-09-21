@@ -110,6 +110,49 @@
   .row-sub { font-size: 14px; color: var(--label-2); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row-chevron { width: 8px; height: 14px; color: var(--label-3); flex: 0 0 auto; }
   .row .badge { margin-left: auto; }
+  /* The "start another trip" tile. Dashed so it reads as an empty slot rather
+     than as a trip you have forgotten the name of. */
+  .row-add { color: var(--tint); }
+  .row-add .row-title { font-weight: 600; }
+  .row-add::before { display: none; }
+
+  /* The trips list on a desktop.
+   *
+   * On a phone these are rows sharing one rounded card, which is right: a
+   * thumb scrolls a list. At 1180px the same markup is two one-line rows and
+   * then two thirds of a screen of nothing, which is the single biggest
+   * reason this app still read as a phone app someone had opened in a
+   * browser. So past the breakpoint the LIST stops being the card and each
+   * row becomes one - the grid item has to be the card, not a row inside a
+   * card that stretches the full width with its content in the left third.
+   *
+   * Scoped to #tripsList rather than done in shared/desktop.css because it is
+   * a claim about trips specifically: they are independent things you pick
+   * between. The account and admin sheets use .list too and are genuinely
+   * lists, so they must keep reading as one. */
+  @media (min-width: 900px) {
+    body.dk #tripsList .list {
+      background: none; box-shadow: none; border-radius: 0; overflow: visible;
+      /* The shared layer caps a .list at 820px, which is right for a list of
+         rows and wrong for a grid of cards. */
+      max-width: none;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px;
+    }
+    body.dk #tripsList .row {
+      background: var(--card); border-radius: 14px; box-shadow: var(--shadow);
+      min-height: 78px; align-items: flex-start; flex-direction: column; gap: 4px; justify-content: center;
+    }
+    /* The separators belonged to a stack of rows; between cards they draw a
+       line across the gap. */
+    body.dk #tripsList .row + .row::before { display: none; }
+    body.dk #tripsList .row-chevron { display: none; }
+    body.dk #tripsList .row .badge { margin-left: 0; }
+    body.dk #tripsList .row-sub { white-space: normal; }
+    body.dk #tripsList .row-add {
+      background: none; box-shadow: none; border: 1px dashed var(--sep);
+    }
+    body.dk #tripsList .section-header { margin-left: 2px; }
+  }
   .badge { display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; border-radius: 999px; padding: 4px 9px; flex: 0 0 auto; white-space: nowrap; }
   .badge.planning { background: var(--fill); color: var(--label-2); }
   .demo-banner { margin: 10px 0 0; padding: 10px 12px; border-radius: 12px; background: var(--fill); font-size: 14px; line-height: 1.45; color: var(--label-2); }
@@ -994,6 +1037,17 @@
         });
         list.appendChild(ul);
       });
+      // The last tile is the next thing to do. On a phone it reads as one
+      // more row; on a desktop it fills the gap the grid leaves rather than
+      // ending the page with white space and no invitation.
+      var starter = document.createElement("div"); starter.className = "list";
+      var add = document.createElement("button");
+      add.type = "button"; add.className = "row row-add";
+      add.innerHTML = '<div class="row-main"><div class="row-title">Start another trip</div>' +
+        '<div class="row-sub">A name and a rough idea of where and when</div></div>';
+      add.addEventListener("click", function () { newTripBtn.click(); });
+      starter.appendChild(add);
+      list.appendChild(starter);
     } catch (e) {
       list.innerHTML = '<div class="empty"><b>Couldn’t load trips</b><span>Check your connection and pull down to try again.</span></div>';
     }
