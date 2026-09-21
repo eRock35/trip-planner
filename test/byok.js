@@ -65,8 +65,17 @@ const uidOf = (e) => Buffer.from(e.toLowerCase()).toString('base64url');
   const spentBefore = Number((ids.get(k) || {}).spentUsd || 0);
   ok('the free call was charged to them', spentBefore > 0, String(spentBefore));
 
+  // --- a key is a membership feature -------------------------------------
+  // The fee buys the apps, the account and the hosting; the key buys the
+  // tokens. Asserted before the rest, because everything below assumes the
+  // key can be saved at all.
+  let r = await post('/api/auth/byok', { key: 'sk-ant-whatever' }, user);
+  ok('a key cannot be saved without a membership', r.status === 402, String(r.status));
+  ok('...and says which', /membership/i.test(JSON.stringify(await r.json())));
+  ids.set(k, Object.assign({}, ids.get(k), { plan: 'member' }));
+
   // --- saving
-  let r = await post('/api/auth/byok', { key: 'not-a-key' }, user);
+  r = await post('/api/auth/byok', { key: 'not-a-key' }, user);
   ok('a key that is not an Anthropic key is refused', r.status === 400, String(r.status));
   r = await post('/api/auth/byok', { key: 'sk-ant-api03-' + 'w'.repeat(60) + 'BAD1' }, user);
   ok('a key Anthropic rejects is refused', r.status === 400, JSON.stringify(await r.json()));
@@ -101,7 +110,11 @@ const uidOf = (e) => Buffer.from(e.toLowerCase()).toString('base64url');
   sent.length = 0;
   await post(`/api/trips/${trip.id}/chat`, { question: 'once more' }, user);
   ok('...and calls go back to the service key', sent[0].apiKey === 'sk-ant-the-service-key', sent[0].apiKey);
-  ok('...on the free model again', sent[0].model === 'claude-haiku-4-5', sent[0].model);
+  // Not back to the free model: the membership is still paid, and the better
+  // model is one of the things it buys. Removing a key changes who pays for
+  // the tokens, not what tier this account is on.
+  ok('...but stays on the paid model, which the membership buys',
+     sent[0].model === 'claude-sonnet-5', sent[0].model);
 
   // --- nobody else's business
   r = await post('/api/auth/byok', { key: VALID }, '');

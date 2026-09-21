@@ -121,22 +121,20 @@ exist that did not:
   people one at a time is a worse version of this: slower, and it never
   actually bounded anything.
 - **`identity.requireDailyCap`** — a ceiling on what the **free tier** spends
-  in a day, because the per-user budget bounds ONE account and accounts are
-  free. A uid is derived from an email address, so someone willing to register
-  repeatedly collects the free allowance repeatedly; no amount of per-user
-  accounting closes that, and this is the thing that does. Set by
-  `FREE_TIER_DAILY_CAP_USD` (**$2** on this service), off when unset.
+  in a day, across everyone. **Deliberately switched off here**: the variable
+  is unset, and that is the decision rather than an oversight.
 
-  **Free tier, not all spend, and the distinction is the whole design.** A
-  ceiling low enough to be a real limit on strangers is low enough to lock out
-  a paying customer by lunchtime if it counts them too. Anyone spending their
-  own money — the owner, a bring-your-own-key user, a member, or anyone who
-  has topped up — neither counts toward the ceiling nor is blocked by it.
-  Spend with nobody to charge does count, because that is the shared key
-  paying for it.
+  It was briefly $2/day, which was wrong in a way worth recording. The
+  per-user free allowance is *also* $2, so the first person to use their whole
+  trial consumed the entire day's free tier and the next signup that day was
+  refused before their first answer — two numbers that happened to be equal
+  turned the free tier into a lottery, invisibly. The per-user allowance is
+  the real control; this exists only for the thing it cannot do, which is
+  someone registering throwaway accounts to farm the free $2 repeatedly.
 
-  The 503 carries a top-up link. Someone who wants this enough to hit the
-  ceiling is the person most worth telling that paying removes it.
+  If it is ever switched on, set `FREE_TIER_DAILY_CAP_USD` to a **multiple**
+  of `FREE_ALLOWANCE_USD`, or it caps how many people may try the apps each
+  day rather than capping the money.
 
 So the gate on both call sites (trip chat, `runWatchCheck`) is now
 `requireLogin, requireBudget, requireDailyCap`, and the cron sweep asks
@@ -145,10 +143,31 @@ approved them. **The replacement rule: never put an Anthropic call behind
 `requireLogin` alone — it goes behind `requireBudget` AND `requireDailyCap`.**
 The instinct the old rule encoded is still correct; only the mechanism moved.
 
-A ceiling meant to stop strangers draining the key must not lock out the
-person paying for it, so everyone who pays — by the month, by topping up, or
-by bringing their own key — is outside it in both directions: their spend is
-not counted and they are not blocked.
+When it is on, a ceiling meant to stop strangers draining the key must not
+lock out the person paying for it, so everyone who pays — by the month, by
+topping up, or by bringing their own key — is outside it in both directions:
+their spend is not counted and they are not blocked.
+
+### What the money buys (2026-09-21)
+
+- **Browse anything** without an account. No app makes a model call for a
+  signed-out visitor — DataViz's samples look like the exception and are not,
+  because each carries a baked column mapping and serves with no model call at
+  all.
+- **Sign up free** and get `FREE_ALLOWANCE_USD` ($2) of AI, *once*, across
+  every app on the domain — the ledger is `spentUsd` on the shared identity
+  record, not per app.
+- **Past that, the membership is the gate**, and it is a platform fee rather
+  than a bundle of tokens: it buys the better model, the bigger search budget,
+  and the right to put either money or your own key behind the apps. Credit is
+  sold separately at what the calls actually cost; a key covers its own
+  tokens. `paysPlatformFee()` in identity is the single definition, and
+  `budgetFor`, `apiKeyFor`, the byok route and DataViz's own-data gate all ask
+  it, so a lapsed membership cannot leave one of them still saying yes.
+- **Stopping there is free and fine.** Someone who spends their $2 and never
+  pays keeps every feature that is not a model call, for as long as they like,
+  and costs essentially nothing to serve. There is no reason to push them off
+  and no attempt to.
 
 `accounts.requireAiAccess` still exists and is on no route. Do not put it back
 in front of a model call.
@@ -278,8 +297,8 @@ Cloud Run Admin API v2). See `college-football-app`'s
 - Env vars: `GOOGLE_CLOUD_PROJECT`, `FIRESTORE_DATABASE_ID=trip-planner`,
   `SESSION_SECRET` (any long random string, signs session/challenge cookies),
   `CRON_SECRET`, `ADMIN_EMAIL` (secret `trip-planner-admin-email`),
-  `FREE_TIER_DAILY_CAP_USD` (the free tier's daily ceiling, $2; unset means
-  no ceiling).
+  `FREE_TIER_DAILY_CAP_USD` (the free tier's daily ceiling; **deliberately
+  unset** — see above).
   `SITE_LOGIN_USERNAME` / `SITE_LOGIN_PASSWORD` are **dead** since the move to
   multi-user — nothing reads them. They're still mounted on the service; drop
   them (and their secrets) on a future deploy.

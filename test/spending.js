@@ -125,11 +125,16 @@ async function ask(cookie) {
   ok('the owner still gets in over the ceiling', r.status === 200, String(r.status));
 
   // Their own key is their own bill, so the ceiling is not theirs either.
+  // A key only counts while the membership does - it is the fee, not the key,
+  // that says this person is not a stranger.
   const byok = jar(await post('/api/auth/register', { email: 'byok@example.com', password: 'a-long-password-4' }));
   const bk = uidOf('byok@example.com');
   ids.set('users/' + bk, { ...ids.get('users/' + bk), byok: { blob: 'x', last4: '1234' } });
   r = await ask(byok);
-  ok('...and so does someone on their own key', r.status === 200, String(r.status));
+  ok('a key alone does not get past the ceiling', r.status === 503, String(r.status));
+  ids.set('users/' + bk, { ...ids.get('users/' + bk), plan: 'member' });
+  r = await ask(byok);
+  ok('...and with the membership it does', r.status === 200, String(r.status));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
