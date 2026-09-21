@@ -689,22 +689,30 @@
   var aiBanner = $("aiBanner"), aiBannerText = $("aiBannerText"), aiRequestBtn = $("aiRequestBtn");
   var accountBtn = $("accountBtn"), authBarBtn = $("authBarBtn");
 
-  var AI_COPY = {
-    none:     ["AI research is off for your account. Ask for access to use chat and price watches.", true],
-    pending:  ["Your AI access request is waiting to be reviewed.", false],
-    denied:   ["Your request for AI access wasn't approved.", false],
-    approved: ["", false]
-  };
+  // Where credit is bought. One checkout serves every app, so this app links
+  // to it rather than growing a second Stripe integration.
+  var TOP_UP_URL = "https://dataviz.strongtechnicalconsulting.com/?topup=1";
+
+  /** What is left to spend, in words - or null when there is nothing worth
+   *  saying, which is the normal case and leaves the banner hidden. */
+  function creditLine() {
+    var b = me && me.budget;
+    if (!b || b.unlimited) return null;            // the owner, or their own key
+    if (Number(b.remainingUsd) > 0) return null;   // fine, say nothing
+    return "You have used your $" + Number(b.allowanceUsd || 0).toFixed(2) +
+      " of credit. Top up to keep using chat and price watches \u2014 it works across every app.";
+  }
 
   function renderAuthBar() {
     if (!isSignedIn) { aiBanner.hidden = true; return; }
-    var state = (me && me.aiAccess) || "none";
-    var copy = AI_COPY[state] || AI_COPY.none;
-    aiBanner.hidden = state === "approved";
-    aiBannerText.textContent = copy[0];
-    aiRequestBtn.hidden = !copy[1];
+    var line = creditLine();
+    aiBanner.hidden = !line;
+    aiBannerText.textContent = line || "";
+    // The button used to ask Erik for permission. There is nobody to ask now,
+    // so it points at the till.
+    aiRequestBtn.hidden = !line;
+    aiRequestBtn.textContent = "Top up";
   }
-  function aiReady() { return !!(me && me.aiAccess === "approved"); }
 
   async function refreshAuthStatus() {
     try {
@@ -738,8 +746,14 @@
     if (!isSignedIn) { location.href = "/login"; return; }
     var list = $("accountList"); list.innerHTML = "";
     list.appendChild(accountRow(me && me.displayName ? me.displayName : "You", me && me.email ? me.email : "", null));
-    var state = (me && me.aiAccess) || "none";
-    list.appendChild(accountRow("AI research", state === "approved" ? "Chat and price watches are on" : (AI_COPY[state] || AI_COPY.none)[0], state === "none" ? openAiRequest : null, { pill: state }));
+    var b = (me && me.budget) || {};
+    list.appendChild(accountRow(
+      "AI credit",
+      b.unlimited
+        ? (b.reason === "byok" ? "Running on your own key" : "Not metered")
+        : "$" + Number(b.remainingUsd || 0).toFixed(2) + " of $" + Number(b.allowanceUsd || 0).toFixed(2) + " left",
+      b.unlimited ? null : function () { location.href = TOP_UP_URL; }
+    ));
     list.appendChild(accountRow("Change password", me && me.mustChangePassword ? "You're using a temporary password" : "", openPasswordSheet));
     var isAdmin = !!(me && me.isAdmin);
     $("accountAdminHdr").hidden = !isAdmin; $("accountAdminList").hidden = !isAdmin;
@@ -786,8 +800,7 @@
     btn.disabled = false;
   });
 
-  function openAiRequest() { $("aiNote").value = ""; setStatus($("aiStatus"), ""); openSheet({ title: "Request AI access", body: $("sh-aiRequest") }); }
-  aiRequestBtn.addEventListener("click", openAiRequest);
+  aiRequestBtn.addEventListener("click", function () { location.href = TOP_UP_URL; });
   $("aiSendBtn").addEventListener("click", async function () {
     var btn = $("aiSendBtn"), st = $("aiStatus");
     btn.disabled = true; setStatus(st, "Sending…");
@@ -871,11 +884,17 @@
   // A 403 here means "signed in, but AI isn't approved for you"; a different
   // problem from not being logged in, so say so rather than sending them to a
   // login page they're already past.
-  function showAiRequired(statusEl) {
-    refreshAuthStatus();
-    if (!statusEl) return;
-    var state = (me && me.aiAccess) || "none";
-    setStatus(statusEl, state === "pending" ? "Your AI access request is still being reviewed." : "AI research isn't on for your account yet. Request access from the Account menu.", "error");
+  /** The two ways a model call is refused now that nobody approves anyone:
+   *  402, your credit is gone, and 503, the app has spent its day across
+   *  everyone. Both arrive with a body that explains itself, so this shows
+   *  what the server said rather than guessing at it. */
+  async function showSpendBlocked(statusEl, res) {
+    var data = await res.json().catch(function () { return {}; });
+    refreshAuthStatus();                       // the meter just moved
+    var text = data.detail || data.error ||
+      (res.status === 402 ? "You have used your credit." : "Research is paused for today.");
+    if (statusEl) setStatus(statusEl, text, "error");
+    return text;
   }
 
   $("demoCopyBtn").addEventListener("click", async function () {
@@ -1293,9 +1312,8 @@
         body: JSON.stringify({ question: text }),
         signal: controller ? controller.signal : undefined
       });
-      if (res.status === 403) {
-        showAiRequired(chatStatus);
-        entry.answer = "AI research isn't on for your account yet.";
+      if (res.status === 402 || res.status === 503) {
+        entry.answer = await showSpendBlocked(chatStatus, res);
         renderChat();
         return;
       }
@@ -1381,8 +1399,12 @@
         checkBtn.disabled = true; checkBtn.textContent = "Checking…";
         try {
           var res = await fetch("/api/trips/" + currentTripId + "/watches/" + w.id + "/check", { method: "POST" });
-          if (res.status === 403 || res.status === 401) {
-            if (res.status === 403) showAiRequired($("wStatus")); else showAuthRequired($("wStatus"));
+          if (res.status === 402 || res.status === 503) {
+            await showSpendBlocked($("wStatus"), res);
+            checkBtn.disabled = false; checkBtn.textContent = "Check now"; return;
+          }
+          if (res.status === 401) {
+            showAuthRequired($("wStatus"));
             checkBtn.disabled = false; checkBtn.textContent = "Check now"; return;
           }
           // A check that searches the web has its headers out long before it

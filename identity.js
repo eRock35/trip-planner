@@ -55,6 +55,7 @@ const requestContext = new AsyncLocalStorage();
 const USERS = 'users';
 const EVENTS = 'events';
 const USAGE = 'usage';
+const CONTROL = 'control';
 const COOKIE = 'stc_session';
 const SESSION_DAYS = 30;
 const SESSION_TTL = SESSION_DAYS * 24 * 60 * 60;
@@ -558,6 +559,77 @@ function create(opts) {
    * each app's own decision, made by its own gate. This one only enforces a
    * personal allowance, and there isn't one to enforce.
    */
+  /* ---------- the ceiling on everyone at once ---------- */
+
+  /**
+   * A daily spend ceiling for the whole app, on top of each person's own
+   * allowance.
+   *
+   * The per-user budget bounds what ONE account can spend. It does not bound
+   * what an app can spend, because accounts are free and a uid is derived
+   * from an email address: someone willing to register repeatedly gets the
+   * free allowance repeatedly. On an app with open registration that is the
+   * whole exposure, and no amount of per-user accounting closes it.
+   *
+   * Off unless `DAILY_SPEND_CAP_USD` is set, so adding this changes nothing
+   * anywhere until a service asks for it.
+   *
+   * Two deliberate exemptions:
+   *
+   *  - Spend on someone's OWN key never counts and is never blocked. The
+   *    ceiling exists to bound one bill, and that bill is not theirs.
+   *  - An unlimited account - the owner - is not blocked, though its spend
+   *    still counts. A ceiling meant to keep strangers from draining the key
+   *    should not lock out the person paying for it.
+   */
+  const DAILY_CAP_USD = Number(process.env.DAILY_SPEND_CAP_USD || 0);
+
+  const today = () => new Date().toISOString().slice(0, 10);
+  const capDocId = () => `spend-${appName}-${today()}`;
+
+  // Read through a short cache. The counter is a single document and this
+  // sits in front of routes that then spend minutes in a model, so a few
+  // seconds of staleness costs at most a call or two over the line and saves
+  // a Firestore read on every request. Tunable mostly so a test can turn it
+  // off: a suite that writes the counter and immediately asks would otherwise
+  // be answered from the zero it read a moment earlier.
+  let capCache = { at: 0, day: '', usd: 0 };
+  const CAP_TTL_MS = Number(process.env.DAILY_CAP_CACHE_MS === undefined ? 15000 : process.env.DAILY_CAP_CACHE_MS);
+
+  async function spentTodayUsd() {
+    const day = today();
+    if (CAP_TTL_MS > 0 && capCache.day === day && Date.now() - capCache.at < CAP_TTL_MS) return capCache.usd;
+    let usd = 0;
+    try {
+      const doc = await store.get(CONTROL, capDocId());
+      usd = Number((doc && doc.usd) || 0);
+    } catch (e) {
+      // A ceiling that fails open is the right way round: a Firestore blip
+      // must not take the app down, and the per-user budget still applies.
+      usd = 0;
+    }
+    capCache = { at: Date.now(), day, usd };
+    return usd;
+  }
+
+  function dailyCapUsd() { return DAILY_CAP_USD; }
+
+  /** Refuse when the app has spent its day. Put it AFTER requireBudget, so
+   *  someone out of their own credit is told that rather than this. */
+  async function requireDailyCap(req, res, next) {
+    if (!DAILY_CAP_USD) return next();
+    const b = budgetFor(req.user);
+    if (b.unlimited) return next();              // the owner, or their own key
+    const spent = await spentTodayUsd();
+    if (spent < DAILY_CAP_USD) return next();
+    log('daily-cap.reached', req, { detail: `${spent.toFixed(2)} of ${DAILY_CAP_USD.toFixed(2)}`, ok: false });
+    return res.status(503).json({
+      error: 'Research is paused for today.',
+      detail: 'This app has hit its daily limit across everyone using it. It resets at midnight UTC.',
+      retryAfterDay: true,
+    });
+  }
+
   function requireBudget(req, res, next) {
     const b = budgetFor(req.user);
     if (!req.user || b.unlimited || b.remainingUsd > 0) return next();
@@ -596,8 +668,14 @@ function create(opts) {
     // Charge it to the person, atomically. Without this the ledger would be a
     // sum over an unbounded collection on every request; with a read-modify-
     // write it would lose charges whenever two apps billed at once.
-    if (!byok && uid && typeof row.costUsd === 'number' && row.costUsd > 0 && store.bump) {
-      try { await store.bump(USERS, uid, { spentUsd: row.costUsd, callCount: 1 }); } catch (e) { /* same */ }
+    if (!byok && typeof row.costUsd === 'number' && row.costUsd > 0 && store.bump) {
+      if (uid) {
+        try { await store.bump(USERS, uid, { spentUsd: row.costUsd, callCount: 1 }); } catch (e) { /* same */ }
+      }
+      // The app's own running total for the day, which the ceiling reads.
+      // Counted even when there is no uid - scheduled work has nobody to
+      // charge, and it is exactly as real on the invoice.
+      try { await store.bump(CONTROL, capDocId(), { usd: row.costUsd, calls: 1 }); } catch (e) { /* same */ }
     }
     return row;
   }
@@ -988,6 +1066,9 @@ function create(opts) {
     mount,
     attachUser,
     requireUser,
+    requireDailyCap,
+    spentTodayUsd,
+    dailyCapUsd,
     session,
     issueSession,
     getUser,
