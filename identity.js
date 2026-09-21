@@ -163,8 +163,40 @@ function budgetFor(user) {
     spentUsd: spent,
     remainingUsd: Math.max(0, allowance - spent),
     toppedUpUsd: Number(user.toppedUpUsd || 0),
-    reason: 'allowance',
+    member: isMember(user),
+    reason: isMember(user) ? 'member' : 'allowance',
   };
+}
+
+/**
+ * Membership: the flat monthly fee that covers hosting and metering.
+ *
+ * Deliberately NOT `unlimited`. That is the whole point of the model - credit
+ * is sold at what the call actually costs, and the monthly fee pays for the
+ * hosting and the ledger rather than for tokens. A member who runs their
+ * balance to zero is stopped by requireBudget exactly like anyone else; what
+ * membership buys is the better model, the bigger search budget, and the
+ * right to keep topping up.
+ *
+ * A cancelled membership runs to the end of the period already paid for -
+ * Stripe has taken that money, so the service is owed.
+ */
+function isMember(user) {
+  if (!user || user.plan !== 'member') return false;
+  if (user.currentPeriodEnd && Date.parse(user.currentPeriodEnd) < Date.now()) return false;
+  return true;
+}
+
+/**
+ * Which tier of model and search budget this person gets.
+ *
+ * Separate from `unlimited`, and the distinction matters: a member pays every
+ * month but still spends their own credit per call, so they are metered AND
+ * on the paid tier. Keying the model off `unlimited` alone would have quietly
+ * served Haiku to someone paying $5 a month.
+ */
+function paidTier(user) {
+  return budgetFor(user).unlimited || isMember(user);
 }
 
 /* ------------------------------------------------------------------ *
@@ -281,7 +313,7 @@ const FREE_SEARCHES = Number(process.env.FREE_MAX_SEARCHES || 4);
 const PAID_SEARCHES = Number(process.env.PAID_MAX_SEARCHES || 14);
 
 function planFor(user, opts) {
-  const paid = budgetFor(user).unlimited;
+  const paid = paidTier(user);
   const model = (paid && opts.paid) || opts.free;
   const maxUses = opts.maxUses !== undefined
     ? opts.maxUses
@@ -911,4 +943,4 @@ function create(opts) {
 
 module.exports = {
   planFor,
-  webSearchFor, create, priceOf, PRICES, uidFor, makeHash, matches, accessLevel, hasAccess, pendingRequest, budgetFor, FREE_ALLOWANCE_USD, USERS, EVENTS, USAGE, COOKIE, MIN_PASSWORD };
+  webSearchFor, create, priceOf, PRICES, isMember, paidTier, uidFor, makeHash, matches, accessLevel, hasAccess, pendingRequest, budgetFor, FREE_ALLOWANCE_USD, USERS, EVENTS, USAGE, COOKIE, MIN_PASSWORD };
