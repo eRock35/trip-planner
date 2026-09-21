@@ -69,8 +69,16 @@
      is just a 232px hole down the left of the screen. Written as a removal
      rather than an addition on purpose: a browser without :has() ignores this
      rule and keeps the old behaviour, instead of dropping the padding on the
-     apps that DO have a rail and letting it cover their content. */
-  body.dk:not(:has(.dk-tabbar)) {
+     apps that DO have a rail and letting it cover their content.
+
+     `:not([hidden])` matters as much as `:has`. Trip Planner has a tab bar in
+     its markup at all times and hides it until a trip is open, so its trips
+     list - the first screen anyone sees - was pushed 232px right of centre by
+     a rail that was not on screen. The list looked shoved sideways for no
+     visible reason, which is most of what "it still feels like a phone app"
+     meant. This is live: opening a trip unhides the bar and the shell shifts
+     to make room for it, with no JavaScript involved. */
+  body.dk:not(:has(.dk-tabbar:not([hidden]))) {
     --dk-bleed: max(0px, (100vw - var(--dk-max)) / 2);
     padding-left: var(--dk-bleed);
   }
