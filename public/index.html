@@ -112,6 +112,9 @@
   .row .badge { margin-left: auto; }
   .badge { display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; border-radius: 999px; padding: 4px 9px; flex: 0 0 auto; white-space: nowrap; }
   .badge.planning { background: var(--fill); color: var(--label-2); }
+  .demo-banner { margin: 10px 0 0; padding: 10px 12px; border-radius: 12px; background: var(--fill); font-size: 14px; line-height: 1.45; color: var(--label-2); }
+  .demo-banner b { color: var(--label); }
+  .demo-banner a { color: var(--tint); }
   .badge.locked { background: var(--green); color: #04280f; }
 
   /* Callouts + states */
@@ -362,6 +365,9 @@
         <h1 id="tripName"></h1>
       </div>
       <span class="badge" id="tripBadge"></span>
+      <div class="demo-banner" id="demoBanner" hidden>
+        <b>This is an example trip.</b> Everything here is read-only. <a href="/login">Sign in</a> to plan one of your own.
+      </div>
     </div>
 
     <div id="tab-chat" class="tabpanel" role="tabpanel">
@@ -411,8 +417,10 @@
       <div class="status" id="dStatus"></div>
       <div class="section-header">Status</div>
       <div class="actions">
+        <span id="lockRow">
         <button type="button" class="btn btn-primary" id="lockBtn"><svg><use href="#i-lock"/></svg>Lock in this trip</button>
         <button type="button" class="btn btn-secondary" id="unlockBtn" hidden>Unlock (back to planning)</button>
+        </span>
         <p class="muted" style="text-align:center;padding:0 12px">Locking marks a trip as booked. It stops price checks; chat, itinerary and notes keep working.</p>
       </div>
       <div class="section-header">Danger zone</div>
@@ -894,7 +902,25 @@
     box.innerHTML = svgUse("i-plane") + '<b>Plan your next trip</b><span>Sign in to see your trips, or create an account. It takes a moment, and your trips are yours alone.</span>';
     var btn = document.createElement("button"); btn.type = "button"; btn.className = "btn btn-primary"; btn.textContent = "Sign in or create an account";
     btn.addEventListener("click", function () { location.href = "/login"; });
-    box.appendChild(btn); list.appendChild(box);
+    box.appendChild(btn);
+    // What the sign-in wall used to hide: what the app actually does. The
+    // example is read-only and the same for everyone.
+    var demoBtn = document.createElement("button"); demoBtn.type = "button"; demoBtn.className = "btn btn-secondary"; demoBtn.style.marginTop = "8px";
+    demoBtn.textContent = "Browse an example trip";
+    demoBtn.addEventListener("click", function () { goToTrip("demo"); });
+    box.appendChild(demoBtn); list.appendChild(box);
+  }
+
+  /* The example trip is read-only. Rather than letting every button fail one
+     at a time with a 403, say so once at the top and take the buttons away. */
+  function setDemoMode(on) {
+    $("demoBanner").hidden = !on;
+    var text = $("chatText");
+    text.disabled = on;
+    text.placeholder = on ? "Sign in to chat about a trip of your own" : "Message";
+    if (on) $("chatSend").disabled = true;
+    ["dSaveBtn", "wAddBtn"].forEach(function (id) { $(id).hidden = on; });
+    $("lockRow").hidden = on;
   }
 
   async function loadTripsList() {
@@ -981,6 +1007,7 @@
     var badge = $("tripBadge");
     badge.textContent = currentTrip.status === "locked" ? "Locked in" : "Planning";
     badge.className = "badge " + (currentTrip.status === "locked" ? "locked" : "planning");
+    setDemoMode(!!currentTrip.demo);
 
     $("dName").value = currentTrip.name || "";
     $("dDest").value = currentTrip.destination || "";

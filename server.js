@@ -7,6 +7,7 @@ const identityLib = require('./identity');
 const identityStore = require('./identity-store');
 const analytics = require('./analytics');
 const schedule = require('./schedule');
+const demo = require('./demo');
 
 const PORT = process.env.PORT || 8080;
 const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'metal-celerity-236019';
@@ -21,6 +22,14 @@ const db = new Firestore({ projectId: PROJECT_ID, databaseId: FIRESTORE_DB });
 
 const app = express();
 app.use(express.json());
+
+// Only the landing page may put this app in a frame - it shows a live
+// preview you can swipe through. Nothing else should be able to: a gated app
+// inside a hostile page is the setup for clickjacking a signed-in session.
+app.use((req, res, next) => {
+  res.set('Content-Security-Policy', "frame-ancestors 'self' https://strongtechnicalconsulting.com https://www.strongtechnicalconsulting.com");
+  next();
+});
 
 // ---------------------------------------------------------------------------
 // Auth. This app is multi-user: anyone can register, every signed-in user
@@ -229,6 +238,13 @@ function requireLoginOrCron(req, res, next) {
 // trips invisible to another. 404 rather than 403 on someone else's trip, so
 // the API doesn't confirm that an id exists.
 async function loadOwnedTrip(req, res) {
+  // The example trip is served from code (see demo.js) and every route that
+  // would change a trip comes through here, so this one check covers all of
+  // them: chat, lock, watches, the itinerary, the details form.
+  if (req.params.id === demo.DEMO_ID) {
+    res.status(403).json({ error: "That's the example trip. Sign in and start your own to change anything.", demo: true });
+    return null;
+  }
   const ref = db.collection('trips').doc(req.params.id);
   const doc = await ref.get();
   if (!doc.exists) {
@@ -298,6 +314,21 @@ app.post('/api/trips', requireLogin, async (req, res) => {
     console.error('POST /api/trips', err);
     res.status(500).json({ error: 'Could not create trip.' });
   }
+});
+
+// Anyone may look at the example trip - no session, no account. It is what
+// the sign-in wall used to hide: what the app actually does.
+app.get(`/api/trips/${demo.DEMO_ID}`, (req, res) => {
+  res.set('Cache-Control', 'public, max-age=600');
+  res.json(Object.assign({ id: demo.DEMO_ID, demo: true }, demo.DEMO_TRIP));
+});
+app.get(`/api/trips/${demo.DEMO_ID}/messages`, (req, res) => {
+  res.set('Cache-Control', 'public, max-age=600');
+  res.json(demo.DEMO_MESSAGES.map((m, i) => Object.assign({ id: 'demo-' + i }, m)));
+});
+app.get(`/api/trips/${demo.DEMO_ID}/watches`, (req, res) => {
+  res.set('Cache-Control', 'public, max-age=600');
+  res.json(demo.DEMO_WATCHES.map((w, i) => Object.assign({ id: 'demo-' + i }, w)));
 });
 
 app.get('/api/trips/:id', requireLogin, async (req, res) => {
