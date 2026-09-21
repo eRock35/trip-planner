@@ -24,7 +24,7 @@ Object.assign(process.env, {
   GOOGLE_CLOUD_PROJECT: 'test',
   ADMIN_EMAIL: 'boss@example.com',
   ANTHROPIC_API_KEY: 'sk-ant-test',
-  DAILY_SPEND_CAP_USD: '5',
+  FREE_TIER_DAILY_CAP_USD: '2',
   // Off, so writing the counter and asking in the next line is not answered
   // from the value read a moment earlier.
   DAILY_CAP_CACHE_MS: '0',
@@ -62,6 +62,26 @@ async function ask(cookie) {
   ok('...and is told what it has to spend', me.budget && me.budget.allowanceUsd > 0, JSON.stringify(me.budget));
   ok('...which is not unlimited', me.budget.unlimited === false, JSON.stringify(me.budget));
 
+  /* ---------- what the counter counts ----------
+     The blocking half is only half. If a member's usage filled the free
+     tier's daily allowance, $2 would stop meaning "what strangers cost me"
+     and start meaning "what anyone cost me", and the ceiling would lock out
+     the people it exists to serve. */
+  const counter = () => Number((h.bag('identity').get('control/free-spend-trip-planner-' + today()) || {}).usd || 0);
+  ok('free-tier spend counts toward the ceiling', counter() > 0, String(counter()));
+
+  const paid = jar(await post('/api/auth/register', { email: 'paid@example.com', password: 'a-long-password-9' }));
+  const pk = uidOf('paid@example.com');
+  ids.set('users/' + pk, { ...ids.get('users/' + pk), toppedUpUsd: 25 });
+  const before = counter();
+  r = await ask(paid);
+  ok('a paying account can chat', r.status === 200, String(r.status));
+  // Fire-and-forget metering: give the write a moment to land, then assert it
+  // did not.
+  await new Promise((r2) => setTimeout(r2, 120));
+  ok("...and their spend does NOT count against the free tier", counter() === before,
+     `${before} -> ${counter()}`);
+
   /* ---------- until their own allowance is gone ---------- */
   const uid = uidOf('new@example.com');
   ids.set('users/' + uid, { ...ids.get('users/' + uid), spentUsd: 999 });
@@ -75,12 +95,28 @@ async function ask(cookie) {
      The per-user budget bounds ONE account. Accounts are free and a uid is
      derived from an email, so without this the exposure is unbounded no
      matter how carefully each account is metered. */
-  h.bag('identity').set('control/spend-trip-planner-' + today(), { usd: 99 });
+  h.bag('identity').set('control/free-spend-trip-planner-' + today(), { usd: 99 });
   const second = jar(await post('/api/auth/register', { email: 'second@example.com', password: 'a-long-password-2' }));
   r = await ask(second);
   ok('a new account cannot route around the day being spent', r.status === 503, String(r.status));
   body = await r.json();
-  ok('...and is told it is the app, not them', /paused for today/i.test(body.error || ''), JSON.stringify(body));
+  ok('...and is told it is the free tier, not them', /free tier/i.test(body.error || ''), JSON.stringify(body));
+  ok('...and that paying removes the limit', Boolean(body.topUpUrl), JSON.stringify(body).slice(0, 140));
+
+  /* ---------- and it never blocks someone who paid ----------
+     A ceiling low enough to be a real limit on strangers is low enough to
+     lock out a customer by lunchtime, if it counts them too. */
+  const member = jar(await post('/api/auth/register', { email: 'member@example.com', password: 'a-long-password-5' }));
+  const mk = uidOf('member@example.com');
+  ids.set('users/' + mk, { ...ids.get('users/' + mk), plan: 'member' });
+  r = await ask(member);
+  ok('a member is not blocked by the free tier being spent', r.status === 200, String(r.status));
+
+  const topped = jar(await post('/api/auth/register', { email: 'topped@example.com', password: 'a-long-password-6' }));
+  const tk = uidOf('topped@example.com');
+  ids.set('users/' + tk, { ...ids.get('users/' + tk), toppedUpUsd: 25 });
+  r = await ask(topped);
+  ok('...nor is someone who bought credit', r.status === 200, String(r.status));
 
   /* ---------- but it never locks out the person paying the bill ---------- */
   const boss = jar(await post('/api/auth/register', { email: 'boss@example.com', password: 'a-long-password-3' }));
