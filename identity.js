@@ -151,21 +151,19 @@ function budgetFor(user) {
   if (user.byok && user.byok.blob) {
     return { unlimited: true, allowanceUsd: Infinity, spentUsd: Number(user.spentUsd || 0), remainingUsd: Infinity, reason: 'byok' };
   }
-  // A paid plan covers its own usage; the allowance is for everyone else.
+  // There is no third branch here, and that is the point: nobody but the
+  // owner and a bring-your-own-key user gets `unlimited`.
   //
-  // Keyed off `plan`, which is domain-wide, and NOT off access['dataviz'].
-  // That clause used to be here and it was the same mistake as writing the
-  // plan to DataViz's own database: an app-scoped grant driving a
-  // domain-wide entitlement. "dataviz: pro" is meant to unlock DataViz's own
-  // features - your own data instead of the samples - and it was instead
-  // handing out unlimited spend on the owner's API key in Trip Planner,
-  // Football, Friction and Hopscotch as well. Three accounts held it.
-  //
-  // DataViz's own feature gate still reads the grant, via hasAccess() in its
-  // isPro(). Only the BILLING question moved.
-  if (user.plan === 'pro') {
-    return { unlimited: true, allowanceUsd: Infinity, spentUsd: Number(user.spentUsd || 0), remainingUsd: Infinity, reason: 'pro' };
-  }
+  // A `plan === 'pro'` clause used to sit here, granting unlimited spend on
+  // the owner's API key to the retired $9 DataViz Pro subscription. The plan
+  // is gone - one membership buys all five apps - and no account ever held
+  // it, so the clause could only ever have fired on a stale record or a typo.
+  // Before that it read access['dataviz'] === 'pro', which was worse: an
+  // app-scoped feature grant driving a domain-wide entitlement, handing three
+  // accounts unlimited spend in Trip Planner, Football, Friction and
+  // Hopscotch as well. Both are deliberately absent. An admin comp is an
+  // `access` grant, which unlocks an app's features and nothing else;
+  // membership below is metered like everyone else's.
   const allowance = FREE_ALLOWANCE_USD + Number(user.toppedUpUsd || 0);
   const spent = Number(user.spentUsd || 0);
   return {
