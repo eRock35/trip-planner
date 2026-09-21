@@ -259,10 +259,14 @@ Cloud Run Admin API v2). See `college-football-app`'s
   holds family PII, and is deliberately unlinked. Don't carry this change over
   to it.
 
-  A mapping cannot be created by the deployer service account — every API
-  attempt fails with "Caller is not authorized to administer the domain" even
-  though the domain is verified. It needs a real Google user identity via the
-  Cloud Run console, so this is one of the few steps Erik does by hand.
+  This note used to say a mapping cannot be created by the deployer service
+  account, because every API attempt failed with "Caller is not authorized to
+  administer the domain". That was never a user-vs-service-account rule: Cloud
+  Run checks whether the caller is a *verified owner of the domain*, and the
+  deployer was added as an Owner of the property in Google Search Console on
+  2026-09-20. It has created mappings by API since — `acct` on 2026-09-21. See
+  `eriks-projects/DEPLOY.md` -> "Domain mappings". Erik's step is the DNS
+  record at the registrar, not the mapping.
 
 ## Still to do
 
