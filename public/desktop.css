@@ -1,0 +1,166 @@
+/* Desktop, for apps that were built phone-first.
+ *
+ * Measured before this existed: DataViz used 60% of a 1440px window, Friction
+ * 44%, Trip Planner 47% - and DataViz and Friction had no min-width media
+ * query at all. Trip Planner's header overlapped its own banner up there.
+ * All five read as a phone app someone had opened in a browser.
+ *
+ * The rules, in order of how much they matter:
+ *
+ *   1. A bottom tab bar is a phone idiom. Above 900px it becomes a left
+ *      sidebar. This single change does more than everything else here.
+ *   2. Use the width for something. A wider column is not a desktop layout;
+ *      showing two things at once is. Apps opt into that per-view with
+ *      .dk-split, because only the app knows what belongs side by side.
+ *   3. Keep the reading measure. Body text still wraps at a sane width even
+ *      when the shell is 1400px - a 1400px-wide paragraph is worse, not
+ *      better.
+ *
+ * Opt in by adding class="dk" to <body> and loading this after the app's own
+ * styles. Everything below is scoped to .dk and to min-width, so a phone is
+ * untouched.
+ *
+ * COPY. The source is eriks-projects/shared/desktop.css - edit it there and
+ * run `node scripts/sync-shared.js`. CI fails if a copy drifts.
+ */
+
+@media (min-width: 900px) {
+  :root {
+    --dk-rail: 232px;
+    --dk-gutter: 32px;
+    --dk-max: 1180px;
+    --dk-measure: 68ch;
+  }
+
+  /* ---- the shell ---------------------------------------------------- */
+
+  .dk body,
+  body.dk {
+    padding-left: var(--dk-rail);
+    padding-bottom: 40px;          /* the bottom bar is gone; reclaim its space */
+  }
+
+  /* The tab bar becomes the rail. Four of these apps wrap their buttons in a
+     .tabbar-inner, so both the wrapper and the inner are handled - the app
+     only has to add .dk-tabbar to the <nav> it already has. */
+  body.dk .dk-tabbar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: var(--dk-rail);
+    height: 100vh;
+    padding: 22px 12px;
+    border-top: 0;
+    border-right: 1px solid var(--sep, rgba(120,120,128,.24));
+    background: var(--bar-bg, var(--card, transparent));
+    backdrop-filter: none;
+    overflow-y: auto;
+  }
+  body.dk .dk-tabbar,
+  body.dk .dk-tabbar > .tabbar-inner,
+  body.dk .dk-tabbar > .nav-inner {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: stretch;
+    gap: 2px;
+    max-width: none;
+    height: auto;
+  }
+  body.dk .dk-tabbar > .tabbar-inner,
+  body.dk .dk-tabbar > .nav-inner { flex: 1 1 auto; }
+
+  body.dk .dk-tabbar button,
+  body.dk .dk-tabbar a {
+    flex: 0 0 auto;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 42px;
+    padding: 0 12px;
+    border-radius: 10px;
+    font-size: 15px;
+    text-align: left;
+  }
+  body.dk .dk-tabbar button:hover,
+  body.dk .dk-tabbar a:hover { background: var(--fill, rgba(120,120,128,.12)); }
+  body.dk .dk-tabbar svg { width: 20px; height: 20px; flex: 0 0 auto; }
+  /* A label under a phone icon is tiny; beside it, it is a menu item. */
+  body.dk .dk-tabbar span:not(.tab-badge) { font-size: 15px; }
+
+  /* A "More" button has nothing to hide behind when there is a whole column
+     of space, so apps mark it and it goes away. */
+  body.dk .dk-more-only { display: none !important; }
+
+  /* Anything the app pinned to the bottom of the phone screen - a composer,
+     an action bar - starts after the rail instead of under it. */
+  body.dk .dk-composer,
+  body.dk .composer { left: var(--dk-rail); }
+
+  /* ---- the content -------------------------------------------------- */
+
+  body.dk .dk-wrap,
+  body.dk .wrap,
+  body.dk main {
+    max-width: var(--dk-max);
+    margin-inline: auto;
+    padding-inline: var(--dk-gutter);
+  }
+
+  /* Two panes where the app says two panes make sense. Collapses back to one
+     under 1100px, because a split at 950px is two cramped columns. */
+  body.dk .dk-split { display: grid; gap: 26px; align-items: start; }
+  @media (min-width: 1100px) {
+    body.dk .dk-split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    body.dk .dk-split-aside { grid-template-columns: minmax(0, 1.5fr) minmax(320px, .9fr); }
+    /* The right pane of a split follows the page rather than scrolling away. */
+    body.dk .dk-sticky { position: sticky; top: 24px; }
+  }
+
+  /* Cards that were one-per-row on a phone have room for more. */
+  body.dk .dk-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+
+  /* Prose keeps its measure even when the shell is wide. */
+  body.dk .dk-measure { max-width: var(--dk-measure); }
+
+  /* A chat bubble sized as a percentage of a phone is a readable line; the
+     same percentage of 1180px is not. Cap it at a measure, and stop the
+     column itself from running the full width. */
+  body.dk .bubble { max-width: min(78%, 58ch); }
+  body.dk .msg-row { max-width: 900px; }
+  body.dk .msg-row.q { margin-left: auto; }
+
+  /* Same reason: a single-column list of cards reads better narrow than
+     stretched, unless the app opted into .dk-grid. */
+  body.dk .day-list,
+  body.dk .list { max-width: 820px; }
+
+  /* A phone's full-width primary button looks like a mistake at 1180px. */
+  body.dk .dk-inline-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  body.dk .dk-inline-actions > .btn,
+  body.dk .dk-inline-actions > button { width: auto; min-width: 150px; }
+
+  /* Sheets that slid up from the bottom become centred dialogs. */
+  body.dk .dk-sheet {
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    width: min(560px, 92vw);
+    max-height: 84vh;
+    border-radius: 18px;
+  }
+}
+
+/* A pointer that is not a finger gets hover states and a visible focus ring.
+   Not gated on width: a small window on a laptop still has a mouse. */
+@media (hover: hover) and (pointer: fine) {
+  body.dk a:focus-visible,
+  body.dk button:focus-visible,
+  body.dk input:focus-visible,
+  body.dk textarea:focus-visible,
+  body.dk [tabindex]:focus-visible {
+    outline: 2px solid var(--tint, #0a84ff);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+}
