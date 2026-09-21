@@ -1381,5 +1381,77 @@
   refreshAuthStatus().then(function () { route(); });
 })();
 </script>
+<script src="/tour.js"></script>
+<script>
+// The self-running demo the landing page frames (see tour.js for the rules).
+// It runs on the example trip: reads the chat, "asks" a question and gets a
+// canned answer drawn straight into the log, opens a day, glances at the
+// watches, and starts over. Nothing here reaches the server.
+(function () {
+  "use strict";
+  if (!window.Tour || !Tour.active()) return;
+  var T = window.Tour;
+  var $ = function (id) { return document.getElementById(id); };
+  var QUESTION = "Is there a good beach day near Lisbon?";
+  var ANSWER = "Cascais is the easy one \u2014 40 minutes on the train from Cais do Sodr\u00e9, and the water is still warm in early October. " +
+    "Praia da Rainha is the small sheltered beach right by the station; Guincho is wilder and better for a walk than a swim. " +
+    "If you want it in the plan, Sunday morning before LX Factory is the slot.";
+
+  function synthetic() { return document.querySelectorAll("#chatLog [data-tour]"); }
+  function bubble(kind, html) {
+    var row = document.createElement("div");
+    row.className = "msg-row " + kind; row.setAttribute("data-tour", "1");
+    row.innerHTML = '<div class="bubble">' + html + "</div>";
+    $("chatLog").appendChild(row);
+    return row;
+  }
+  function esc(s) { return s.replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
+
+  T.run([
+    async function readTheChat() {
+      await T.until(function () { return document.querySelector("#chatLog .bubble"); }, 20000);
+      await T.tap($("tab-btn-chat"));
+      await T.scrollTo(window, 0, 400);
+      await T.wait(900);
+      await T.scrollThrough(window, 5200);
+      await T.wait(1200);
+    },
+    async function askSomething() {
+      var text = $("chatText");
+      text.disabled = false;                      // it is read-only for a person; the tour only pretends
+      await T.tap(text, { silent: true });
+      await T.type(text, QUESTION, 24);
+      await T.wait(500);
+      await T.tap($("chatSend"), { silent: true });
+      text.value = ""; text.style.height = ""; text.disabled = true;
+      bubble("q", esc(QUESTION));
+      var pending = bubble("a", '<span class="typing"><i></i><i></i><i></i></span>');
+      await T.scrollThrough(window, 500);
+      await T.wait(2300);
+      pending.remove();
+      bubble("a", esc(ANSWER));
+      await T.scrollThrough(window, 600);
+      await T.wait(4200);
+    },
+    async function openADay() {
+      await T.tap($("tab-btn-itinerary"));
+      await T.wait(800);
+      var days = document.querySelectorAll("#dayList .day .day-head");
+      if (days[2]) { await T.scrollTo(window, Math.max(0, days[2].getBoundingClientRect().top + window.scrollY - 120), 700); await T.tap(days[2]); }
+      await T.wait(900);
+      await T.scrollThrough(window, 4200);
+      await T.wait(1400);
+    },
+    async function glanceAtWatches() {
+      await T.tap($("tab-btn-watches"));
+      await T.wait(900);
+      await T.scrollThrough(window, 3200);
+      await T.wait(1600);
+      await T.tap($("tab-btn-chat"));
+      await T.wait(600);
+    },
+  ], { reset: async function () { synthetic().forEach(function (n) { n.remove(); }); } });
+})();
+</script>
 </body>
 </html>
