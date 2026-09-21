@@ -3,6 +3,9 @@ const path = require('path');
 const { Firestore } = require('@google-cloud/firestore');
 const Anthropic = require('@anthropic-ai/sdk');
 const { createAccounts } = require('./accounts');
+const crypto = require('crypto');
+const gmailLib = require('./gmail');
+const byokLib = require('./byok');
 const identityLib = require('./identity');
 const identityStore = require('./identity-store');
 const analytics = require('./analytics');
@@ -695,6 +698,245 @@ app.post('/api/trips/:id/schedule/apply', requireLogin, async (req, res) => {
     if (err.status === 400) return res.status(400).json({ error: err.message });
     console.error('POST /api/trips/:id/schedule/apply', err);
     res.status(500).json({ error: 'Could not save the itinerary.' });
+  }
+});
+
+/* ==========================================================================
+ * Reading Gmail for bookings someone already has
+ *
+ * Consent is the feature, not the paperwork around it. Three rules hold the
+ * shape together, and each is enforced here rather than promised in copy:
+ *
+ *   1. The query is fixed (gmail.js), so "we only look at travel senders" is
+ *      something the code guarantees and the account page can print.
+ *   2. Message bodies are never written down. They are fetched, read once by
+ *      the extractor, and dropped with the request.
+ *   3. Nothing becomes a trip without a tap. /scan proposes; /import writes.
+ * ========================================================================== */
+
+const gmail = gmailLib.create({});
+// Same box the BYOK keys live in: AES-256-GCM with the uid as additional
+// authenticated data, so a token row copied into another account fails to
+// decrypt rather than quietly working.
+const tokenVault = byokLib.create({ secret: () => process.env.BYOK_ENCRYPTION_KEY || '' });
+
+const gmailReady = () => gmail.enabled() && tokenVault.enabled();
+
+/** What the account page needs to describe the connection honestly. */
+app.get('/api/gmail', requireLogin, async (req, res) => {
+  const own = await db.collection('users').doc(req.user.uid).get().catch(() => null);
+  const g = (own && own.exists && own.data().gmail) || null;
+  res.json({
+    available: gmailReady(),
+    connected: Boolean(g && g.refresh),
+    address: (g && g.address) || null,
+    connectedAt: (g && g.connectedAt) || null,
+    // The promise, served from the same constant the query is built from, so
+    // the page cannot drift from what the code actually does.
+    senders: gmailLib.TRAVEL_SENDERS,
+    monthsBack: gmailLib.MONTHS_BACK,
+    maxMessages: gmailLib.MAX_MESSAGES,
+  });
+});
+
+/** Off to Google. The state is signed and carries the uid, so the callback
+ *  cannot be used to hang someone else's mailbox off this account. */
+app.get('/api/gmail/connect', requireLogin, (req, res) => {
+  if (!gmailReady()) return res.status(503).json({ error: 'Gmail is not configured on this deployment.' });
+  const payload = `${req.user.uid}.${Date.now()}`;
+  const mac = crypto.createHmac('sha256', process.env.SESSION_SECRET || '').update(payload).digest('base64url');
+  res.redirect(gmail.authUrl(`${payload}.${mac}`));
+});
+
+const STATE_TTL_MS = 10 * 60 * 1000;
+
+app.get('/api/gmail/callback', requireLogin, async (req, res) => {
+  const fail = (why) => res.redirect('/?gmail=' + encodeURIComponent(why));
+  try {
+    if (!gmailReady()) return fail('unavailable');
+    if (req.query.error) return fail('declined');
+
+    const [uid, at, mac] = String(req.query.state || '').split('.');
+    const expected = crypto.createHmac('sha256', process.env.SESSION_SECRET || '').update(`${uid}.${at}`).digest('base64url');
+    // Length first: timingSafeEqual throws on a mismatch rather than
+    // returning false.
+    if (!mac || mac.length !== expected.length
+        || !crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(expected))) return fail('bad-state');
+    if (uid !== req.user.uid) return fail('bad-state');
+    if (!(Date.now() - Number(at) < STATE_TTL_MS)) return fail('expired');
+
+    const tokens = await gmail.exchange(String(req.query.code || ''));
+    if (!tokens.refresh_token) {
+      // Google withholds it when the grant already exists. authUrl asks for
+      // prompt=consent precisely so this cannot happen; if it does, the
+      // connection would die in an hour and look like a bug.
+      return fail('no-refresh-token');
+    }
+    const address = await gmail.address(tokens.access_token).catch(() => null);
+
+    await db.collection('users').doc(req.user.uid).set({
+      gmail: {
+        refresh: tokenVault.encrypt(req.user.uid, tokens.refresh_token),
+        address,
+        connectedAt: new Date().toISOString(),
+      },
+    }, { merge: true });
+    await identity.log('gmail.connected', req, { uid: req.user.uid, detail: address || '' });
+    res.redirect('/?gmail=connected');
+  } catch (err) {
+    console.error('GET /api/gmail/callback', err);
+    fail('failed');
+  }
+});
+
+/** Hand the grant back to Google, then forget it. In that order: if the
+ *  revoke fails we still drop our copy, but we never drop our copy while
+ *  leaving Google believing the app still has access. */
+app.delete('/api/gmail', requireLogin, async (req, res) => {
+  try {
+    const own = await db.collection('users').doc(req.user.uid).get();
+    const g = own.exists ? own.data().gmail : null;
+    if (g && g.refresh) {
+      const token = tokenVault.decrypt(req.user.uid, g.refresh);
+      if (token) await gmail.revoke(token);
+    }
+    await db.collection('users').doc(req.user.uid).set({ gmail: null }, { merge: true });
+    await identity.log('gmail.disconnected', req, { uid: req.user.uid });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /api/gmail', err);
+    res.status(500).json({ error: 'Could not disconnect.' });
+  }
+});
+
+const ITINERARY_TOOL = {
+  name: 'found_trips',
+  description: 'Report the trips found in these booking emails.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      trips: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Short trip name, e.g. "Lisbon, October"' },
+            destination: { type: 'string' },
+            dateRange: { type: 'string', description: 'e.g. "Oct 3-10, 2026"' },
+            notes: { type: 'string', description: 'Confirmation numbers, flight numbers, hotel names' },
+            sourceIds: { type: 'array', items: { type: 'string' }, description: 'ids of the emails this came from' },
+          },
+          required: ['name'],
+        },
+      },
+    },
+    required: ['trips'],
+  },
+};
+
+/**
+ * Look, extract, propose. Writes nothing.
+ *
+ * Behind requireBudget because it is a model call like any other, and behind
+ * the same daily ceiling. The emails are read into the prompt and go out of
+ * scope with the request.
+ */
+app.post('/api/gmail/scan', requireLogin, identity.requireBudget, identity.requireDailyCap, async (req, res) => {
+  let send = null;
+  try {
+    if (!gmailReady()) return res.status(503).json({ error: 'Gmail is not configured on this deployment.' });
+    const own = await db.collection('users').doc(req.user.uid).get();
+    const g = own.exists ? own.data().gmail : null;
+    if (!g || !g.refresh) return res.status(400).json({ error: 'Connect Gmail first.' });
+    const refresh = tokenVault.decrypt(req.user.uid, g.refresh);
+    if (!refresh) return res.status(400).json({ error: 'That connection needs setting up again.' });
+
+    // Past here nothing may fail with a status: the drip has started.
+    send = streamedJson(res);
+
+    const access = await gmail.accessFrom(refresh);
+    const ids = await gmail.search(access);
+    if (!ids.length) return send({ trips: [], looked: 0 });
+
+    const messages = [];
+    for (const id of ids) {
+      const m = await gmail.message(access, id).catch(() => null);
+      if (m) messages.push(m);
+    }
+    if (!messages.length) return send({ trips: [], looked: ids.length });
+
+    const plan = identityLib.planFor(req.user, MODEL_TIERS);
+    const response = await completeTurn({
+      model: plan.model,
+      max_tokens: 8192,
+      system:
+        'You are reading a traveller\'s booking confirmation emails and grouping them into trips. ' +
+        'Group bookings that belong to the same journey - an outbound flight, a hotel and a return flight ' +
+        'are ONE trip, not three. Give each trip a short name, the destination, the dates as a readable ' +
+        'range, and notes carrying the confirmation numbers, flight numbers and hotel names exactly as ' +
+        'written. Ignore marketing, fare alerts, loyalty statements and anything already in the past. ' +
+        'If nothing is a real booking, report no trips. Never invent a detail that is not in the emails.',
+      tools: [ITINERARY_TOOL],
+      messages: [{ role: 'user', content: JSON.stringify(messages.map((m) => ({
+        id: m.id, from: m.from, subject: m.subject, date: m.date, body: m.body,
+      }))) }],
+    }, req.user);
+
+    const block = response.content.find((b) => b.type === 'tool_use' && b.name === 'found_trips');
+    const found = (block && block.input && Array.isArray(block.input.trips)) ? block.input.trips : [];
+
+    // Carry back where each one came from, so the review screen can show the
+    // sender and subject rather than asking anyone to trust a summary.
+    const byId = new Map(messages.map((m) => [m.id, m]));
+    send({
+      looked: messages.length,
+      trips: found.slice(0, 20).map((t) => ({
+        name: String(t.name || '').slice(0, 120),
+        destination: String(t.destination || '').slice(0, 200),
+        dateRange: String(t.dateRange || '').slice(0, 120),
+        notes: String(t.notes || '').slice(0, 4000),
+        sources: (t.sourceIds || []).map((id) => byId.get(id)).filter(Boolean)
+          .map((m) => ({ from: m.from, subject: m.subject, date: m.date })),
+      })),
+    });
+  } catch (err) {
+    console.error('POST /api/gmail/scan', err);
+    if (send) return send({ error: 'Could not read those emails.' });
+    res.status(err.status || 500).json({ error: 'Could not read those emails.' });
+  }
+});
+
+/** The tap. Only what was chosen, and only as ordinary trips. */
+app.post('/api/gmail/import', requireLogin, async (req, res) => {
+  try {
+    const picked = Array.isArray((req.body || {}).trips) ? (req.body || {}).trips.slice(0, 20) : [];
+    if (!picked.length) return res.status(400).json({ error: 'Nothing to import.' });
+    const now = new Date().toISOString();
+    const created = [];
+    for (const t of picked) {
+      const name = String(t.name || '').trim().slice(0, 120);
+      if (!name) continue;
+      const ref = await db.collection('trips').add({
+        name,
+        destination: String(t.destination || '').slice(0, 200),
+        dateRange: String(t.dateRange || '').slice(0, 120),
+        notes: String(t.notes || '').slice(0, 4000),
+        status: 'planning',
+        ownerId: req.user.uid,
+        // So a trip that came out of a mailbox is identifiable later, without
+        // keeping anything about the mail itself.
+        importedFrom: 'gmail',
+        createdAt: now,
+        updatedAt: now,
+        lockedAt: null,
+      });
+      created.push(ref.id);
+    }
+    await identity.log('gmail.imported', req, { uid: req.user.uid, detail: `${created.length} trip(s)` });
+    res.json({ ok: true, created });
+  } catch (err) {
+    console.error('POST /api/gmail/import', err);
+    res.status(500).json({ error: 'Could not import those.' });
   }
 });
 

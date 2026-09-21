@@ -112,6 +112,13 @@
   .row .badge { margin-left: auto; }
   /* The "start another trip" tile. Dashed so it reads as an empty slot rather
      than as a trip you have forgotten the name of. */
+  /* A consent screen whose sentences are cut off with an ellipsis is worse
+     than no consent screen: it looks like disclosure and discloses nothing.
+     .row-sub truncates by design elsewhere, where the text is a destination
+     and a date; here every word is the point. */
+  #sh-gmail .row-sub, #sh-gmailFound .row-sub { white-space: normal; overflow: visible; text-overflow: clip; }
+  #sh-gmail .row, #sh-gmailFound .row { align-items: flex-start; }
+  .sheet-lede { font-size: 15px; line-height: 1.5; color: var(--label); margin: 0 0 14px; }
   .row-add { color: var(--tint); }
   .row-add .row-title { font-weight: 600; }
   .row-add::before { display: none; }
@@ -525,6 +532,54 @@
     <div class="status" id="wAddStatus"></div>
   </div>
 
+  <!-- Consent, before Google's own screen rather than after it. Google's
+       says "read your email", which is true and useless: it cannot tell
+       anyone WHICH email, how far back, or what is kept. This can, and every
+       number on it is served from the same constants the query is built
+       from, so it cannot drift from what the code does. -->
+  <div id="sh-gmail">
+    <p class="sheet-lede" id="gmailLede"></p>
+    <div class="list">
+      <div class="row row-sep"><div class="row-main">
+        <div class="row-title">Only travel senders</div>
+        <div class="row-sub" id="gmailSenders"></div>
+      </div></div>
+      <div class="row"><div class="row-main">
+        <div class="row-title">Only the last year</div>
+        <div class="row-sub" id="gmailWindow"></div>
+      </div></div>
+      <div class="row"><div class="row-main">
+        <div class="row-title">Nothing from your email is kept</div>
+        <div class="row-sub">Messages are read once to find bookings and then dropped. The only thing saved is a trip you choose to add.</div>
+      </div></div>
+      <div class="row"><div class="row-main">
+        <div class="row-title">Nothing is added without you</div>
+        <div class="row-sub">Whatever is found is shown as a list. You pick which ones become trips.</div>
+      </div></div>
+      <div class="row"><div class="row-main">
+        <div class="row-title">You can disconnect any time</div>
+        <div class="row-sub">Disconnecting revokes our access at Google, not just here.</div>
+      </div></div>
+    </div>
+    <p class="hint" id="gmailHonest"></p>
+    <div style="margin-top:14px" class="dk-inline-actions">
+      <button type="button" class="btn btn-primary" id="gmailGoBtn">Continue to Google</button>
+      <button type="button" class="btn btn-secondary" id="gmailCancelBtn">Not now</button>
+    </div>
+  </div>
+
+  <!-- What a scan found. Sources are shown with each one: a summary nobody
+       can check is a summary nobody should act on. -->
+  <div id="sh-gmailFound">
+    <p class="sheet-lede" id="gmailFoundLede"></p>
+    <div id="gmailFoundList"></div>
+    <div style="margin-top:14px" class="dk-inline-actions">
+      <button type="button" class="btn btn-primary" id="gmailImportBtn">Add the ticked trips</button>
+      <button type="button" class="btn btn-secondary" id="gmailDiscardBtn">Discard</button>
+    </div>
+    <p class="status" id="gmailFoundStatus"></p>
+  </div>
+
   <div id="sh-account">
     <div class="list" id="accountList"></div>
     <div class="section-header" id="accountAdminHdr" hidden>Admin</div>
@@ -729,6 +784,7 @@
       // reading a field the server never sent.
       me = isSignedIn ? data : null;
     } catch (e) { isSignedIn = false; me = null; }
+    await refreshGmail();
     renderAuthBar();
   }
 
@@ -755,6 +811,14 @@
       b.unlimited ? null : function () { location.href = TOP_UP_URL; }
     ));
     list.appendChild(accountRow("Change password", me && me.mustChangePassword ? "You're using a temporary password" : "", openPasswordSheet));
+    if (gmailState.available) {
+      list.appendChild(accountRow(
+        "Find trips in Gmail",
+        gmailState.connected ? "Connected to " + (gmailState.address || "your mailbox") : "Not connected",
+        gmailState.connected ? openGmailFound : openGmailConsent,
+        { pill: gmailState.connected ? "on" : "" }
+      ));
+    }
     var isAdmin = !!(me && me.isAdmin);
     $("accountAdminHdr").hidden = !isAdmin; $("accountAdminList").hidden = !isAdmin;
     if (isAdmin) { var al = $("accountAdminList"); al.innerHTML = ""; al.appendChild(accountRow("Access requests", "Approve AI access and reset passwords", openAdmin)); }
@@ -769,6 +833,128 @@
     renderAuthBar();
     goToTrips();
     loadTripsList();
+  });
+
+  /* ---------- Gmail: finding trips you already booked ---------- */
+
+  var gmailState = { available: false, connected: false, address: null, senders: [], monthsBack: 12, maxMessages: 25 };
+  var gmailFound = [];
+
+  async function refreshGmail() {
+    if (!isSignedIn) { gmailState.available = false; return; }
+    try {
+      var res = await fetch("/api/gmail");
+      gmailState = await res.json();
+    } catch (e) { gmailState.available = false; }
+  }
+
+  /** Our consent screen, before Google's. Every number in it comes from the
+   *  server's own constants, so the promise and the query cannot drift. */
+  /** Coming back from Google. The callback redirects here with ?gmail=...,
+   *  because a redirect that lands on a silent page leaves someone wondering
+   *  whether it worked. */
+  function noteGmailReturn() {
+    var q = new URLSearchParams(location.search);
+    var outcome = q.get("gmail");
+    if (!outcome) return;
+    history.replaceState(null, "", location.pathname + location.hash);
+    if (outcome === "connected") { toast("Gmail connected"); setTimeout(openGmailFound, 400); return; }
+    if (outcome === "declined") { toast("Not connected \u2014 no problem"); return; }
+    toast("Could not connect Gmail");
+  }
+
+  function openGmailConsent() {
+    $("gmailLede").textContent =
+      "Trip Planner can look through your booking confirmations and offer to turn them into trips. " +
+      "Here is exactly what that means before you decide.";
+    var n = gmailState.senders.length;
+    $("gmailSenders").textContent =
+      "Only mail from " + n + " airlines, hotels, rail and booking sites \u2014 " +
+      gmailState.senders.slice(0, 4).join(", ") + " and " + (n - 4) + " more. Nothing else is searched.";
+    $("gmailWindow").textContent =
+      "Bookings from the last " + gmailState.monthsBack + " months, up to " + gmailState.maxMessages + " messages a scan.";
+    // The uncomfortable truth, said plainly rather than left for someone to
+    // discover on Google's screen. It is the sentence that makes the rest
+    // believable.
+    $("gmailHonest").textContent =
+      "Google's own screen will say \u201cread your email\u201d, because that is the only permission it offers \u2014 " +
+      "there is no narrower one. The limits above are enforced by this app, and you can disconnect at any time.";
+    openSheet({ title: "Find trips in Gmail", body: $("sh-gmail") });
+  }
+
+  $("gmailGoBtn").addEventListener("click", function () { location.href = "/api/gmail/connect"; });
+  $("gmailCancelBtn").addEventListener("click", closeSheet);
+
+  async function openGmailFound() {
+    gmailFound = [];
+    $("gmailFoundLede").textContent = "Reading your booking confirmations\u2026 this takes a moment.";
+    $("gmailFoundList").innerHTML = "";
+    setStatus($("gmailFoundStatus"), "");
+    openSheet({ title: "Trips in your mail", body: $("sh-gmailFound") });
+    try {
+      var res = await fetch("/api/gmail/scan", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      var data = await res.json().catch(function () { return {}; });
+      // Same contract as chat: this route drips whitespace, so a failure can
+      // arrive as a 200 with an { error } body.
+      if (!res.ok || data.error) throw new Error(data.detail || data.error || "Could not read those emails.");
+      gmailFound = data.trips || [];
+      renderGmailFound(data.looked || 0);
+    } catch (e) {
+      $("gmailFoundLede").textContent = "";
+      setStatus($("gmailFoundStatus"), e.message, "error");
+    }
+  }
+
+  function renderGmailFound(looked) {
+    var list = $("gmailFoundList");
+    list.innerHTML = "";
+    if (!gmailFound.length) {
+      $("gmailFoundLede").textContent = "Looked at " + looked + " booking emails and found nothing that looks like an upcoming trip.";
+      return;
+    }
+    $("gmailFoundLede").textContent = "Found " + gmailFound.length + (gmailFound.length === 1 ? " trip" : " trips") +
+      " in " + looked + " booking emails. Tick the ones to add.";
+    var ul = document.createElement("div"); ul.className = "list";
+    gmailFound.forEach(function (t, i) {
+      var row = document.createElement("label"); row.className = "row";
+      var sub = [t.destination, t.dateRange].filter(Boolean).join(" \u00b7 ");
+      // The sources are the receipt: a summary nobody can check is a summary
+      // nobody should act on.
+      var src = (t.sources || []).map(function (m) { return escapeHtml(m.subject || m.from); }).join(" \u00b7 ");
+      row.innerHTML =
+        '<input type="checkbox" checked data-gmail-pick="' + i + '" style="margin-right:10px">' +
+        '<span class="row-main"><span class="row-title">' + escapeHtml(t.name) + '</span>' +
+        '<span class="row-sub">' + escapeHtml(sub) + '</span>' +
+        (src ? '<span class="row-sub" style="opacity:.75">from: ' + src + '</span>' : '') +
+        '</span>';
+      ul.appendChild(row);
+    });
+    list.appendChild(ul);
+  }
+
+  $("gmailDiscardBtn").addEventListener("click", closeSheet);
+  $("gmailImportBtn").addEventListener("click", async function () {
+    var picked = gmailFound.filter(function (_, i) {
+      var box = document.querySelector('[data-gmail-pick="' + i + '"]');
+      return box && box.checked;
+    });
+    if (!picked.length) { setStatus($("gmailFoundStatus"), "Tick at least one, or discard.", "error"); return; }
+    this.disabled = true;
+    setStatus($("gmailFoundStatus"), "Adding\u2026");
+    try {
+      var res = await fetch("/api/gmail/import", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trips: picked })
+      });
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok) throw new Error(data.error || "Could not add those.");
+      closeSheet();
+      toast(data.created.length + (data.created.length === 1 ? " trip added" : " trips added"));
+      loadTripsList();
+    } catch (e) {
+      setStatus($("gmailFoundStatus"), e.message, "error");
+    }
+    this.disabled = false;
   });
 
   function openPasswordSheet() {
@@ -1488,7 +1674,7 @@
     goToTrips();
   });
 
-  refreshAuthStatus().then(function () { route(); });
+  refreshAuthStatus().then(function () { route(); noteGmailReturn(); });
 })();
 </script>
 <script src="/tour.js"></script>
