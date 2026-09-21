@@ -30,14 +30,49 @@
     --dk-gutter: 32px;
     --dk-max: 1180px;
     --dk-measure: 68ch;
+    --dk-stream: 900px;      /* a conversation's column */
+
+    /* The shell is the rail plus the content column, and it is centred as ONE
+       unit. Getting this wrong is what an ultrawide monitor exposes: pin the
+       rail to the viewport edge and centre the content in what is left, and at
+       3440px the nav ends up a thousand pixels away from the thing it
+       controls, with a void on either side. Measured, before this existed:
+       rail at 0..232, content at 1246..2426.
+
+       --dk-bleed is what sits outside the shell on each side. It uses vw, so
+       the rail (fixed, positioned against the viewport) and the body padding
+       agree with each other; the content box is narrower than the viewport by
+       the scrollbar, which makes the right-hand gutter a scrollbar wider than
+       the left and nothing else. No overflow: the padding adds up to
+       100vw - --dk-max, which is always less than the body's own width. */
+    --dk-bleed: max(0px, (100vw - var(--dk-rail) - var(--dk-max)) / 2);
   }
+
+  /* Wide monitors are common enough to deserve more than a 1180px column with
+     a desert around it. The reading measure does not grow with it - prose is
+     held by .dk-measure, chat by .bubble and .msg-row - so this buys room for
+     the things that do use it: grids, splits, tables. */
+  @media (min-width: 1600px) { :root { --dk-max: 1320px; } }
+  @media (min-width: 2100px) { :root { --dk-max: 1460px; } }
 
   /* ---- the shell ---------------------------------------------------- */
 
   .dk body,
   body.dk {
-    padding-left: var(--dk-rail);
+    padding-left: calc(var(--dk-bleed) + var(--dk-rail));
+    padding-right: var(--dk-bleed);
     padding-bottom: 40px;          /* the bottom bar is gone; reclaim its space */
+  }
+
+  /* Not every app has a tab bar to turn into a rail - DataViz is one page with
+     no nav at all - and reserving the rail's width for one that is not there
+     is just a 232px hole down the left of the screen. Written as a removal
+     rather than an addition on purpose: a browser without :has() ignores this
+     rule and keeps the old behaviour, instead of dropping the padding on the
+     apps that DO have a rail and letting it cover their content. */
+  body.dk:not(:has(.dk-tabbar)) {
+    --dk-bleed: max(0px, (100vw - var(--dk-max)) / 2);
+    padding-left: var(--dk-bleed);
   }
 
   /* The tab bar becomes the rail. Four of these apps wrap their buttons in a
@@ -45,7 +80,10 @@
      only has to add .dk-tabbar to the <nav> it already has. */
   body.dk .dk-tabbar {
     position: fixed;
-    inset: 0 auto 0 0;
+    top: 0;
+    bottom: 0;
+    right: auto;
+    left: var(--dk-bleed);         /* the shell's left edge, not the window's */
     width: var(--dk-rail);
     height: 100vh;
     padding: 22px 12px;
@@ -96,7 +134,10 @@
   /* Anything the app pinned to the bottom of the phone screen - a composer,
      an action bar - starts after the rail instead of under it. */
   body.dk .dk-composer,
-  body.dk .composer { left: var(--dk-rail); }
+  body.dk .composer {
+    left: calc(var(--dk-bleed) + var(--dk-rail));
+    right: var(--dk-bleed);
+  }
 
   /* ---- the content -------------------------------------------------- */
 
@@ -125,16 +166,39 @@
   body.dk .dk-measure { max-width: var(--dk-measure); }
 
   /* A chat bubble sized as a percentage of a phone is a readable line; the
-     same percentage of 1180px is not. Cap it at a measure, and stop the
-     column itself from running the full width. */
+     same percentage of 1180px is not. Cap it at a measure. */
   body.dk .bubble { max-width: min(78%, 58ch); }
-  body.dk .msg-row { max-width: 900px; }
+  body.dk .msg-row { max-width: var(--dk-stream); }
   body.dk .msg-row.q { margin-left: auto; }
+
+  /* A conversation is a column, not a wall.
+     Capping the ROW is not enough: a row hugs its bubble and aligns to an
+     edge, so in a 1460px shell the question sits hard right and the answer
+     hard left, 700px apart, and the exchange stops reading as one exchange -
+     your eye has to travel to follow it. What needs the cap is the scroll
+     container. Apps mark it, and mark the composer under it with the same
+     class, so the thing you type into lines up with the thing you read. */
+  body.dk .dk-stream {
+    width: 100%;
+    max-width: var(--dk-stream);
+    margin-inline: auto;
+  }
 
   /* Same reason: a single-column list of cards reads better narrow than
      stretched, unless the app opted into .dk-grid. */
   body.dk .day-list,
   body.dk .list { max-width: 820px; }
+
+  /* Phone-width inner wrappers.
+     Nearly every one of these apps centres a ~680px inner div inside its top
+     bar, its composer, its status line - the right call on a phone, and the
+     reason a back button ends up floating in the middle of a 1460px shell
+     instead of sitting above the title it goes back from. Marked wrappers
+     take the content column instead. */
+  body.dk .dk-bar-inner {
+    max-width: none;
+    padding-inline: var(--dk-gutter);
+  }
 
   /* A phone's full-width primary button looks like a mistake at 1180px. */
   body.dk .dk-inline-actions { display: flex; gap: 10px; flex-wrap: wrap; }

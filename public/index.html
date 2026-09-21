@@ -327,7 +327,7 @@
 </svg>
 
 <header class="navbar" id="navbar">
-  <div class="navbar-inner">
+  <div class="navbar-inner dk-bar-inner">
     <div class="nav-left">
       <button type="button" class="nav-btn" id="backBtn" hidden><svg class="chev"><use href="#i-chev-l"/></svg>Trips</button>
       <button type="button" class="nav-btn icon" id="accountBtn" aria-label="Account"><svg><use href="#i-person"/></svg></button>
@@ -374,7 +374,7 @@
     </div>
 
     <div id="tab-chat" class="tabpanel" role="tabpanel">
-      <div class="chat-log" id="chatLog">
+      <div class="chat-log dk-stream" id="chatLog">
         <div class="empty chat-empty" id="chatEmpty">
           <svg><use href="#i-chat"/></svg>
           <b>Ask anything about this trip</b>
@@ -442,11 +442,11 @@
 </nav>
 
 <div class="composer dk-composer" id="composer" hidden>
-  <div class="composer-inner">
+  <div class="composer-inner dk-stream">
     <textarea id="chatText" rows="1" placeholder="Message" maxlength="4000" enterkeyhint="send" aria-label="Message"></textarea>
     <button type="button" class="send" id="chatSend" aria-label="Send" disabled><svg><use href="#i-up"/></svg></button>
   </div>
-  <div class="composer-status" id="chatStatus"></div>
+  <div class="composer-status dk-stream" id="chatStatus"></div>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
