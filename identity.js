@@ -619,9 +619,7 @@ function create(opts) {
    * the collect step rather than here.
    */
   function meter(client, opts = {}) {
-    const original = client.messages.create.bind(client.messages);
-    client.messages.create = async (params, ...rest) => {
-      const res = await original(params, ...rest);
+    const charge = (params, res) => {
       try {
         if (res && res.usage) {
           recordUsage({
@@ -636,8 +634,38 @@ function create(opts) {
           }).catch(() => {});
         }
       } catch (e) { /* never let measurement break the call */ }
-      return res;
     };
+
+    // The wrapper RETURNS WHAT THE SDK RETURNED, and that matters more than it
+    // looks. `create()` hands back an APIPromise, not a plain one, and
+    // `messages.stream()` is implemented on top of `this.create(...)
+    // .withResponse()`. An `async` wrapper here awaits the APIPromise and
+    // returns an ordinary promise, which has no `.withResponse` - so wrapping
+    // the client silently broke streaming for every caller, and the error
+    // ("messages.create(...).withResponse is not a function") named a method
+    // nobody in this codebase had written. Attaching a `.then` records the
+    // usage without standing between the caller and the object the SDK meant
+    // them to have.
+    const original = client.messages.create.bind(client.messages);
+    client.messages.create = (params, ...rest) => {
+      const out = original(params, ...rest);
+      Promise.resolve(out).then((res) => charge(params, res), () => {});
+      return out;
+    };
+
+    // Streamed calls go through create() too, but what create() resolves to
+    // there is a Stream, not a Message, so the usage arrives only at the end.
+    const stream = client.messages.stream && client.messages.stream.bind(client.messages);
+    if (stream) {
+      client.messages.stream = (params, ...rest) => {
+        const s = stream(params, ...rest);
+        // finalMessage() is safe to call alongside the caller's own: the
+        // stream caches its result rather than re-reading the socket.
+        Promise.resolve(s.finalMessage ? s.finalMessage() : null)
+          .then((res) => charge(params, res), () => {});
+        return s;
+      };
+    }
     return client;
   }
 
