@@ -1046,8 +1046,13 @@
 
     var html = "";
     if (!billing || !billing.available) {
-      html = '<p class="form-note">Buying credit is not switched on for this deployment.</p>';
-      body.innerHTML = html;
+      // This service holds no Stripe key, so it cannot take the payment
+      // however good the sheet looks. Name the one that can rather than
+      // dead-ending. Goes away the moment the key is mounted here.
+      body.innerHTML = billing && billing.elsewhere
+        ? '<a class="btn btn-primary" href="' + escapeHtml(billing.elsewhere) + '" ' +
+          'style="margin-top:14px;text-decoration:none">Membership and credit</a>'
+        : '<p class="form-note">Buying credit is not switched on yet.</p>';
       return;
     }
 

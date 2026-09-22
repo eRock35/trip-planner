@@ -75,7 +75,23 @@ const uidOf = (e) => Buffer.from(e.toLowerCase()).toString('base64url');
   r = await post(`/api/trips/${st.id}/chat`, { question: 'hi' }, stranger);
   const body = await r.json();
   ok('an exhausted balance is a 402', r.status === 402, String(r.status));
-  ok('the 402 says where to top up, in this app', body.topUpUrl === '?topup=1', body.topUpUrl);
+
+  // The link follows the money. With no Stripe key mounted this service
+  // cannot take a payment however good its sheet looks, so it names one that
+  // can rather than dead-ending on "not switched on"...
+  ok('with no Stripe key, the 402 points at a service that can sell',
+     body.topUpUrl === 'https://dataviz.strongtechnicalconsulting.com/?topup=1', body.topUpUrl);
+
+  // ...and the moment this service is given the key, the link comes home and
+  // the reader buys credit here instead of in somebody else's app.
+  const identity = require(require('path').join(__dirname, '..', 'identity.js'));
+  process.env.STRIPE_SECRET_KEY = 'sk_test_dummy';
+  process.env.STRIPE_MEMBER_PRICE_ID = 'price_member_dummy';
+  r = await post(`/api/trips/${st.id}/chat`, { question: 'hi' }, stranger);
+  const local = await r.json();
+  ok('...and with one, it opens this app\u2019s own sheet', local.topUpUrl === '?topup=1', local.topUpUrl);
+  delete process.env.STRIPE_SECRET_KEY;
+  delete process.env.STRIPE_MEMBER_PRICE_ID;
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

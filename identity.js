@@ -374,10 +374,19 @@ function planFor(user, opts) {
  *  business guessing which one it is answering on. Every consumer either puts
  *  it in an href or in a markdown link, both of which resolve against the page
  *  it is already on. TOP_UP_URL still overrides, for a deployment that wants
- *  to send people somewhere else entirely. */
+ *  to send people somewhere else entirely.
+ *
+ *  The exception is a service with no Stripe key mounted, which cannot take
+ *  the money however good its sheet looks. Sending someone to a local sheet
+ *  that can only say "not switched on" is worse than the old behaviour, so
+ *  such a service points at one that can sell. The link follows the money,
+ *  and goes local the moment this service is given the key. */
 function topUpUrl() {
   const explicit = String(process.env.TOP_UP_URL || '').trim();
-  return explicit || '?topup=1';
+  if (explicit) return explicit;
+  if (stripeLib.enabled()) return '?topup=1';
+  const base = String(process.env.PASSKEY_RP_ID || '').trim();
+  return base ? `https://dataviz.${base}/?topup=1` : null;
 }
 
 function cookieDomain(req, baseDomain) {
@@ -1049,9 +1058,16 @@ function create(opts) {
         // service has no Stripe key should say so rather than draw a button
         // that 503s.
         available: stripeLib.membershipEnabled(),
+        // Where to send someone when this service holds no Stripe key. Null
+        // once it does, so a sheet cannot offer both its own buttons and a
+        // link away to somebody else's.
+        elsewhere: stripeLib.membershipEnabled() ? null : topUpUrl(),
         monthlyUsd: stripeLib.MEMBERSHIP_USD,
         topUps: stripeLib.TOP_UPS,
         signedIn: Boolean(user),
+        // Named so an app can say WHICH account it is about to charge, rather
+        // than offering a sign-in form to someone already signed in.
+        email: user ? user.email : null,
         member: user ? paysPlatformFee(user) : false,
         budget: user ? budgetFor(user) : null,
         byok: {
