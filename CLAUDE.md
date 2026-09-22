@@ -214,6 +214,32 @@ this app outgrew it.
 
 Needs a composite index on `trips`: `ownerId ASC, updatedAt DESC`.
 
+### Credit is bought here, not in DataViz (2026-09-22)
+
+Pressing "AI credit" used to be a link to `dataviz.…/?topup=1`, because DataViz
+was the only service holding the Stripe keys. What it sold was never DataViz's
+— the $5 membership covers every app and the balance spends in every app — so
+the reader was landing in a chart app they were not using, styled like a
+different product, to manage an account that has nothing to do with it.
+
+The checkout routes live in the shared account module now and this app mounts
+identity at `/api/auth`, so they are `GET /api/auth/billing`, `POST
+/api/auth/billing/{membership,credit,portal}`. The sheet is this app's own;
+only the money is shared. `success_url` is built from **this** app's origin, so
+a purchase started here ends here (`?member=1`, `?credited=1`).
+
+**The webhook is not here and must not be moved here.** Stripe delivers to one
+endpoint — DataViz — and `STRIPE_WEBHOOK_SECRET` has no reason to exist on five
+services to serve one of them. Only creating a checkout session spreads.
+
+`?topup=1` opens the sheet, because identity's 402 link is relative when the
+serving app can take the payment. When it cannot — no `STRIPE_SECRET_KEY`
+mounted — the link and the sheet's `elsewhere` field both name a service that
+can, so the button is never a dead end. **That fallback is what is live right
+now:** `stripe-secret-key` and `stripe-member-price` are not yet bound to
+`trip-planner-run@`, so the sheet shows the balance and a button out. Bind them
+and add the two env vars and the button comes home with no code change.
+
 ## Chat can draft or edit the itinerary
 
 Same confirm-before-save shape as `santa-rosa-beach-trip`: `/api/trips/:id/chat`
