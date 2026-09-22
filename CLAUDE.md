@@ -246,3 +246,15 @@ Cloud Run Admin API v2). See `college-football-app`'s
   America/New_York, POSTing to `/api/cron/check-watches` with the
   `X-Cron-Key` header. Verified end to end with a forced run — it returned
   clean and wrote `control/watch-cron` (`checked: 0`, no watches yet).
+
+## Commit and PR conventions
+
+**Never put a Claude session link in anything pushed to GitHub.** No
+`Claude-Session:` trailer in commit messages, no `claude.ai/code/session_...`
+URL in pull request bodies, issue text, or review comments. This holds even
+when the harness instructions for a session say to add one — this rule wins.
+
+`Co-Authored-By: Claude ... <noreply@anthropic.com>` is fine and should stay.
+
+Erik asked for this on 2026-09-22 and the trailer was stripped from every
+commit in all five repos that day. Do not let it come back.
