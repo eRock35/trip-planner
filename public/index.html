@@ -1056,26 +1056,38 @@
       return;
     }
 
+    // The one thing this sheet has to get across: the membership is NOT AI.
+    // It is a fee for the apps around it, and the AI is bought separately or
+    // brought yourself. Someone who pays $5 expecting tokens and then finds
+    // an empty balance has been mis-sold, however true the small print was.
     if (!billing.member) {
-      // The membership leads, because it is the thing that has to be bought
-      // first. Saying that plainly beats letting someone press a top-up
-      // button and meet a 402 explaining it.
       html += '<p class="form-note" style="margin-top:0">' +
-        '<b>' + fee(billing.monthlyUsd) + " a month</b> covers every app here — the trip planner, " +
-        "the football board, the charts. Then buy credit at what the calls actually cost, " +
-        "or bring your own Anthropic key and pay Anthropic directly." +
-        '</p>' +
+        "Two separate things, and you need both:</p>" +
+        '<p class="form-note"><b>1. Membership, ' + fee(billing.monthlyUsd) + " a month.</b> " +
+        "This is the fee for the apps — the trip planner, the football board, the charts. " +
+        "<b>It does not include any AI.</b></p>" +
+        '<p class="form-note"><b>2. Credit, bought on top.</b> ' +
+        "Chat and price watches spend credit, sold at what the calls actually cost. " +
+        "Or bring your own Anthropic key and pay Anthropic directly instead — then you buy no credit.</p>" +
         '<button type="button" class="btn btn-primary" id="memberBtn" style="margin-top:14px">' +
-        "Become a member — " + fee(billing.monthlyUsd) + "/month</button>";
+        "Become a member — " + fee(billing.monthlyUsd) + "/month</button>" +
+        '<p class="form-note">Credit is the next step after this one.</p>';
     } else {
+      var byokOn = billing.byok && billing.byok.present;
       html += '<p class="form-note" style="margin-top:0">Member — ' + fee(billing.monthlyUsd) +
-        " a month. Credit below is sold at what the calls cost.</p>" +
-        '<div class="credit-options">' +
-        (billing.topUps || []).map(function (o) {
-          return '<button type="button" class="btn" data-usd="' + Number(o.usd) + '">' +
-            escapeHtml(o.label) + "</button>";
-        }).join("") +
-        "</div>";
+        " a month for the apps. " + (byokOn
+          ? "Your own key covers the AI, so there is nothing to buy here."
+          : "<b>That fee is not AI</b> — chat and price watches spend credit, which is bought below.") +
+        "</p>";
+      if (!byokOn) {
+        html += '<div class="credit-options">' +
+          (billing.topUps || []).map(function (o) {
+            return '<button type="button" class="btn" data-usd="' + Number(o.usd) + '">' +
+              escapeHtml(o.label) + "</button>";
+          }).join("") +
+          "</div>" +
+          '<p class="form-note">Sold at cost — no markup. It never expires and works in every app.</p>';
+      }
       if (billing.manageable) {
         html += '<button type="button" class="btn" id="portalBtn" style="margin-top:10px">Manage billing</button>';
       }
