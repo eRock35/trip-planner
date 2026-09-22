@@ -235,10 +235,20 @@ services to serve one of them. Only creating a checkout session spreads.
 `?topup=1` opens the sheet, because identity's 402 link is relative when the
 serving app can take the payment. When it cannot — no `STRIPE_SECRET_KEY`
 mounted — the link and the sheet's `elsewhere` field both name a service that
-can, so the button is never a dead end. **That fallback is what is live right
-now:** `stripe-secret-key` and `stripe-member-price` are not yet bound to
-`trip-planner-run@`, so the sheet shows the balance and a button out. Bind them
-and add the two env vars and the button comes home with no code change.
+can, so the button is never a dead end. That fallback is not what is live:
+`stripe-secret-key` and `stripe-member-price` were bound to
+`trip-planner-run@` on 2026-09-22 and both env vars are mounted, so this app
+sells for itself. The fallback stays as the answer to a service booted without
+them.
+
+The key is a **restricted** Stripe key (`rk_live_`), which is what makes it
+reasonable for five services to hold one. If it is ever replaced, replace it
+with another restricted key.
+
+**Nothing has been bought through it yet** — the live account had no Checkout
+Session at all as of 2026-09-22 — so the key's *write* permission is unproven;
+`/api/stripe/health` on DataViz only proves it can read a Price. The first
+purchase is the test.
 
 ## Chat can draft or edit the itinerary
 
