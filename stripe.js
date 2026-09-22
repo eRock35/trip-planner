@@ -53,14 +53,44 @@ function form(obj, prefix = '', out = []) {
   return out;
 }
 
+/**
+ * The API version, and why there usually isn't one.
+ *
+ * This used to hardcode `Stripe-Version: 2026-08-27.basil`, which is not a
+ * Stripe API version and never was: the current train is `dahlia`, and even
+ * within basil there was no 08-27. Every call this file has ever made came
+ * back `Invalid Stripe API version` - checkout, the billing portal, and the
+ * price read behind /api/stripe/health, which has therefore been reporting
+ * ok:false rather than confirming anything.
+ *
+ * It survived because it is untestable from here. This container cannot reach
+ * api.stripe.com, the suites stub fetch, and no stub checked the header. A
+ * string that only the real Stripe can judge should not be hardcoded by
+ * someone who cannot ask it.
+ *
+ * So: no header by default, which means Stripe uses the account's default API
+ * version - correct by construction, and the same version the webhook endpoint
+ * renders events in. Set STRIPE_API_VERSION to pin one deliberately, once
+ * somebody has actually confirmed it against the account. As of 2026-09-22 the
+ * current version is `2026-08-26.dahlia`.
+ *
+ * (Organization API keys are the one case where Stripe REQUIRES the header.
+ * This account uses a per-account restricted key, so it does not apply - and
+ * if that ever changes, the failure is a loud 400 naming the header, not a
+ * wrong charge.)
+ */
+function apiVersion() { return String(process.env.STRIPE_API_VERSION || '').trim(); }
+
 async function call(path, body, method = 'POST') {
+  const headers = {
+    Authorization: `Bearer ${secretKey()}`,
+    'Content-Type': 'application/x-www-form-urlencoded',
+  };
+  const version = apiVersion();
+  if (version) headers['Stripe-Version'] = version;
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: {
-      Authorization: `Bearer ${secretKey()}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Stripe-Version': '2026-08-27.basil',
-    },
+    headers,
     body: body ? form(body).join('&') : undefined,
   });
   const data = await res.json().catch(() => ({}));
@@ -209,5 +239,5 @@ function verifyWebhook(rawBody, signatureHeader) {
   return JSON.parse(rawBody.toString('utf8'));
 }
 
-module.exports = { enabled, membershipEnabled, createMembership, createTopUp, createPortal,
+module.exports = { enabled, membershipEnabled, apiVersion, createMembership, createTopUp, createPortal,
   verifyWebhook, call, form, memberPriceId, TOP_UPS, MEMBERSHIP_USD };
