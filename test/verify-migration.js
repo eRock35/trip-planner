@@ -9,6 +9,8 @@ Object.assign(process.env, {
   ANTHROPIC_API_KEY: 'k', PORT: '9211',
 });
 
+// A stand-in, not a real person: this repo is public, and a fixture does not
+// need to publish someone's actual address to prove the migration works.
 const email = 'migrated-user@example.com';
 const uid = Buffer.from(email).toString('base64url');
 const password = 'whatever-they-chose';
