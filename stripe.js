@@ -124,6 +124,26 @@ const TOP_UPS = [
 const MEMBERSHIP_USD = Number(process.env.MEMBERSHIP_USD || 5);
 
 /**
+ * The product tax code, which is not optional.
+ *
+ * Managed Payments is on by default on this account, and it refuses any line
+ * item whose product has no tax code - so a top-up built from inline
+ * price_data MUST carry one or checkout 400s before the buyer sees a card
+ * field. The membership's stored Product needs the same thing set on it in
+ * Stripe; there is nothing this file can do about that one.
+ *
+ * `txcd_10105001` is "Artificial Intelligence as a Service (AIaaS) - Cloud
+ * Based - Personal Use", which is what this actually is: prepaid credit
+ * against model calls made for you in the cloud. Stripe made the AIaaS codes
+ * eligible for Managed Payments in June 2026.
+ *
+ * Personal rather than Business (`txcd_10105002`) because these are consumer
+ * apps - trips, football, charts. If that ever stops being true, this is the
+ * env var to flip, and the stored membership Product has to move with it.
+ */
+const TAX_CODE = String(process.env.STRIPE_TAX_CODE || 'txcd_10105001').trim();
+
+/**
  * A one-off purchase of API credit, spendable across every app.
  *
  * `mode: 'payment'`, NOT subscription - and the webhook must tell them apart,
@@ -147,6 +167,7 @@ async function createTopUp({ uid, email, usd, successUrl, cancelUrl, customerId 
         product_data: {
           name: `${option.label} — Erik's apps`,
           description: 'Credit for AI requests, usable across every app on strongtechnicalconsulting.com.',
+          tax_code: TAX_CODE,
         },
       },
     }],
@@ -240,4 +261,4 @@ function verifyWebhook(rawBody, signatureHeader) {
 }
 
 module.exports = { enabled, membershipEnabled, apiVersion, createMembership, createTopUp, createPortal,
-  verifyWebhook, call, form, memberPriceId, TOP_UPS, MEMBERSHIP_USD };
+  verifyWebhook, call, form, memberPriceId, TOP_UPS, MEMBERSHIP_USD, TAX_CODE };
