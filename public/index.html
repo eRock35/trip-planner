@@ -201,6 +201,8 @@
   .btn-danger { background: var(--fill); color: var(--red); }
   .btn-plain { background: none; color: var(--tint); min-height: 44px; }
   .btn-sm { min-height: 36px; font-size: 15px; padding: 6px 14px; width: auto; border-radius: 10px; }
+  .credit-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+  .credit-options .btn { background: var(--fill); color: var(--tint); font-size: 15px; min-height: 44px; padding: 10px 8px; }
   .btn svg { width: 20px; height: 20px; }
   .status { font-size: 13px; color: var(--label-2); min-height: 1.3em; padding: 6px 4px 0; text-align: center; }
   .status.error { color: var(--red); }
@@ -597,6 +599,12 @@
     <div class="status" id="pwStatus"></div>
   </div>
 
+  <div id="sh-credit">
+    <p class="sheet-msg" id="creditMeter"></p>
+    <div id="creditBody"></div>
+    <div class="status" id="creditStatus"></div>
+  </div>
+
   <div id="sh-aiRequest">
     <p class="sheet-msg">Chat and price checks use Claude, which costs the site owner money, so access is approved by hand. A note helps.</p>
     <div class="form"><div class="field"><label for="aiNote">Note (optional)</label><textarea id="aiNote" rows="3" placeholder="Planning a trip to…"></textarea></div></div>
@@ -744,9 +752,19 @@
   var aiBanner = $("aiBanner"), aiBannerText = $("aiBannerText"), aiRequestBtn = $("aiRequestBtn");
   var accountBtn = $("accountBtn"), authBarBtn = $("authBarBtn");
 
-  // Where credit is bought. One checkout serves every app, so this app links
-  // to it rather than growing a second Stripe integration.
-  var TOP_UP_URL = "https://dataviz.strongtechnicalconsulting.com/?topup=1";
+  // The shared account: one profile, one passkey, one balance for every app on
+  // the domain. Adding an Anthropic key of your own belongs there rather than
+  // in five places, so the sheet below links out for that one thing.
+  var ACCOUNT_URL = "https://acct.strongtechnicalconsulting.com";
+
+  // Buying credit happens HERE, in this app's own sheet.
+  //
+  // It used to be a link to DataViz, on the reasoning that one checkout should
+  // serve every app. The checkout is still one checkout - the routes live in
+  // the shared account module and the balance is account-level - but pressing
+  // "AI credit" while planning a trip and landing in a chart app, wearing a
+  // different product's styling, reads as a bug rather than as thrift. The
+  // sheet below is this app's; only the money is shared.
 
   /** What is left to spend, in words - or null when there is nothing worth
    *  saying, which is the normal case and leaves the banner hidden. */
@@ -808,7 +826,7 @@
       b.unlimited
         ? (b.reason === "byok" ? "Running on your own key" : "Not metered")
         : "$" + Number(b.remainingUsd || 0).toFixed(2) + " of $" + Number(b.allowanceUsd || 0).toFixed(2) + " left",
-      b.unlimited ? null : function () { location.href = TOP_UP_URL; }
+      openCreditSheet
     ));
     list.appendChild(accountRow("Change password", me && me.mustChangePassword ? "You're using a temporary password" : "", openPasswordSheet));
     if (gmailState.available) {
@@ -861,6 +879,21 @@
     if (outcome === "connected") { toast("Gmail connected"); setTimeout(openGmailFound, 400); return; }
     if (outcome === "declined") { toast("Not connected \u2014 no problem"); return; }
     toast("Could not connect Gmail");
+  }
+
+  /** Coming back from Stripe, and the link a 402 carries.
+   *
+   *  `?topup=1` is what identity puts in the "out of credit" message now that
+   *  it is relative - so the link opens this app's sheet instead of sending
+   *  the reader to another app to buy something. */
+  function noteBillingReturn() {
+    var q = new URLSearchParams(location.search);
+    var member = q.get("member"), credited = q.get("credited"), topup = q.get("topup");
+    if (!member && !credited && !topup) return;
+    history.replaceState(null, "", location.pathname + location.hash);
+    if (member) { toast("You're a member \u2014 thank you"); refreshAuthStatus(); return; }
+    if (credited) { toast("Credit added"); refreshAuthStatus(); return; }
+    openCreditSheet();
   }
 
   function openGmailConsent() {
@@ -957,6 +990,119 @@
     this.disabled = false;
   });
 
+  /* ---------- AI credit: bought here, in this app ---------- */
+
+  var billing = null;
+
+  /** What is on offer, and what this account has already paid. Cheap, and
+   *  refetched each time the sheet opens so a purchase made in another tab is
+   *  reflected rather than cached into a lie. */
+  async function loadBilling() {
+    try {
+      var r = await fetch("/api/auth/billing");
+      billing = await r.json();
+    } catch (e) { billing = null; }
+    return billing;
+  }
+
+  function money(n) { return "$" + Number(n || 0).toFixed(2); }
+  /** A price, not a balance. "$5 a month" reads like a price; "$5.00 a month"
+   *  reads like an invoice. Cents only appear when there are cents. */
+  function fee(n) { var v = Number(n || 0); return "$" + (v % 1 ? v.toFixed(2) : String(v)); }
+
+  /** Send the buyer to Stripe. `returnTo` is where they come back to, so a
+   *  completed payment lands on the page they were already reading. */
+  async function startCheckout(path, body, btn) {
+    var st = $("creditStatus");
+    if (btn) btn.disabled = true;
+    setStatus(st, "Opening checkout…");
+    try {
+      var r = await fetch(path, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.assign({ returnTo: location.pathname }, body || {}))
+      });
+      var d = await r.json();
+      if (!r.ok || !d.url) throw new Error(d.detail || d.error || "Could not open checkout.");
+      location.href = d.url;
+    } catch (e) {
+      setStatus(st, (e && e.message) || "Could not open checkout.", "error");
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function renderCredit() {
+    var meter = $("creditMeter"), body = $("creditBody");
+    setStatus($("creditStatus"), "");
+    var b = (billing && billing.budget) || (me && me.budget) || {};
+
+    if (b.unlimited) {
+      meter.textContent = b.reason === "byok"
+        ? "Running on your own Anthropic key — we are not metering you."
+        : "Not metered.";
+    } else {
+      meter.textContent = money(b.remainingUsd) + " left of " + money(b.allowanceUsd) +
+        ". Credit is shared across every app on this domain.";
+    }
+
+    var html = "";
+    if (!billing || !billing.available) {
+      html = '<p class="form-note">Buying credit is not switched on for this deployment.</p>';
+      body.innerHTML = html;
+      return;
+    }
+
+    if (!billing.member) {
+      // The membership leads, because it is the thing that has to be bought
+      // first. Saying that plainly beats letting someone press a top-up
+      // button and meet a 402 explaining it.
+      html += '<p class="form-note" style="margin-top:0">' +
+        '<b>' + fee(billing.monthlyUsd) + " a month</b> covers every app here — the trip planner, " +
+        "the football board, the charts. Then buy credit at what the calls actually cost, " +
+        "or bring your own Anthropic key and pay Anthropic directly." +
+        '</p>' +
+        '<button type="button" class="btn btn-primary" id="memberBtn" style="margin-top:14px">' +
+        "Become a member — " + fee(billing.monthlyUsd) + "/month</button>";
+    } else {
+      html += '<p class="form-note" style="margin-top:0">Member — ' + fee(billing.monthlyUsd) +
+        " a month. Credit below is sold at what the calls cost.</p>" +
+        '<div class="credit-options">' +
+        (billing.topUps || []).map(function (o) {
+          return '<button type="button" class="btn" data-usd="' + Number(o.usd) + '">' +
+            escapeHtml(o.label) + "</button>";
+        }).join("") +
+        "</div>";
+      if (billing.manageable) {
+        html += '<button type="button" class="btn" id="portalBtn" style="margin-top:10px">Manage billing</button>';
+      }
+    }
+
+    if (billing.byok && billing.byok.supported && !billing.byok.present) {
+      html += '<p class="form-note">Have an Anthropic key of your own? Add it on your ' +
+        '<a href="' + ACCOUNT_URL + '">account page</a> and pay Anthropic directly instead.</p>';
+    }
+
+    body.innerHTML = html;
+
+    var mb = $("memberBtn");
+    if (mb) mb.addEventListener("click", function () { startCheckout("/api/auth/billing/membership", {}, mb); });
+    var pb = $("portalBtn");
+    if (pb) pb.addEventListener("click", function () { startCheckout("/api/auth/billing/portal", {}, pb); });
+    body.querySelectorAll("[data-usd]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        startCheckout("/api/auth/billing/credit", { usd: Number(btn.getAttribute("data-usd")) }, btn);
+      });
+    });
+  }
+
+  async function openCreditSheet() {
+    if (!isSignedIn) { location.href = "/login"; return; }
+    $("creditMeter").textContent = "Loading…";
+    $("creditBody").innerHTML = "";
+    openSheet({ title: "AI credit", body: $("sh-credit") });
+    await loadBilling();
+    if (document.getElementById("creditMeter")) renderCredit();
+  }
+
   function openPasswordSheet() {
     $("pwCurrent").value = ""; $("pwNew").value = "";
     setStatus($("pwStatus"), "");
@@ -986,7 +1132,7 @@
     btn.disabled = false;
   });
 
-  aiRequestBtn.addEventListener("click", function () { location.href = TOP_UP_URL; });
+  aiRequestBtn.addEventListener("click", openCreditSheet);
   $("aiSendBtn").addEventListener("click", async function () {
     var btn = $("aiSendBtn"), st = $("aiStatus");
     btn.disabled = true; setStatus(st, "Sending…");
@@ -1674,7 +1820,7 @@
     goToTrips();
   });
 
-  refreshAuthStatus().then(function () { route(); noteGmailReturn(); });
+  refreshAuthStatus().then(function () { route(); noteGmailReturn(); noteBillingReturn(); });
 })();
 </script>
 <script src="/tour.js"></script>

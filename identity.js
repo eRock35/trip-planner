@@ -44,6 +44,7 @@ const crypto = require('crypto');
 const { AsyncLocalStorage } = require('async_hooks');
 const webauthn = require('./identity-webauthn');
 const byokLib = require('./byok');
+const stripeLib = require('./stripe');
 
 // The metered Anthropic client is built once per process but serves every
 // visitor, so "who is this call for" cannot be baked into it. This carries the
@@ -361,16 +362,22 @@ function planFor(user, opts) {
   };
 }
 
-/** Where someone sends money. Checkout is built once, on dataviz, and the
- *  balance it tops up is shared, so every app points at the same place rather
- *  than growing its own Stripe integration. TOP_UP_URL overrides it; without
- *  a base domain there is nowhere sensible to guess, so the 402 carries no
- *  link rather than a broken one. */
+/** Where someone sends money.
+ *
+ *  This used to be an absolute link to dataviz, because dataviz was the only
+ *  service that could mint a Stripe checkout. Every app now can - see the
+ *  billing routes in mount() - so it is a RELATIVE link, and a 402 in the
+ *  trip planner opens the trip planner's own sheet rather than throwing the
+ *  reader into a chart app to buy something.
+ *
+ *  Relative on purpose: identity is mounted on six hostnames and has no
+ *  business guessing which one it is answering on. Every consumer either puts
+ *  it in an href or in a markdown link, both of which resolve against the page
+ *  it is already on. TOP_UP_URL still overrides, for a deployment that wants
+ *  to send people somewhere else entirely. */
 function topUpUrl() {
   const explicit = String(process.env.TOP_UP_URL || '').trim();
-  if (explicit) return explicit;
-  const base = String(process.env.PASSKEY_RP_ID || '').trim();
-  return base ? `https://dataviz.${base}/?topup=1` : null;
+  return explicit || '?topup=1';
 }
 
 function cookieDomain(req, baseDomain) {
@@ -988,6 +995,147 @@ function create(opts) {
         createdAt: req.user.createdAt || null,
         displayName: req.user.displayName || '',
       });
+    });
+
+    /* ---------- billing ----------
+     *
+     * These used to live on DataViz alone, and every other app's "you are out
+     * of credit" was a link that took you there. That was defensible while
+     * DataViz was the only service holding the Stripe keys, but it read as a
+     * bug: you press "AI credit" in the trip planner and land in a chart app
+     * you were not using, styled like a different product, to buy something
+     * that was never DataViz's to sell. What is bought here is account-level -
+     * the membership covers every app and the credit spends in every app - so
+     * it belongs to the account module, which every app already mounts.
+     *
+     * So checkout is minted by whichever app you are standing in, and Stripe
+     * returns you to that same app. Each app draws its own sheet in its own
+     * style; this is only the money.
+     *
+     * The WEBHOOK does not move. It stays on exactly one service, because it
+     * is the half that needs STRIPE_WEBHOOK_SECRET and because Stripe
+     * delivers to one endpoint anyway. Creating a checkout session is the only
+     * capability that spreads.
+     */
+
+    /** The app's own origin, which is where Stripe sends the buyer back.
+     *  Forced to https unless it is a local dev host: Cloud Run terminates TLS
+     *  at the front end, so without `trust proxy` req.protocol reads http and
+     *  the buyer would come back to a redirect. */
+    function originOf(req) {
+      const host = String(req.get('host') || '');
+      const local = /^(localhost|127\.0\.0\.1|\[::1\])(:|$)/.test(host);
+      return `${local ? 'http' : 'https'}://${host}`;
+    }
+
+    /** Where in the app to land after paying. The caller picks it so the sheet
+     *  can return you to the tab you were on, but it is a PATH, never a URL -
+     *  an absolute one here would make this an open redirect that Stripe
+     *  itself would follow. `//evil.com` is a URL wearing a path's clothes. */
+    function returnPath(req) {
+      const raw = String((req.body || {}).returnTo || '/');
+      if (!raw.startsWith('/') || raw.startsWith('//')) return '/';
+      return raw;
+    }
+
+    function joinQuery(path, extra) {
+      return path + (path.includes('?') ? '&' : '?') + extra;
+    }
+
+    expressApp.get(`${mountPath}/billing`, (req, res) => {
+      const user = req.user || null;
+      res.json({
+        // Whether this deployment can sell anything at all. An app whose
+        // service has no Stripe key should say so rather than draw a button
+        // that 503s.
+        available: stripeLib.membershipEnabled(),
+        monthlyUsd: stripeLib.MEMBERSHIP_USD,
+        topUps: stripeLib.TOP_UPS,
+        signedIn: Boolean(user),
+        member: user ? paysPlatformFee(user) : false,
+        budget: user ? budgetFor(user) : null,
+        byok: {
+          supported: byok.enabled(),
+          present: Boolean(user && user.byok && user.byok.blob),
+        },
+        // Whether there is a Stripe customer to open the portal for. Someone
+        // who has never paid has nothing to manage.
+        manageable: Boolean(user && user.stripeCustomerId),
+      });
+    });
+
+    expressApp.post(`${mountPath}/billing/membership`, requireUser, async (req, res) => {
+      try {
+        if (!stripeLib.membershipEnabled()) {
+          return res.status(503).json({ error: 'Membership is not set up on this deployment.' });
+        }
+        if (isMember(req.user)) return res.status(400).json({ error: 'You are already a member.' });
+        const origin = originOf(req);
+        const back = returnPath(req);
+        const session_ = await stripeLib.createMembership({
+          uid: req.user.id,
+          email: req.user.email,
+          customerId: req.user.stripeCustomerId || null,
+          successUrl: `${origin}${joinQuery(back, 'member=1')}`,
+          cancelUrl: `${origin}${back}`,
+        });
+        await log('membership.checkout', req, { uid: req.user.id });
+        res.json({ url: session_.url });
+      } catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Could not start that subscription.' });
+      }
+    });
+
+    expressApp.post(`${mountPath}/billing/credit`, requireUser, async (req, res) => {
+      try {
+        if (!stripeLib.enabled()) {
+          return res.status(503).json({ error: 'Billing is not set up on this deployment.' });
+        }
+        // Credit is sold at what the calls actually cost, so the monthly fee
+        // is what pays for everything around them. Selling tokens without one
+        // would run the platform at exactly break-even on tokens and nothing
+        // on the hosting.
+        if (!paysPlatformFee(req.user)) {
+          return res.status(402).json({
+            error: 'Credit is part of the membership.',
+            detail: `Membership is $${stripeLib.MEMBERSHIP_USD} a month and covers every app; `
+              + 'credit on top is sold at what the calls actually cost.',
+            membership: true,
+          });
+        }
+        const origin = originOf(req);
+        const back = returnPath(req);
+        const session_ = await stripeLib.createTopUp({
+          uid: req.user.id,
+          email: req.user.email,
+          usd: Number((req.body || {}).usd),
+          customerId: req.user.stripeCustomerId || null,
+          successUrl: `${origin}${joinQuery(back, 'credited=1')}`,
+          cancelUrl: `${origin}${back}`,
+        });
+        await log('credit.checkout', req, { uid: req.user.id, detail: `$${Number((req.body || {}).usd)}` });
+        res.json({ url: session_.url });
+      } catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Could not start that purchase.' });
+      }
+    });
+
+    expressApp.post(`${mountPath}/billing/portal`, requireUser, async (req, res) => {
+      try {
+        if (!stripeLib.enabled()) {
+          return res.status(503).json({ error: 'Billing is not set up on this deployment.' });
+        }
+        if (!req.user.stripeCustomerId) {
+          return res.status(400).json({ error: 'No subscription to manage yet.' });
+        }
+        const session_ = await stripeLib.createPortal({
+          customerId: req.user.stripeCustomerId,
+          returnUrl: `${originOf(req)}${returnPath(req)}`,
+        });
+        res.json({ url: session_.url });
+      } catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Could not open the billing page.' });
+      }
     });
 
     // Changing the password. A Face ID session is proof enough on its own; a
