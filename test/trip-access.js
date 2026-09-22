@@ -75,7 +75,7 @@ const uidOf = (e) => Buffer.from(e.toLowerCase()).toString('base64url');
   r = await post(`/api/trips/${st.id}/chat`, { question: 'hi' }, stranger);
   const body = await r.json();
   ok('an exhausted balance is a 402', r.status === 402, String(r.status));
-  ok('the 402 says where to top up', body.topUpUrl === 'https://dataviz.strongtechnicalconsulting.com/?topup=1', body.topUpUrl);
+  ok('the 402 says where to top up, in this app', body.topUpUrl === '?topup=1', body.topUpUrl);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
