@@ -343,6 +343,18 @@ ever needs to be public, the honest path is the assessment — or a Google
 Workspace *internal* app, which skips verification for users inside the
 domain.
 
+**It was never switched on (found 2026-09-22).** The code shipped on 09-21, but
+the Gmail API was disabled on the project and no OAuth client existed, so the
+feature has reported itself unavailable in production since the day it was
+built — and nothing said so. The API was enabled on 09-22. The OAuth client
+cannot be created by API (Google offers none for standard web clients); it is
+a Cloud Console step for Erik, shared with `santa-rosa-beach-trip`: one Google
+app, two redirect URIs, testing mode.
+
+`gmail.js` is now `eriks-projects/shared/gmail.js`, synced here and into the
+vacation app, because `TRAVEL_SENDERS` is a consent-screen promise and two
+copies would be two promises that drift.
+
 - Env: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (Secret Manager),
   `GOOGLE_REDIRECT_URI` (`https://trip.strongtechnicalconsulting.com/api/gmail/callback`),
   and `BYOK_ENCRYPTION_KEY`, which the token vault shares with BYOK.

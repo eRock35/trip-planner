@@ -24,6 +24,14 @@
  * read once by the extractor and dropped; only the trip a person chooses to
  * import is written. The scan route never persists a candidate.
  *
+ * ## Shared
+ *
+ * COPY. The source is eriks-projects/shared/gmail.js, synced into
+ * trip-planner and santa-rosa-beach-trip by scripts/sync-shared.js. It is
+ * shared rather than per-app because TRAVEL_SENDERS is a promise made on a
+ * consent screen: two apps holding two lists would be two different promises
+ * that drift, and a person who connected one would have no way to know.
+ *
  * ## Verification
  *
  * `gmail.readonly` is a RESTRICTED scope. Offering this publicly needs Google
