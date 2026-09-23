@@ -379,8 +379,13 @@
   }
 
   /* ---------- Trip view ---------- */
-  .trip-head { padding: 6px 4px 12px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-  .trip-head h1 { font-size: 28px; }
+  .trip-head { padding: 6px 4px 12px; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; column-gap: 12px; }
+  .trip-head h1 { font-size: 28px; overflow-wrap: break-word; }
+  /* The example-trip note sits in the same flex row as the title and badge.
+     Without its own line it took half the width and crushed the title into a
+     column a few letters wide ("Lisbo / n / long / week / end"). */
+  .trip-head .demo-banner { flex: 1 0 100%; }
+  .trip-head > div:first-child { flex: 1 1 0; }
 
   /* Chat */
   .chat-log { display: flex; flex-direction: column; gap: 6px; min-height: 40vh; padding: 2px 0; }
@@ -2829,9 +2834,14 @@
 <script src="/tour.js"></script>
 <script>
 // The self-running demo the landing page frames (see tour.js for the rules).
-// It runs on the example trip: reads the chat, "asks" a question and gets a
-// canned answer drawn straight into the log, opens a day, glances at the
-// watches, and starts over. Nothing here reaches the server.
+// It runs on the example trip: opens on the Overview (weather, countdown,
+// bookings), reads the chat, "asks" a question and gets a canned answer drawn
+// straight into the log, opens a day, glances at the packing list, and starts
+// over. Nothing here reaches the server.
+//
+// Every tab it taps must be one the phone bar shows. Watches moved under More
+// when Packing and Budget arrived, and a tap on a hidden button does nothing -
+// the tour sat on Chat and pretended to have moved.
 (function () {
   "use strict";
   if (!window.Tour || !Tour.active()) return;
@@ -2853,8 +2863,15 @@
   function esc(s) { return s.replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
 
   T.run([
-    async function readTheChat() {
+    async function lookAtTheTrip() {
       await T.until(function () { return document.querySelector("#chatLog .bubble"); }, 20000);
+      await T.tap($("tab-btn-overview"));
+      await T.scrollTo(window, 0, 400);
+      await T.wait(2200);
+      await T.scrollThrough(window, 5200);
+      await T.wait(1000);
+    },
+    async function readTheChat() {
       await T.tap($("tab-btn-chat"));
       await T.scrollTo(window, 0, 400);
       await T.wait(900);
@@ -2887,12 +2904,14 @@
       await T.scrollThrough(window, 4200);
       await T.wait(1400);
     },
-    async function glanceAtWatches() {
-      await T.tap($("tab-btn-watches"));
+    async function glanceAtPacking() {
+      await T.tap($("tab-btn-packing"));
+      await T.scrollTo(window, 0, 300);
       await T.wait(900);
       await T.scrollThrough(window, 3200);
       await T.wait(1600);
-      await T.tap($("tab-btn-chat"));
+      await T.tap($("tab-btn-overview"));
+      await T.scrollTo(window, 0, 300);
       await T.wait(600);
     },
   ], { reset: async function () { synthetic().forEach(function (n) { n.remove(); }); } });
