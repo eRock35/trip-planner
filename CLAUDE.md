@@ -626,6 +626,18 @@ Cloud Run Admin API v2). See `college-football-app`'s
   `X-Cron-Key` header. Verified end to end with a forced run — it returned
   clean and wrote `control/watch-cron` (`checked: 0`, no watches yet).
 
+## Billed per request — never keep working after the response (2026-09-23)
+
+This service runs with `cpuIdle: true`: Cloud Run bills only while a request
+is in flight and throttles the CPU to near zero between requests. It used to
+be billed for every second an instance was alive, which for this traffic was
+~99% idle time. Anything that keeps working after the response has been sent
+— respond first and process after, a `setInterval` sweep, a promise left
+running past `res.json()` — now stalls until the next request arrives. Every
+cron route here awaits its work before answering, and `streamedJson`'s
+heartbeat runs inside the open request. Keep it that way. The full reasoning
+and numbers are in `eriks-projects/DEPLOY.md` -> "Creating a service".
+
 ## Commit and PR conventions
 
 **Never put a Claude session link in anything pushed to GitHub.** No
