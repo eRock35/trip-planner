@@ -953,7 +953,8 @@
     if (gmailState.available) {
       list.appendChild(accountRow(
         "Find trips in Gmail",
-        gmailState.connected ? "Connected to " + (gmailState.address || "your mailbox") : "Not connected",
+        gmailState.connected ? "Connected to " + (gmailState.address || "your mailbox")
+          : gmailState.expired ? "Connection ended \u2014 tap to reconnect" : "Not connected",
         gmailState.connected ? openGmailFound : openGmailConsent,
         { pill: gmailState.connected ? "on" : "" }
       ));
@@ -1864,6 +1865,14 @@
       if (res.status === 402 || res.status === 503) { entry.answer = await showSpendBlocked(chatStatus, res); renderChat(); return; }
       if (res.status === 401) { showAuthRequired(chatStatus); entry.answer = "Please sign in first."; renderChat(); return; }
       var data = await res.json().catch(function () { return {}; });
+      // Gmail not connected, or Google ended the connection: say why in the
+      // chat, and put the way back in front of them.
+      if (data.needsConnect) {
+        entry.answer = "\u26A0\uFE0F " + (data.error || "Connect Gmail first.");
+        setStatus(chatStatus, ""); renderChat();
+        await refreshGmail(); openGmailConsent();
+        return;
+      }
       if (!res.ok || data.error) throw new Error(data.error || "failed");
       if (currentTripId !== id) return;
       entry.answer = data.answer; entry.id = data.id;

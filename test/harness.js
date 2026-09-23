@@ -126,13 +126,23 @@ function session(secret, email, via = 'password') {
 const FieldValue = {
   increment(by) { return { __increment: by }; },
 };
+/**
+ * set(v, { merge: true }), the way Firestore does it: nested MAPS merge field
+ * by field; arrays and everything else replace. The fake used to replace a
+ * nested map wholesale, which is kinder than the real database - and exactly
+ * the kindness that hides a bug like a stale `gmail.expiredAt` outliving a
+ * reconnect, because the real merge keeps every field the write left out.
+ */
 function applyIncrements(existing, patch) {
   const out = Object.assign({}, existing || {});
   for (const [k, v] of Object.entries(patch)) {
     if (v && typeof v === 'object' && typeof v.__increment === 'number') {
       out[k] = Number(out[k] || 0) + v.__increment;
+    } else if (v && typeof v === 'object' && !Array.isArray(v)
+               && out[k] && typeof out[k] === 'object' && !Array.isArray(out[k])) {
+      out[k] = applyIncrements(out[k], v);
     } else {
-      out[k] = v;
+      out[k] = v === undefined ? out[k] : JSON.parse(JSON.stringify(v === null ? null : v));
     }
   }
   return out;

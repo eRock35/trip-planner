@@ -916,7 +916,10 @@ app.get('/api/gmail', requireLogin, async (req, res) => {
   const g = (own && own.exists && own.data().gmail) || null;
   res.json({
     available: gmailReady(),
-    connected: Boolean(g && g.refresh),
+    connected: Boolean(g && g.refresh && !g.expiredAt),
+    // Google ended it (see gmail.js on the seven-day Testing-mode limit).
+    // The page offers Connect again, with a line saying why.
+    expired: Boolean(g && g.expiredAt),
     address: (g && g.address) || null,
     connectedAt: (g && g.connectedAt) || null,
     // The promise, served from the same constant the query is built from, so
@@ -970,6 +973,9 @@ app.get('/api/gmail/callback', requireLogin, async (req, res) => {
         refresh: tokenVault.encrypt(req.user.uid, tokens.refresh_token),
         address,
         connectedAt: new Date().toISOString(),
+        // Explicitly, because this is a merge write and Firestore merges
+        // nested maps: without it an old expiry would outlive the reconnect.
+        expiredAt: null,
       },
     }, { merge: true });
     await identity.log('gmail.connected', req, { uid: req.user.uid, detail: address || '' });
@@ -1041,9 +1047,18 @@ async function gmailRefreshFor(uid) {
   const own = await db.collection('users').doc(uid).get();
   const g = own.exists ? own.data().gmail : null;
   if (!g || !g.refresh) return { status: 400, error: 'Connect Gmail first.', needsConnect: true };
+  if (g.expiredAt) return { status: 400, error: GMAIL_EXPIRED, needsConnect: true };
   const refresh = tokenVault.decrypt(uid, g.refresh);
   if (!refresh) return { status: 400, error: 'That connection needs setting up again.', needsConnect: true };
   return { refresh };
+}
+
+/** Google refused the stored connection. Remember that, so the page stops
+ *  saying "connected" and offers to reconnect, and say so in words. */
+const GMAIL_EXPIRED = 'Your Gmail connection has ended \u2014 Google closes connections from apps in testing '
+  + 'after seven days. Connect Gmail again and this will work.';
+async function markGmailExpired(uid) {
+  await db.collection('users').doc(uid).set({ gmail: { expiredAt: new Date().toISOString() } }, { merge: true }).catch(() => {});
 }
 
 /** The booking emails, through the fixed query. Read into memory, returned,
@@ -1116,7 +1131,8 @@ app.post('/api/gmail/scan', requireLogin, identity.requireBudget, identity.requi
     });
   } catch (err) {
     console.error('POST /api/gmail/scan', err);
-    if (send) return send({ error: 'Could not read those emails.' });
+    if (err.status === 401) await markGmailExpired(req.user.uid);
+    if (send) return send({ error: err.status === 401 ? GMAIL_EXPIRED : 'Could not read those emails.', needsConnect: err.status === 401 });
     res.status(err.status || 500).json({ error: 'Could not read those emails.' });
   }
 });
@@ -1182,7 +1198,8 @@ app.post('/api/trips/:id/gmail-bookings', requireLogin, identity.requireBudget, 
     send({ id: saved.id, question, answer, proposedBookings });
   } catch (err) {
     console.error('POST /api/trips/:id/gmail-bookings', err);
-    if (send) return send({ error: err.status === 401 ? 'Google no longer accepts this connection. Reconnect Gmail.' : 'Could not read those emails.' });
+    if (err.status === 401) await markGmailExpired(req.user.uid);
+    if (send) return send({ error: err.status === 401 ? GMAIL_EXPIRED : 'Could not read those emails.', needsConnect: err.status === 401 });
     res.status(500).json({ error: 'Could not read those emails.' });
   }
 });

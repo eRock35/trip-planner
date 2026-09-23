@@ -198,6 +198,14 @@ function create(opts) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
+      // invalid_grant is Google saying the stored connection is over: revoked
+      // by the person, or - the common case here - EXPIRED. An OAuth app in
+      // Testing mode that asks for more than basic profile gets refresh
+      // tokens that die after seven days. That is a "reconnect", not a
+      // failure, and callers must be able to tell the two apart.
+      if (data.error === 'invalid_grant') {
+        throw Object.assign(new Error('Google ended this Gmail connection'), { status: 401, expired: true });
+      }
       throw Object.assign(new Error(data.error_description || data.error || `Google said ${res.status}`), { status: 502 });
     }
     return data;

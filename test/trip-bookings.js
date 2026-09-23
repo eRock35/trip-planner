@@ -20,7 +20,12 @@ const realFetch = global.fetch;
 global.fetch = async (url, opts) => {
   const u = String(url);
   const json = (b) => new Response(JSON.stringify(b), { status: 200 });
-  if (u.startsWith('https://oauth2.googleapis.com/token')) return json({ access_token: 'at', refresh_token: 'rt' });
+  if (u.startsWith('https://oauth2.googleapis.com/token')) {
+    if (global.__expire && new URLSearchParams(opts.body).get('grant_type') === 'refresh_token') {
+      return new Response(JSON.stringify({ error: 'invalid_grant', error_description: 'Token has been expired or revoked.' }), { status: 400 });
+    }
+    return json({ access_token: 'at', refresh_token: 'rt' });
+  }
   if (u.includes('/gmail/v1/users/me/profile')) return json({ emailAddress: 'erik@example.com' });
   if (u.includes('/gmail/v1/users/me/messages?')) return json({ messages: [{ id: 'm1' }] });
   if (u.includes('/gmail/v1/users/me/messages/m1')) return json({ id: 'm1', payload: { headers: [{ name: 'From', value: 'National <x@nationalcar.com>' }, { name: 'Subject', value: 'Your reservation' }], mimeType: 'text/plain', body: { data: Buffer.from('Pickup Tue Sep 22 5 PM. Confirmation 2136112815.').toString('base64url') } } });
@@ -105,6 +110,24 @@ const get = async (p, c) => (await realFetch(B + p, { headers: { cookie: c } }))
   r = await post(`/api/trips/${trip.id}/messages/${g.id}/discard`, { which: 'bookings' }, me);
   msgs = await get(`/api/trips/${trip.id}/messages`, me);
   ok('discarding it is remembered', msgs.find((m) => m.id === g.id).bookingsState === 'discarded');
+
+  /* ---------- Google ends the connection after seven days ---------- */
+  global.__expire = true;
+  r = await post(`/api/trips/${trip.id}/gmail-bookings`, {}, me);
+  let ended = await r.json();
+  ok('an expired Gmail connection is explained, and asks to reconnect', ended.needsConnect === true && /seven days/.test(ended.error || ''), JSON.stringify(ended).slice(0, 120));
+  let gs = await get('/api/gmail', me);
+  ok('...and the account stops saying connected', gs.connected === false && gs.expired === true, JSON.stringify({ c: gs.connected, e: gs.expired }));
+  r = await post(`/api/trips/${trip.id}/gmail-bookings`, {}, me);
+  ok('...the next try says so before reading anything', r.status === 400 && (await r.json()).needsConnect === true);
+  global.__expire = false;
+  const crypto = require('crypto');
+  const payload = uid + '.' + Date.now();
+  const mac = crypto.createHmac('sha256', process.env.SESSION_SECRET).update(payload).digest('base64url');
+  r = await realFetch(`${B}/api/gmail/callback?code=abc&state=${encodeURIComponent(payload + '.' + mac)}`, { headers: { cookie: me }, redirect: 'manual' });
+  gs = await get('/api/gmail', me);
+  ok('reconnecting clears it (a merge write would otherwise keep the old expiry)', gs.connected === true && gs.expired === false,
+     (r.headers.get('location') || '') + ' ' + JSON.stringify({ c: gs.connected, e: gs.expired }));
 
   /* ---------- import carries bookings, cleaned ---------- */
   r = await post('/api/gmail/import', { trips: [{ name: 'Jamaica', destination: 'Montego Bay', bookings: [
