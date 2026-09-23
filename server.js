@@ -10,6 +10,10 @@ const identityLib = require('./identity');
 const identityStore = require('./identity-store');
 const analytics = require('./analytics');
 const schedule = require('./schedule');
+const { tripDates } = require('./tripdates');
+const bookingsLib = require('./bookings');
+const ideasLib = require('./ideas');
+const weatherLib = require('./weather');
 const demo = require('./demo');
 
 const PORT = process.env.PORT || 8080;
@@ -266,6 +270,9 @@ function tripOut(id, data) {
   if (Array.isArray(data && data.days) && data.days.length) {
     try { out.days = schedule.fromStore(data.days); } catch (e) { out.days = []; }
   }
+  // When the trip is, worked out once here so the Overview's countdown and
+  // weather agree with each other. null when "When" gives nothing to go on.
+  out.dates = tripDates(out);
   return out;
 }
 
@@ -292,6 +299,65 @@ async function loadOwnedTrip(req, res) {
 }
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+/* ---------- Weather for the Overview ----------
+ * No model call, so no budget: login and ownership only. See weather.js for
+ * the sources and why. Every failure is an ordinary 200 saying there is no
+ * weather, because the Overview must never look broken over decoration. */
+const weather = weatherLib.create();
+
+// Nominatim's usage policy: no more than one request a second, from the whole
+// application. Volume here is tiny, but the policy is not about volume.
+let geocodeChain = Promise.resolve();
+function geocodePolitely(query) {
+  const run = geocodeChain.then(() => weather.geocode(query));
+  geocodeChain = run.catch(() => {}).then(() => new Promise((r) => setTimeout(r, 1100)));
+  return run;
+}
+
+/** A trip's place: stored on the trip, looked up again only when the
+ *  destination text changes. A search that found nothing is remembered too
+ *  (`none`), so a vague destination does not re-ask on every visit; a search
+ *  that FAILED is not, so a network blip does not stick. */
+async function placeFor(ref, data) {
+  const dest = String((data && data.destination) || '').trim();
+  if (!dest) return null;
+  if (data.geo && data.geo.query === dest) return data.geo.none ? null : data.geo;
+  const geo = await geocodePolitely(dest);
+  if (ref) await ref.update({ geo: geo || { query: dest, none: true } }).catch(() => {});
+  return geo;
+}
+
+async function weatherFor(ref, data) {
+  try {
+    const geo = await placeFor(ref, data);
+    return await weather.forTrip(geo, tripDates(tripOut('', data)));
+  } catch (err) {
+    console.error('trip weather', err.message);
+    return { status: 'unavailable', attribution: weatherLib.ATTRIBUTION };
+  }
+}
+
+// The example trip is served from code, so its place lives in memory.
+let demoGeo;
+app.get(`/api/trips/${demo.DEMO_ID}/weather`, async (req, res) => {
+  const data = demo.DEMO_TRIP;
+  try {
+    if (demoGeo === undefined) demoGeo = await geocodePolitely(data.destination);
+    res.json(await weather.forTrip(demoGeo, tripDates(data)));
+  } catch (err) {
+    res.json({ status: 'unavailable', attribution: weatherLib.ATTRIBUTION });
+  }
+});
+
+app.get('/api/trips/:id/weather', requireLogin, async (req, res) => {
+  const owned = await loadOwnedTrip(req, res);
+  if (!owned) return;
+  res.set('Cache-Control', 'private, max-age=600');
+  res.json(await weatherFor(owned.ref, owned.data));
+});
+
+
 
 // ---------------------------------------------------------------------------
 // Trips - the core data model. One document per trip; chat history and
@@ -352,7 +418,7 @@ app.post('/api/trips', requireLogin, async (req, res) => {
 // the sign-in wall used to hide: what the app actually does.
 app.get(`/api/trips/${demo.DEMO_ID}`, (req, res) => {
   res.set('Cache-Control', 'public, max-age=600');
-  res.json(Object.assign({ id: demo.DEMO_ID, demo: true }, demo.DEMO_TRIP));
+  res.json(Object.assign({ id: demo.DEMO_ID, demo: true }, demo.DEMO_TRIP, { dates: tripDates(demo.DEMO_TRIP) }));
 });
 app.get(`/api/trips/${demo.DEMO_ID}/messages`, (req, res) => {
   res.set('Cache-Control', 'public, max-age=600');
@@ -611,7 +677,12 @@ app.post('/api/trips/:id/chat', requireLogin, identity.requireBudget, identity.r
       'itinerary. You have the itinerary below and can change it, so never say you have no itinerary or ask ' +
       'for one to be shared with you, and when asked for a change make a concrete suggestion and propose it ' +
       'rather than asking which of several options they want, unless the request is genuinely ambiguous.\n\n' +
-      'Current itinerary:\n' + JSON.stringify(trip.days || []);
+      'Current itinerary:\n' + JSON.stringify(trip.days || []) + '\n\n' +
+      'You can also keep the trip\'s bookings - flights, where they are staying, rental cars, restaurant ' +
+      'reservations, tours, tickets - with the propose_bookings tool. When the user tells you about a booking or ' +
+      'asks to add, change or remove one, propose the COMPLETE updated list, keeping every other booking and its id ' +
+      'exactly as it was. Never invent a confirmation number.\n\nCurrent bookings:\n' +
+      JSON.stringify(bookingsLib.validate(owned.data.bookings || []));
 
     // Free accounts run on Haiku, which costs half what Sonnet does and is
     // plenty for trip chat; the owner, Pro, and anyone on their own key get
@@ -622,7 +693,7 @@ app.post('/api/trips/:id/chat', requireLogin, identity.requireBudget, identity.r
       model: plan.model,
       max_tokens: 8192,
       system: systemPrompt,
-      tools: [plan.webSearch, SCHEDULE_TOOL],
+      tools: [plan.webSearch, SCHEDULE_TOOL, bookingsLib.TOOL],
       messages: [{ role: 'user', content: question }],
     }, req.user);
 
@@ -648,6 +719,18 @@ app.post('/api/trips/:id/chat', requireLogin, identity.requireBudget, identity.r
         answer = "I've drafted a plan: " + proposedChange.summary + ' Review it below and tap Apply to save it.';
       }
     }
+    const bookingsBlock = response.content.find((b) => b.type === 'tool_use' && b.name === 'propose_bookings');
+    let proposedBookings = null;
+    if (bookingsBlock && bookingsBlock.input && Array.isArray(bookingsBlock.input.bookings)) {
+      proposedBookings = {
+        summary: String(bookingsBlock.input.summary || 'Bookings update').slice(0, 300),
+        bookings: bookingsLib.validate(bookingsBlock.input.bookings),
+        // Same guard as the itinerary, on its own clock: a bookings list is a
+        // complete replacement too.
+        basedOn: owned.data.bookingsUpdatedAt || null,
+      };
+      if (!answer) answer = 'Here are the bookings: ' + proposedBookings.summary + ' Tap Apply to save them.';
+    }
     if (!answer) {
       // Distinguish "nothing to say" from "ran out of room": the first is an
       // answer, the second is a failure wearing an answer's clothes.
@@ -667,13 +750,14 @@ app.post('/api/trips/:id/chat', requireLogin, identity.requireBudget, identity.r
       proposedChange: proposedChange
         ? { ...proposedChange, days: schedule.toStore(proposedChange.days) }
         : null,
+      proposedBookings,
       askedAt,
       answeredAt: new Date().toISOString(),
     });
     await tripRef.update({ updatedAt: new Date().toISOString() });
 
     // The id, so the page can tell the server what became of the proposal.
-    send({ id: saved.id, answer, proposedChange });
+    send({ id: saved.id, answer, proposedChange, proposedBookings });
   } catch (err) {
     console.error('POST /api/trips/:id/chat', err);
     // Same reason as the self-test above: without this the reason is lost.
@@ -698,12 +782,16 @@ app.post('/api/trips/:id/chat', requireLogin, identity.requireBudget, identity.r
  *  decided. Reported 2026-09-23 as "after applying to itinerary it stays".
  *  Worse than untidy: tapping one again would replace the whole itinerary
  *  with a plan from before any later change. */
-async function markProposal(tripRef, messageId, state) {
+async function markProposal(tripRef, messageId, state, which = 'change') {
   if (!messageId || typeof messageId !== 'string' || messageId.length > 64) return;
   const ref = tripRef.collection('messages').doc(messageId);
   const snap = await ref.get();
-  if (!snap.exists || !snap.data().proposedChange) return;
-  await ref.update({ changeState: state, changeHandledAt: new Date().toISOString() });
+  // One chat turn can propose both an itinerary and bookings, and each is
+  // decided on its own, so each has its own state field.
+  const field = which === 'bookings' ? 'proposedBookings' : 'proposedChange';
+  if (!snap.exists || !snap.data()[field]) return;
+  const stateField = which === 'bookings' ? 'bookingsState' : 'changeState';
+  await ref.update({ [stateField]: state, changeHandledAt: new Date().toISOString() });
 }
 
 app.post('/api/trips/:id/schedule/apply', requireLogin, async (req, res) => {
@@ -744,12 +832,56 @@ app.post('/api/trips/:id/schedule/apply', requireLogin, async (req, res) => {
   }
 });
 
+/** Save a proposed bookings list. Same shape and same guard as the itinerary:
+ *  the tap is the only write, and a list written before a later change is
+ *  refused rather than allowed to undo it. */
+app.post('/api/trips/:id/bookings/apply', requireLogin, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    if (Object.prototype.hasOwnProperty.call(body, 'basedOn')
+        && (body.basedOn || null) !== (owned.data.bookingsUpdatedAt || null)) {
+      await markProposal(owned.ref, body.messageId, 'stale', 'bookings').catch(() => {});
+      return res.status(409).json({
+        error: 'The bookings changed after this was suggested, so applying it would undo that change. Ask again.',
+        bookings: bookingsLib.validate(owned.data.bookings || []),
+      });
+    }
+    const bookings = bookingsLib.validate(body.bookings);
+    const at = new Date().toISOString();
+    await owned.ref.update({ bookings, bookingsUpdatedAt: at, updatedAt: at });
+    await markProposal(owned.ref, body.messageId, 'applied', 'bookings').catch((e) => console.error('markProposal', e));
+    res.json({ ok: true, bookings });
+  } catch (err) {
+    console.error('POST /api/trips/:id/bookings/apply', err);
+    res.status(500).json({ error: 'Could not save the bookings.' });
+  }
+});
+
+/** Remove one booking - the person's own tap on the Overview, no model. */
+app.delete('/api/trips/:id/bookings/:bid', requireLogin, async (req, res) => {
+  try {
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    const before = bookingsLib.validate(owned.data.bookings || []);
+    const bookings = before.filter((b) => b.id !== req.params.bid);
+    if (bookings.length === before.length) return res.status(404).json({ error: 'No such booking.' });
+    const at = new Date().toISOString();
+    await owned.ref.update({ bookings, bookingsUpdatedAt: at, updatedAt: at });
+    res.json({ ok: true, bookings });
+  } catch (err) {
+    console.error('DELETE /api/trips/:id/bookings/:bid', err);
+    res.status(500).json({ error: 'Could not remove that.' });
+  }
+});
+
 /** Discarding is a decision too, and it has to survive a reload the same way. */
 app.post('/api/trips/:id/messages/:mid/discard', requireLogin, async (req, res) => {
   try {
     const owned = await loadOwnedTrip(req, res);
     if (!owned) return;
-    await markProposal(owned.ref, req.params.mid, 'discarded');
+    await markProposal(owned.ref, req.params.mid, 'discarded', (req.body || {}).which === 'bookings' ? 'bookings' : 'change');
     res.json({ ok: true });
   } catch (err) {
     console.error('POST /api/trips/:id/messages/:mid/discard', err);
@@ -883,6 +1015,8 @@ const ITINERARY_TOOL = {
             destination: { type: 'string' },
             dateRange: { type: 'string', description: 'e.g. "Oct 3-10, 2026"' },
             notes: { type: 'string', description: 'Confirmation numbers, flight numbers, hotel names' },
+            bookings: { ...bookingsLib.TOOL.input_schema.properties.bookings,
+              description: 'Each booking in this trip on its own - flight, stay, rental car, reservation, tour - with its confirmation number.' },
             sourceIds: { type: 'array', items: { type: 'string' }, description: 'ids of the emails this came from' },
           },
           required: ['name'],
@@ -900,28 +1034,42 @@ const ITINERARY_TOOL = {
  * the same daily ceiling. The emails are read into the prompt and go out of
  * scope with the request.
  */
+/** The refresh token for the signed-in person, or an error that can still
+ *  be sent as a status - call it BEFORE streamedJson. */
+async function gmailRefreshFor(uid) {
+  if (!gmailReady()) return { status: 503, error: 'Gmail is not configured on this deployment.' };
+  const own = await db.collection('users').doc(uid).get();
+  const g = own.exists ? own.data().gmail : null;
+  if (!g || !g.refresh) return { status: 400, error: 'Connect Gmail first.', needsConnect: true };
+  const refresh = tokenVault.decrypt(uid, g.refresh);
+  if (!refresh) return { status: 400, error: 'That connection needs setting up again.', needsConnect: true };
+  return { refresh };
+}
+
+/** The booking emails, through the fixed query. Read into memory, returned,
+ *  and dropped by the caller - never written anywhere. */
+async function readBookingMail(refresh) {
+  const access = await gmail.accessFrom(refresh);
+  const ids = await gmail.search(access);
+  const messages = [];
+  for (const id of ids) {
+    const m = await gmail.message(access, id).catch(() => null);
+    if (m) messages.push(m);
+  }
+  return { ids, messages };
+}
+
 app.post('/api/gmail/scan', requireLogin, identity.requireBudget, identity.requireDailyCap, async (req, res) => {
   let send = null;
   try {
-    if (!gmailReady()) return res.status(503).json({ error: 'Gmail is not configured on this deployment.' });
-    const own = await db.collection('users').doc(req.user.uid).get();
-    const g = own.exists ? own.data().gmail : null;
-    if (!g || !g.refresh) return res.status(400).json({ error: 'Connect Gmail first.' });
-    const refresh = tokenVault.decrypt(req.user.uid, g.refresh);
-    if (!refresh) return res.status(400).json({ error: 'That connection needs setting up again.' });
+    const conn = await gmailRefreshFor(req.user.uid);
+    if (conn.error) return res.status(conn.status).json({ error: conn.error });
 
     // Past here nothing may fail with a status: the drip has started.
     send = streamedJson(res);
 
-    const access = await gmail.accessFrom(refresh);
-    const ids = await gmail.search(access);
+    const { ids, messages } = await readBookingMail(conn.refresh);
     if (!ids.length) return send({ trips: [], looked: 0 });
-
-    const messages = [];
-    for (const id of ids) {
-      const m = await gmail.message(access, id).catch(() => null);
-      if (m) messages.push(m);
-    }
     if (!messages.length) return send({ trips: [], looked: ids.length });
 
     const plan = identityLib.planFor(req.user, MODEL_TIERS);
@@ -936,7 +1084,10 @@ app.post('/api/gmail/scan', requireLogin, identity.requireBudget, identity.requi
         'confirmation number, not in a trip of its own. A restaurant or parking booking that is not part of ' +
         'any journey is not a trip - leave it out. Give each trip a short name, the destination, the dates ' +
         'as a readable range, and notes carrying the confirmation numbers, flight numbers, hotel names and ' +
-        'rental-car pickup and return times exactly as written. ' +
+        'rental-car pickup and return times exactly as written. Also list each booking on its own in ' +
+        'bookings, so the trip can show it as a card: its kind, a short title, the company, the confirmation ' +
+        'number, when it starts and ends, the address and phone if given, and a https link to manage it if the ' +
+        'email has one. ' +
         'Ignore marketing, fare alerts, loyalty statements and anything already in the past. ' +
         'If nothing is a real booking, report no trips. Never invent a detail that is not in the emails.',
       tools: [ITINERARY_TOOL],
@@ -958,6 +1109,7 @@ app.post('/api/gmail/scan', requireLogin, identity.requireBudget, identity.requi
         destination: String(t.destination || '').slice(0, 200),
         dateRange: String(t.dateRange || '').slice(0, 120),
         notes: String(t.notes || '').slice(0, 4000),
+        bookings: bookingsLib.validate(t.bookings),
         sources: (t.sourceIds || []).map((id) => byId.get(id)).filter(Boolean)
           .map((m) => ({ from: m.from, subject: m.subject, date: m.date })),
       })),
@@ -966,6 +1118,113 @@ app.post('/api/gmail/scan', requireLogin, identity.requireBudget, identity.requi
     console.error('POST /api/gmail/scan', err);
     if (send) return send({ error: 'Could not read those emails.' });
     res.status(err.status || 500).json({ error: 'Could not read those emails.' });
+  }
+});
+
+/**
+ * Find THIS trip's bookings in Gmail. The trip-level scan above answers "what
+ * trips do I have"; this answers "what have I booked for this one", and
+ * answers it the way chat does - as a proposed bookings list filed into the
+ * trip's chat, with Apply and Discard, because it is a model's reading of
+ * someone's mail and the person decides what is kept.
+ */
+app.post('/api/trips/:id/gmail-bookings', requireLogin, identity.requireBudget, identity.requireDailyCap, async (req, res) => {
+  let send = null;
+  try {
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    const conn = await gmailRefreshFor(req.user.uid);
+    if (conn.error) return res.status(conn.status).json({ error: conn.error, needsConnect: !!conn.needsConnect });
+
+    send = streamedJson(res);
+    const trip = tripOut(owned.doc.id, owned.data);
+    const question = 'Check my Gmail for this trip\u2019s bookings';
+    const { messages } = await readBookingMail(conn.refresh);
+    const current = bookingsLib.validate(owned.data.bookings || []);
+
+    let answer; let proposedBookings = null;
+    if (!messages.length) {
+      answer = 'I looked through your booking emails and found none from the travel companies I check.';
+    } else {
+      const plan = identityLib.planFor(req.user, MODEL_TIERS);
+      const response = await completeTurn({
+        model: plan.model,
+        max_tokens: 8192,
+        system:
+          'You are reading someone\'s booking confirmation emails to find the bookings for ONE trip: "' + (trip.name || '') + '"' +
+          (trip.destination ? ', ' + trip.destination : '') +
+          (trip.dates ? ', ' + trip.dates.start + ' to ' + trip.dates.end : (trip.dateRange ? ', ' + trip.dateRange : '')) + '. ' +
+          'Only bookings for this trip count - its place and dates. Ignore other trips, marketing and receipts for ' +
+          'things already done. Write a short answer saying what you found and which email each came from (sender ' +
+          'and subject). If any are missing from the current list, call propose_bookings with the COMPLETE list - ' +
+          'every current booking kept exactly, with its id, plus the new ones. If nothing is missing, say so and do ' +
+          'not call the tool. Never invent a detail that is not in the emails.\n\nCurrent bookings:\n' + JSON.stringify(current),
+        tools: [bookingsLib.TOOL],
+        messages: [{ role: 'user', content: JSON.stringify(messages.map((m) => ({ from: m.from, subject: m.subject, date: m.date, body: m.body }))) }],
+      }, req.user);
+      const block = response.content.find((b) => b.type === 'tool_use' && b.name === 'propose_bookings');
+      answer = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n\n').trim();
+      if (block && block.input && Array.isArray(block.input.bookings)) {
+        proposedBookings = {
+          summary: String(block.input.summary || 'Bookings from Gmail').slice(0, 300),
+          bookings: bookingsLib.validate(block.input.bookings),
+          basedOn: owned.data.bookingsUpdatedAt || null,
+        };
+      }
+      if (!answer) answer = proposedBookings
+        ? 'From your booking emails: ' + proposedBookings.summary
+        : 'I read ' + messages.length + ' booking emails and found nothing for this trip that is not already here.';
+    }
+    const at = new Date().toISOString();
+    const saved = await owned.ref.collection('messages').add({
+      question, answer, proposedChange: null, proposedBookings, askedAt: at, answeredAt: at,
+    });
+    send({ id: saved.id, question, answer, proposedBookings });
+  } catch (err) {
+    console.error('POST /api/trips/:id/gmail-bookings', err);
+    if (send) return send({ error: err.status === 401 ? 'Google no longer accepts this connection. Reconnect Gmail.' : 'Could not read those emails.' });
+    res.status(500).json({ error: 'Could not read those emails.' });
+  }
+});
+
+/**
+ * Things to do near a trip. A model call with web search, so it sits behind
+ * the budget like every other one; saved on the trip so the Overview can draw
+ * it without paying again. See ideas.js.
+ */
+app.post('/api/trips/:id/ideas', requireLogin, identity.requireBudget, identity.requireDailyCap, async (req, res) => {
+  let send = null;
+  try {
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    const trip = tripOut(owned.doc.id, owned.data);
+    if (!String(trip.destination || '').trim()) return res.status(400).json({ error: 'Add a destination first, under Details.' });
+    send = streamedJson(res);
+    const plan = identityLib.planFor(req.user, MODEL_TIERS);
+    const response = await completeTurn({
+      model: plan.model,
+      max_tokens: 8192,
+      system:
+        'Find the best things to do for a trip to ' + trip.destination +
+        (trip.dates ? ', ' + trip.dates.start + ' to ' + trip.dates.end : (trip.dateRange ? ', ' + trip.dateRange : '')) + '. ' +
+        (trip.notes ? 'What is known about the trip: ' + String(trip.notes).slice(0, 1500) + '. ' : '') +
+        'Use web search. Prefer things that are actually on or open during those dates, and mix it up - food, ' +
+        'outdoors, something special, something easy. Six to eight ideas, each with one sentence on why. Never ' +
+        'invent a price, an opening time or a link: leave it out if you could not confirm it. Then call ' +
+        'things_to_do with the list.',
+      tools: [plan.webSearch, ideasLib.TOOL],
+      messages: [{ role: 'user', content: 'What should we do there?' }],
+    }, req.user);
+    const block = response.content.find((b) => b.type === 'tool_use' && b.name === 'things_to_do');
+    const ideas = ideasLib.validate(block && block.input && block.input.ideas);
+    if (!ideas.length) return send({ error: 'The search came back without a list. Try again in a moment.' });
+    const at = new Date().toISOString();
+    await owned.ref.update({ ideas, ideasAt: at });
+    send({ ideas, ideasAt: at });
+  } catch (err) {
+    console.error('POST /api/trips/:id/ideas', err);
+    if (send) return send({ error: 'Could not find things to do right now.' });
+    res.status(500).json({ error: 'Could not find things to do right now.' });
   }
 });
 
@@ -984,6 +1243,9 @@ app.post('/api/gmail/import', requireLogin, async (req, res) => {
         destination: String(t.destination || '').slice(0, 200),
         dateRange: String(t.dateRange || '').slice(0, 120),
         notes: String(t.notes || '').slice(0, 4000),
+        // Validated again: this list came back from the browser, not from us.
+        bookings: bookingsLib.validate(t.bookings),
+        bookingsUpdatedAt: now,
         status: 'planning',
         ownerId: req.user.uid,
         // So a trip that came out of a mailbox is identifiable later, without

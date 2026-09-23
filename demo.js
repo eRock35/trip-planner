@@ -15,6 +15,22 @@ const DEMO_TRIP = {
   destination: 'Lisbon, Portugal',
   dateRange: 'Oct 1-5, 2026',
   notes: 'Two adults. Want one proper day trip (Sintra), the rest on foot. Flying from Atlanta.',
+  // What the Overview draws as cards. An example trip, labelled as one on the
+  // page, so the confirmation codes are plainly made up.
+  bookings: [
+    { id: 'demoflight01', kind: 'flight', title: 'ATL to LIS - TAP 228', provider: 'TAP Air Portugal', confirmation: 'EXAMPLE1',
+      when: 'Wed, Sep 30 - 6:05 PM', until: 'Thu, Oct 1 - 3:40 PM', date: '2026-09-30' },
+    { id: 'demostay0001', kind: 'stay', title: 'Memmo Alfama - river-view room', provider: 'Booking.com', confirmation: 'EXAMPLE2',
+      when: 'Thu, Oct 1 - from 3 PM', until: 'Mon, Oct 5 - by 11 AM', date: '2026-10-01',
+      address: 'Travessa Merceeiras 27, 1100-348 Lisboa', notes: 'Rooftop bar closes at midnight; ask for a room away from the terrace.' },
+    { id: 'demotrain001', kind: 'transport', title: 'Rossio to Sintra', provider: 'CP', when: 'Sat, Oct 3 - 9:11 AM', date: '2026-10-03',
+      notes: 'No booking needed - tap in with a Viva Viagem card.' },
+  ],
+  ideas: [
+    { name: 'Miradouro da Senhora do Monte', kind: 'View', why: 'The highest viewpoint in the old city, and quiet at sunset.', where: 'Gra\u00e7a, 15 min walk' },
+    { name: 'Time Out Market', kind: 'Food', why: 'Lisbon\u2019s best-known kitchens under one roof - easy for a first night.', where: 'Cais do Sodr\u00e9' },
+    { name: 'LX Factory', kind: 'Shopping', why: 'Old industrial complex turned bookshops, caf\u00e9s and Sunday market.', where: 'Alc\u00e2ntara' },
+  ],
   status: 'locked',
   createdAt: '2026-08-14T15:02:11.000Z',
   updatedAt: '2026-09-18T21:40:03.000Z',

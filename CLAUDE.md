@@ -320,6 +320,51 @@ Everything that fails with a status — the 400, `requireLogin`,
 `!res.ok || data.error`. The cron sweep is untouched: nothing is waiting on
 it, so it keeps ordinary status codes.
 
+## The trip Overview (2026-09-23)
+
+Erik asked for a trip to open "more rich like the Santa Rosa [app] with the
+overview, weather etc". A trip now opens on an **Overview** tab — tabs are
+Overview, Itinerary, Chat, Watches, Details — styled on the vacation app's own
+components (the weather gradient, the dark countdown, the grouped booking
+cards) so the two read as related. That app is hand-built for one trip; this
+one draws every section from the trip's data, and each section hides or turns
+into a next step when it has nothing to show.
+
+- **Dates** — `tripdates.js`. The itinerary's ISO dates win; otherwise "When"
+  is parsed ("Sep 23-26, 2026", "March 27", "December 2026"). A month-only
+  answer is `precision: 'month'` and the page says "about", never ticks down
+  to a midnight nobody chose. Months match as whole words only: "maybe next
+  year" was once read as May. Every trip response carries `dates`.
+- **Weather** — `weather.js`, `GET /api/trips/:id/weather`. **MET Norway**
+  for the forecast and **OpenStreetMap Nominatim** for the place, both free
+  for commercial use with attribution (printed on the card). **Not
+  Open-Meteo**: its free tier is non-commercial, and this site sells
+  memberships. The place is geocoded once and stored on the trip (`geo`),
+  redone only when the destination text changes; a search that found nothing
+  is remembered, one that failed is not. Nominatim is limited to one request a
+  second app-wide, per its policy. No model call, so no budget. Every failure
+  is a 200 saying there is no weather — decoration must not break a page.
+  Forecast covers ~9 days; further out the card says when it opens. Days whose
+  afternoon the forecast does not cover are dropped (they read "73 / 73").
+- **Bookings** — `bookings.js`, `trip.bookings` + `bookingsUpdatedAt`. They
+  had nowhere to go but free-text notes. They arrive from Gmail import, from
+  **Find in Gmail** on a trip (`POST /api/trips/:id/gmail-bookings`, filed
+  into Chat as a proposal), and from chat's `propose_bookings` tool. All three
+  are someone else's text, so `validate()` runs on every one — only https
+  becomes a link, only a phone number becomes `tel:`, markup stripped — and on
+  import too, because the browser hands the scan result back. Apply / Discard
+  and the stale guard are the itinerary's, on their own clock
+  (`bookingsState` on the message). Delete is a direct tap, no model.
+- **Things to do** — `ideas.js`, `POST /api/trips/:id/ideas`. Web search,
+  metered, saved on the trip so drawing the Overview never buys it again.
+  Saved without an Apply: it is a labelled list of suggestions, not a
+  decision.
+- The example trip has bookings and ideas too, with plainly made-up
+  confirmation codes; its edit buttons are hidden.
+
+Tests: `tripdates.js`, `weather.js`, `bookings.js`, `trip-bookings.js`,
+`trip-ideas.js`. Rendered at phone and desktop width before shipping.
+
 ## Reading Gmail for bookings (2026-09-21)
 
 Trip Planner can look through someone's booking confirmations and offer to

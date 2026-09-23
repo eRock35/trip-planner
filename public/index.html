@@ -222,6 +222,88 @@
   body.kb-open .tabbar { transform: translateY(110%); }
   .tabpanel { display: flex; flex-direction: column; gap: 14px; }
 
+  /* ---------- Overview ----------
+   * The weather card and countdown are the vacation app's own, so the two
+   * apps read as related: the same gradient, the same big thin temperature,
+   * the same dark countdown with tabular numbers. */
+  .ov-hero { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  .ov-hero:empty, .ov-hero:not(:has(section:not([hidden]))) { display: none; }
+  .ov-weather, .ov-countdown, .ov-card, .ov-booking { border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; }
+  .ov-card, .ov-booking { background: var(--card); }
+  .ov-weather { padding: 18px 18px 14px; color: #fff; background: linear-gradient(160deg, #4A90D9, #7FB8E8); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ov-weather { background: linear-gradient(160deg, #0B2A4A, #1C4A73); } }
+  :root[data-theme="dark"] .ov-weather { background: linear-gradient(160deg, #0B2A4A, #1C4A73); }
+  .wx-place { font-size: 15px; font-weight: 600; opacity: .95; }
+  .wx-checked { font-size: 11px; opacity: .75; margin-top: 2px; }
+  .wx-now { display: flex; align-items: center; gap: 12px; margin: 8px 0 10px; }
+  .wx-temp { font-size: 56px; font-weight: 200; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .wx-cond { font-size: 14px; opacity: .9; }
+  .wx-days { display: flex; gap: 8px; margin: 10px -18px 8px; padding: 0 18px 4px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .wx-days::-webkit-scrollbar { display: none; }
+  .wx-day { flex: 0 0 auto; width: 62px; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 4px;
+            border-radius: 12px; background: rgba(255,255,255,.12); font-size: 11px; }
+  .wx-day.trip { background: rgba(255,255,255,.26); box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.55); }
+  .wx-day .d { font-weight: 600; opacity: .9; } .wx-day .i { font-size: 20px; line-height: 1.2; } .wx-day .r { opacity: .9; font-variant-numeric: tabular-nums; }
+  .wx-note { font-size: 13px; line-height: 1.4; background: rgba(255,255,255,.16); border-radius: 12px; padding: 9px 12px; }
+  .wx-credit { font-size: 10.5px; opacity: .6; margin-top: 8px; }
+
+  .ov-countdown { padding: 16px 18px; background: #1C1C1E; color: #fff; text-align: center; display: flex; flex-direction: column; justify-content: center; min-height: 130px; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ov-countdown { background: #0B0B0C; } }
+  :root[data-theme="dark"] .ov-countdown { background: #0B0B0C; }
+  .cd-label { font-size: 13px; font-weight: 500; color: rgba(255,255,255,.7); margin-bottom: 10px; }
+  .cd-grid { display: flex; justify-content: center; gap: 22px; }
+  .cd-unit { display: flex; flex-direction: column; align-items: center; min-width: 46px; }
+  .cd-unit .n { font-size: 32px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .cd-unit .u { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: rgba(255,255,255,.55); margin-top: 2px; }
+  .cd-big { font-size: 30px; font-weight: 700; letter-spacing: -.01em; }
+  .cd-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.15); margin: 12px 8px 0; overflow: hidden; }
+  .cd-bar i { display: block; height: 100%; background: var(--green); border-radius: 3px; }
+
+  .ov-group { display: flex; flex-direction: column; }
+  .ov-head { display: flex; align-items: center; justify-content: space-between; }
+  .ov-action { padding: 0; min-height: 0; font-size: 14px; text-transform: none; letter-spacing: 0; }
+  .ov-card { padding: 14px 16px; }
+  .ov-next-title { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+  .ov-next .blocks { margin: 0; }
+  .ov-cta { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+  .ov-cta p { margin: 0; color: var(--label-2); font-size: 14px; line-height: 1.45; }
+
+  .ov-bookings { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  .ov-booking { position: relative; }
+  .bk-head { display: flex; align-items: center; gap: 10px; padding: 14px 44px 8px 16px; }
+  .bk-icon { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 9px; background: var(--tint-soft); display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .bk-title { font-size: 16px; font-weight: 600; line-height: 1.25; }
+  .bk-kind { font-size: 12px; color: var(--label-2); text-transform: uppercase; letter-spacing: .03em; font-weight: 600; }
+  .bk-del { position: absolute; top: 10px; right: 10px; width: 30px; height: 30px; border-radius: 50%; border: none; background: none; color: var(--label-3); display: flex; align-items: center; justify-content: center; }
+  .bk-del svg { width: 14px; height: 14px; }
+  .bk-del:active { background: var(--fill); }
+  .glist { display: flex; flex-direction: column; }
+  .grow { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; min-height: 42px; font-size: 15px; }
+  .grow:not(:last-child)::after { content: ""; position: absolute; left: 16px; right: 0; bottom: 0; height: 1px; background: var(--sep); transform: scaleY(.5); transform-origin: bottom; }
+  .grow .g-label { color: var(--label-2); flex: 0 0 auto; }
+  .grow .g-value { font-weight: 500; text-align: right; min-width: 0; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+  .grow a.g-value { color: var(--tint); text-decoration: none; }
+  .bk-note { padding: 10px 16px 14px; font-size: 13px; color: var(--label-2); line-height: 1.4; }
+  .copy-chip { position: relative; font: inherit; font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; background: var(--fill); color: var(--tint); border: none; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+  .copy-chip::before { content: ""; position: absolute; inset: -7px -6px; }
+  .copy-chip.copied { background: var(--green); color: #04280f; }
+
+  .ov-ideas { display: flex; flex-direction: column; }
+  .idea { display: flex; flex-direction: column; gap: 3px; padding: 12px 16px; position: relative; }
+  .idea:not(:last-child)::after { content: ""; position: absolute; left: 16px; right: 0; bottom: 0; height: 1px; background: var(--sep); transform: scaleY(.5); transform-origin: bottom; }
+  .idea-top { display: flex; align-items: baseline; gap: 8px; }
+  .idea-name { font-size: 15px; font-weight: 600; } a.idea-name { color: var(--tint); text-decoration: none; }
+  .idea-kind { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--label-2); background: var(--fill); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+  .idea-why { font-size: 14px; color: var(--label); line-height: 1.4; }
+  .idea-meta { font-size: 12.5px; color: var(--label-2); }
+  .ov-notes { white-space: pre-wrap; font-size: 15px; line-height: 1.45; -webkit-user-select: text; user-select: text; }
+  .ov-empty { color: var(--label-2); font-size: 14px; line-height: 1.45; }
+
+  @media (min-width: 700px) {
+    .ov-hero { grid-template-columns: 3fr 2fr; }
+    .ov-bookings { grid-template-columns: 1fr 1fr; }
+  }
+
   /* ---------- Trip view ---------- */
   .trip-head { padding: 6px 4px 12px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
   .trip-head h1 { font-size: 28px; }
@@ -246,6 +328,7 @@
   .proposed { max-width: 92%; background: var(--card); border: 1.5px solid var(--tint); border-radius: 16px; padding: 12px 14px; box-shadow: var(--shadow); }
   .pc-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--tint); margin-bottom: 4px; }
   /* A decided proposal: quieter border, and the outcome where the buttons were. */
+  .pb-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 12px; font-size: 14px; }
   .proposed.done { border-color: var(--sep); }
   .proposed.done .pc-label { color: var(--label-2); }
   .pc-done { margin-top: 10px; font-size: 14px; color: var(--label-2); line-height: 1.4; }
@@ -366,6 +449,7 @@
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
+    <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/></symbol>
     <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8.5 8.5 0 0 1-12.6 7.4L3.5 20.5l1.2-4.4A8.5 8.5 0 1 1 21 12z"/></symbol>
     <symbol id="i-cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
     <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
@@ -429,7 +513,39 @@
       </div>
     </div>
 
-    <div id="tab-chat" class="tabpanel" role="tabpanel">
+    <!-- Overview: the trip at a glance, the way the vacation app opens. Every
+         section draws from the trip's own data and hides when it has nothing
+         to say, so a trip that is only a name still reads as a page with
+         next steps rather than a stack of empty boxes. -->
+    <div id="tab-overview" class="tabpanel" role="tabpanel">
+      <div class="ov-hero">
+        <section class="ov-weather" id="ovWeather" hidden aria-label="Weather"></section>
+        <section class="ov-countdown" id="ovCountdown" hidden aria-label="Countdown"></section>
+      </div>
+
+      <div class="ov-group" id="ovNextGroup" hidden>
+        <div class="section-header" id="ovNextTitle">Up next</div>
+        <div class="ov-card" id="ovNext"></div>
+      </div>
+
+      <div class="ov-group">
+        <div class="section-header ov-head"><span>Bookings</span><button type="button" class="link-btn ov-action" id="ovGmailBtn">Find in Gmail</button></div>
+        <div class="ov-bookings" id="ovBookings"></div>
+      </div>
+
+      <div class="ov-group">
+        <div class="section-header ov-head"><span>Things to do</span><button type="button" class="link-btn ov-action" id="ovIdeasBtn">Find ideas</button></div>
+        <div id="ovIdeas"></div>
+        <div class="status" id="ovIdeasStatus"></div>
+      </div>
+
+      <div class="ov-group" id="ovNotesGroup" hidden>
+        <div class="section-header">Notes</div>
+        <div class="ov-card ov-notes" id="ovNotes"></div>
+      </div>
+    </div>
+
+    <div id="tab-chat" class="tabpanel" role="tabpanel" hidden>
       <div class="chat-log dk-stream" id="chatLog">
         <div class="empty chat-empty" id="chatEmpty">
           <svg><use href="#i-chat"/></svg>
@@ -490,8 +606,9 @@
 
 <nav class="tabbar dk-tabbar" id="tabbar" role="tablist" aria-label="Trip sections" hidden>
   <div class="tabbar-inner">
-    <button type="button" role="tab" class="tab" id="tab-btn-chat" aria-selected="true" aria-controls="tab-chat"><svg><use href="#i-chat"/></svg>Chat</button>
+    <button type="button" role="tab" class="tab" id="tab-btn-overview" aria-selected="true" aria-controls="tab-overview"><svg><use href="#i-home"/></svg>Overview</button>
     <button type="button" role="tab" class="tab" id="tab-btn-itinerary" aria-selected="false" aria-controls="tab-itinerary"><svg><use href="#i-cal"/></svg>Itinerary</button>
+    <button type="button" role="tab" class="tab" id="tab-btn-chat" aria-selected="false" aria-controls="tab-chat"><svg><use href="#i-chat"/></svg>Chat</button>
     <button type="button" role="tab" class="tab" id="tab-btn-watches" aria-selected="false" aria-controls="tab-watches"><svg><use href="#i-eye"/></svg>Watches</button>
     <button type="button" role="tab" class="tab" id="tab-btn-details" aria-selected="false" aria-controls="tab-details"><svg><use href="#i-info"/></svg>Details</button>
   </div>
@@ -1439,10 +1556,12 @@
   }
 
   /* ---------- Trip detail: tabs ---------- */
-  var tripTabs = ["chat", "itinerary", "watches", "details"];
-  var currentTab = "chat";
+  var tripTabs = ["overview", "chat", "itinerary", "watches", "details"];
+  var currentTab = "overview";
   function selectTripTab(name) {
     currentTab = name;
+    // The countdown ticks only while it can be seen.
+    if (name === "overview") startCountdown(); else stopCountdown();
     tripTabs.forEach(function (t) {
       $("tab-" + t).hidden = t !== name;
       $("tab-btn-" + t).setAttribute("aria-selected", String(t === name));
@@ -1466,7 +1585,8 @@
     qaDocs = []; watches = []; itineraryDays = [];
     $("tripName").textContent = "Loading…"; $("tripDest").textContent = ""; navTitle.textContent = "";
     $("tripBadge").className = "badge"; $("tripBadge").textContent = "";
-    selectTripTab("chat");
+    clearOverview();
+    selectTripTab("overview");
     try {
       var res = await fetch("/api/trips/" + id);
       if (!res.ok) { goToTrips(); return; }  // 401 lands on the signed-out state
@@ -1491,8 +1611,378 @@
 
     itineraryDays = Array.isArray(currentTrip.days) ? currentTrip.days : [];
     renderItinerary(itineraryDays);
+    renderOverview();
+    loadWeather(id);
     refreshChat();
     refreshWatches();
+  }
+
+  /* ---------- Overview ----------
+   * The trip at a glance: weather, a countdown, what is next, the bookings,
+   * things to do, notes. Everything is drawn from the trip itself, and each
+   * section hides or turns into a next step when it has nothing to show. */
+  var BOOKING_ICON = { flight: "✈️", stay: "🏠", car: "🚗", reservation: "🍽️", activity: "🎟️", transport: "🚆", other: "📌" };
+  var BOOKING_KIND = { flight: "Flight", stay: "Stay", car: "Rental car", reservation: "Reservation", activity: "Tour or ticket", transport: "Train or bus", other: "Booking" };
+  var WX_ICON = { sun: "☀️", partly: "⛅", cloud: "☁️", rain: "🌧️", storm: "⛈️", snow: "❄️" };
+  var cdTimer = null;
+
+  function clearOverview() {
+    stopCountdown();
+    ["ovWeather", "ovCountdown", "ovNextGroup", "ovNotesGroup"].forEach(function (id) { $(id).hidden = true; });
+    $("ovWeather").innerHTML = ""; $("ovBookings").innerHTML = ""; $("ovIdeas").innerHTML = "";
+    setStatus($("ovIdeasStatus"), "");
+  }
+
+  function renderOverview() {
+    if (!currentTrip) return;
+    var demoTrip = !!currentTrip.demo;
+    $("ovGmailBtn").hidden = demoTrip;
+    $("ovIdeasBtn").hidden = demoTrip;
+    renderCountdown();
+    renderNextUp();
+    renderBookings();
+    renderIdeas();
+    var notes = String(currentTrip.notes || "").trim();
+    $("ovNotesGroup").hidden = !notes;
+    $("ovNotes").textContent = notes;
+  }
+
+  // ---- dates: local midnight of an ISO day, and whole days between two ----
+  function dayStart(iso) { var d = new Date(iso + "T00:00:00"); return isNaN(d) ? null : d; }
+  function todayIso() { var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+  function daysBetween(a, b) { return Math.round((dayStart(b) - dayStart(a)) / 86400000); }
+  function niceDay(iso, withWeekday) {
+    var d = dayStart(iso); if (!d) return iso;
+    return d.toLocaleDateString(undefined, withWeekday ? { weekday: "short", month: "short", day: "numeric" } : { month: "short", day: "numeric" });
+  }
+
+  function renderCountdown() {
+    var box = $("ovCountdown"), dates = currentTrip.dates;
+    stopCountdown();
+    if (!dates) { box.hidden = true; return; }
+    box.hidden = false;
+    var today = todayIso(), place = currentTrip.destination || currentTrip.name || "your trip";
+    if (dates.precision === "month") {
+      // "December 2026" is a month, not a date: say about how long, never
+      // tick down to a midnight nobody chose.
+      var days = daysBetween(today, dates.start);
+      var weeks = Math.round(days / 7), months = Math.round(days / 30.4);
+      var words = days <= 0 ? "This month" : months >= 2 ? "About " + months + " months" : weeks >= 2 ? "About " + weeks + " weeks" : "Soon";
+      box.innerHTML = '<div class="cd-label">' + escapeHtml(place) + ' · ' + escapeHtml(currentTrip.dateRange || "") + '</div>' +
+        '<div class="cd-big">' + escapeHtml(words) + '</div>' +
+        '<div class="cd-label" style="margin:8px 0 0">Add exact dates under Details for a real countdown</div>';
+      return;
+    }
+    if (today < dates.start) {
+      box.innerHTML = '<div class="cd-label">Until ' + escapeHtml(place) + ' · ' + escapeHtml(niceDay(dates.start, true)) + '</div>' +
+        '<div class="cd-grid">' +
+          '<div class="cd-unit"><span class="n" id="cdD">0</span><span class="u">days</span></div>' +
+          '<div class="cd-unit"><span class="n" id="cdH">00</span><span class="u">hrs</span></div>' +
+          '<div class="cd-unit"><span class="n" id="cdM">00</span><span class="u">min</span></div>' +
+          '<div class="cd-unit"><span class="n" id="cdS">00</span><span class="u">sec</span></div>' +
+        '</div>';
+      tick();
+      if (currentTab === "overview") startCountdown();
+      return;
+    }
+    if (today <= dates.end) {
+      var total = daysBetween(dates.start, dates.end) + 1, n = daysBetween(dates.start, today) + 1;
+      box.innerHTML = '<div class="cd-label">You’re in ' + escapeHtml(place) + '</div>' +
+        '<div class="cd-big">' + (total > 1 ? "Day " + n + " of " + total : "Today’s the day") + '</div>' +
+        '<div class="cd-bar"><i style="width:' + Math.round((n / total) * 100) + '%"></i></div>';
+      return;
+    }
+    var ago = daysBetween(dates.end, today);
+    box.innerHTML = '<div class="cd-label">' + escapeHtml(place) + '</div>' +
+      '<div class="cd-big">' + (ago <= 1 ? "Just got back" : "Back " + ago + " days") + '</div>' +
+      '<div class="cd-label" style="margin:8px 0 0">Hope it was a good one.</div>';
+  }
+  function tick() {
+    var dates = currentTrip && currentTrip.dates;
+    var el = $("cdD"); if (!el || !dates) return;
+    var ms = Math.max(0, dayStart(dates.start) - Date.now());
+    var sec = Math.floor(ms / 1000);
+    el.textContent = Math.floor(sec / 86400);
+    $("cdH").textContent = String(Math.floor(sec / 3600) % 24).padStart(2, "0");
+    $("cdM").textContent = String(Math.floor(sec / 60) % 60).padStart(2, "0");
+    $("cdS").textContent = String(sec % 60).padStart(2, "0");
+    if (ms === 0) renderCountdown();
+  }
+  function startCountdown() { if (!cdTimer && $("cdD")) cdTimer = setInterval(tick, 1000); }
+  function stopCountdown() { if (cdTimer) { clearInterval(cdTimer); cdTimer = null; } }
+
+  function renderNextUp() {
+    var group = $("ovNextGroup"), box = $("ovNext"), days = itineraryDays || [];
+    var dates = currentTrip.dates, today = todayIso();
+    var demoTrip = !!currentTrip.demo;
+    if (!days.length) {
+      if (demoTrip) { group.hidden = true; return; }
+      group.hidden = false;
+      $("ovNextTitle").textContent = "The days";
+      box.innerHTML = '<div class="ov-cta"><p>No itinerary yet. Ask for one and it shows up here and under Itinerary — nothing is saved until you tap Apply.</p>' +
+        '<button type="button" class="btn btn-secondary btn-sm" id="ovPlanBtn">Plan the days</button></div>';
+      $("ovPlanBtn").addEventListener("click", function () { askInChat("Plan the days for this trip."); });
+      return;
+    }
+    var pick = null, title = "Up next";
+    var byDate = days.filter(function (d) { return /^\d{4}-\d{2}-\d{2}$/.test(d.date); });
+    var todays = byDate.filter(function (d) { return d.date === today; })[0];
+    if (todays) { pick = todays; title = "Today"; }
+    else {
+      var next = byDate.filter(function (d) { return d.date > today; })[0];
+      if (next) { pick = next; title = daysBetween(today, next.date) === 1 ? "Tomorrow" : "First day"; }
+      else if (!byDate.length) { pick = days[0]; title = "Day 1"; }
+    }
+    if (!pick || (dates && today > dates.end)) { group.hidden = true; return; }
+    group.hidden = false;
+    $("ovNextTitle").textContent = title;
+    box.className = "ov-card ov-next";
+    box.innerHTML = '<div class="ov-next-title">' + escapeHtml(pick.title || "") + (pick.dateLabel ? ' <span class="muted">· ' + escapeHtml(pick.dateLabel) + '</span>' : '') + '</div>' +
+      '<ul class="blocks">' + (pick.blocks || []).map(function (b) {
+        return '<li><span class="b-time">' + escapeHtml(b[0]) + '</span><span>' + escapeHtml(b[1]) + '</span></li>';
+      }).join("") + '</ul>' +
+      '<button type="button" class="link-btn" id="ovAllDays">See every day</button>';
+    $("ovAllDays").addEventListener("click", function () { selectTripTab("itinerary"); });
+  }
+
+  function renderBookings() {
+    var box = $("ovBookings"), list = Array.isArray(currentTrip.bookings) ? currentTrip.bookings : [];
+    var demoTrip = !!currentTrip.demo;
+    if (!list.length) {
+      box.innerHTML = '<div class="ov-card ov-cta"><p>' + (demoTrip
+        ? "No bookings on the example trip."
+        : "No bookings yet. Tell Chat about one — “I rented a car from National, confirmation 2136112815” — or find them in Gmail.") +
+        '</p></div>';
+      return;
+    }
+    box.innerHTML = list.map(function (b) {
+      var rows = [];
+      if (b.confirmation) rows.push(['Confirmation', '<button type="button" class="copy-chip" data-copy="' + escapeHtml(b.confirmation) + '">' + escapeHtml(b.confirmation) + '</button>']);
+      if (b.when) rows.push([b.kind === "stay" ? "Check-in" : b.kind === "car" ? "Pickup" : "When", escapeHtml(b.when)]);
+      if (b.until) rows.push([b.kind === "stay" ? "Checkout" : b.kind === "car" ? "Return" : "Until", escapeHtml(b.until)]);
+      if (b.address) rows.push(['Address', '<a class="g-value" href="https://maps.apple.com/?q=' + encodeURIComponent(b.address) + '" target="_blank" rel="noopener">' + escapeHtml(b.address) + '</a>']);
+      if (b.phone) rows.push(['Phone', '<a class="g-value" href="tel:' + escapeHtml(b.phone.replace(/[^\d+]/g, "")) + '">' + escapeHtml(b.phone) + '</a>']);
+      if (b.url) rows.push(['Manage', '<a class="g-value" href="' + escapeHtml(b.url) + '" target="_blank" rel="noopener">Open ' + escapeHtml(b.provider || "booking") + '</a>']);
+      return '<div class="ov-booking" data-id="' + escapeHtml(b.id) + '">' +
+        '<div class="bk-head"><span class="bk-icon" aria-hidden="true">' + (BOOKING_ICON[b.kind] || BOOKING_ICON.other) + '</span>' +
+          '<span><div class="bk-kind">' + escapeHtml(BOOKING_KIND[b.kind] || "Booking") + (b.provider ? " · " + escapeHtml(b.provider) : "") + '</div>' +
+          '<div class="bk-title">' + escapeHtml(b.title) + '</div></span></div>' +
+        (demoTrip ? '' : '<button type="button" class="bk-del" data-del="' + escapeHtml(b.id) + '" aria-label="Remove this booking">' + svgUse("i-x") + '</button>') +
+        (rows.length ? '<div class="glist">' + rows.map(function (r) {
+          return '<div class="grow"><span class="g-label">' + r[0] + '</span>' + (/^<a /.test(r[1]) ? r[1] : '<span class="g-value">' + r[1] + '</span>') + '</div>';
+        }).join("") + '</div>' : '') +
+        (b.notes ? '<div class="bk-note">' + escapeHtml(b.notes) + '</div>' : '') +
+      '</div>';
+    }).join("");
+  }
+
+  $("ovBookings").addEventListener("click", async function (e) {
+    var chip = e.target.closest(".copy-chip");
+    if (chip) {
+      var val = chip.getAttribute("data-copy");
+      try { await navigator.clipboard.writeText(val); } catch (err) {}
+      chip.classList.add("copied"); var was = chip.textContent; chip.textContent = "Copied";
+      setTimeout(function () { chip.classList.remove("copied"); chip.textContent = was; }, 1200);
+      return;
+    }
+    var del = e.target.closest("[data-del]");
+    if (!del) return;
+    var id = del.getAttribute("data-del");
+    var b = (currentTrip.bookings || []).filter(function (x) { return x.id === id; })[0];
+    if (!window.confirm("Remove " + (b ? "“" + b.title + "”" : "this booking") + " from the trip?")) return;
+    try {
+      var res = await fetch("/api/trips/" + currentTripId + "/bookings/" + encodeURIComponent(id), { method: "DELETE" });
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok) throw new Error();
+      currentTrip.bookings = data.bookings || [];
+      renderBookings();
+      toast("Removed");
+    } catch (err) { toast("Couldn’t remove that"); }
+  });
+
+  function renderIdeas() {
+    var box = $("ovIdeas"), list = Array.isArray(currentTrip.ideas) ? currentTrip.ideas : [];
+    $("ovIdeasBtn").textContent = list.length ? "Refresh" : "Find ideas";
+    if (!list.length) {
+      box.innerHTML = '<div class="ov-card ov-cta"><p>' + (currentTrip.destination
+        ? "Tap Find ideas and Claude will search for things worth doing in " + escapeHtml(currentTrip.destination) + (currentTrip.dates ? " around your dates" : "") + "."
+        : "Add a destination under Details and Claude can find things to do there.") + '</p></div>';
+      return;
+    }
+    box.innerHTML = '<div class="ov-card ov-ideas" style="padding:0">' + list.map(function (i) {
+      var meta = [i.where, i.when, i.cost].filter(Boolean).map(escapeHtml).join(" · ");
+      var name = i.url ? '<a class="idea-name" href="' + escapeHtml(i.url) + '" target="_blank" rel="noopener">' + escapeHtml(i.name) + '</a>' : '<span class="idea-name">' + escapeHtml(i.name) + '</span>';
+      return '<div class="idea"><div class="idea-top">' + name + (i.kind ? '<span class="idea-kind">' + escapeHtml(i.kind) + '</span>' : '') + '</div>' +
+        (i.why ? '<div class="idea-why">' + escapeHtml(i.why) + '</div>' : '') +
+        (meta ? '<div class="idea-meta">' + meta + '</div>' : '') + '</div>';
+    }).join("") + '</div>';
+  }
+
+  $("ovIdeasBtn").addEventListener("click", async function () {
+    var btn = this, status = $("ovIdeasStatus"), id = currentTripId;
+    if (!currentTrip.destination) { selectTripTab("details"); $("dDest").focus(); return; }
+    btn.disabled = true;
+    setStatus(status, "Searching… this takes a minute or two.");
+    try {
+      var res = await fetch("/api/trips/" + id + "/ideas", { method: "POST" });
+      if (res.status === 401) { showAuthRequired(status); return; }
+      if (res.status === 402 || res.status === 503) { await showSpendBlocked(status, res); return; }
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok || data.error) throw new Error(data.error || "failed");
+      if (currentTripId !== id) return;
+      currentTrip.ideas = data.ideas; currentTrip.ideasAt = data.ideasAt;
+      renderIdeas();
+      setStatus(status, "");
+    } catch (e) { setStatus(status, (e && e.message && e.message !== "failed") ? e.message : "Couldn’t find ideas right now. Try again.", "error"); }
+    finally { btn.disabled = false; }
+  });
+
+  /** Find THIS trip's bookings in Gmail. Filed into Chat, because what it
+   *  finds is a proposal to Apply or Discard like any other. */
+  $("ovGmailBtn").addEventListener("click", async function () {
+    await refreshGmail();
+    if (!gmailState.available) { toast("Gmail isn’t set up on this app yet"); return; }
+    if (!gmailState.connected) { openGmailConsent(); return; }
+    runChatAction("Check my Gmail for this trip’s bookings", "/api/trips/" + currentTripId + "/gmail-bookings", "Reading your booking emails…");
+  });
+
+  function askInChat(text) {
+    selectTripTab("chat");
+    chatText.value = text; autoGrowChatText(); chatText.focus();
+  }
+
+  /** A server action whose answer belongs in the chat, drawn the way a chat
+   *  turn is: the question now, the answer when it lands. */
+  async function runChatAction(label, url, working) {
+    var id = currentTripId;
+    selectTripTab("chat");
+    var entry = { question: label, answer: null, askedAt: new Date().toISOString() };
+    qaDocs.push(entry); renderChat(); scrollChatToEnd();
+    setStatus(chatStatus, working);
+    try {
+      var res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      if (res.status === 402 || res.status === 503) { entry.answer = await showSpendBlocked(chatStatus, res); renderChat(); return; }
+      if (res.status === 401) { showAuthRequired(chatStatus); entry.answer = "Please sign in first."; renderChat(); return; }
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok || data.error) throw new Error(data.error || "failed");
+      if (currentTripId !== id) return;
+      entry.answer = data.answer; entry.id = data.id;
+      entry.proposedBookings = data.proposedBookings || null;
+      setStatus(chatStatus, ""); renderChat(); scrollChatToEnd();
+    } catch (e) {
+      entry.answer = "⚠️ " + ((e && e.message && e.message !== "failed") ? e.message : "Couldn’t do that. Try again.");
+      setStatus(chatStatus, ""); renderChat();
+    }
+  }
+
+  // ---- Weather ----
+  async function loadWeather(id) {
+    var box = $("ovWeather");
+    var path = currentTrip && currentTrip.demo ? "/api/trips/demo/weather" : "/api/trips/" + id + "/weather";
+    try {
+      var res = await fetch(path);
+      if (!res.ok || currentTripId !== id) return;
+      renderWeather(await res.json());
+    } catch (e) { box.hidden = true; }
+  }
+
+  function renderWeather(w) {
+    var box = $("ovWeather");
+    if (!w || w.status === "past" || w.status === "unavailable") { box.hidden = true; return; }
+    if (w.status === "no-place") {
+      // Only worth a word when there IS a destination Google-level maps could
+      // not place; with none at all, the Details tab is the obvious next step.
+      if (!currentTrip.destination || currentTrip.demo) { box.hidden = true; return; }
+      box.hidden = false;
+      box.innerHTML = '<div class="wx-place">Weather</div><div class="wx-note" style="margin-top:8px">Couldn’t find “' + escapeHtml(currentTrip.destination) +
+        '” on the map. A town and state or country under Details will bring the forecast here.</div>';
+      return;
+    }
+    box.hidden = false;
+    var place = (w.place && w.place.name) || currentTrip.destination || "";
+    if (w.status === "later") {
+      box.innerHTML = '<div class="wx-place">' + escapeHtml(place) + '</div>' +
+        '<div class="wx-now"><div class="wx-temp" style="font-size:40px">🌤️</div><div class="wx-cond">The forecast opens around ' + escapeHtml(niceDay(w.opensOn, true)) + ', about nine days before you go.</div></div>' +
+        '<div class="wx-credit">' + escapeHtml(w.attribution || "") + '</div>';
+      return;
+    }
+    var checked = w.checkedAt ? new Date(w.checkedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
+    var days = (w.days || []).map(function (d) {
+      var label = d.date === (w.today || todayIso()) ? "Today" : dayStart(d.date).toLocaleDateString(undefined, { weekday: "short" });
+      return '<div class="wx-day' + (d.inTrip ? " trip" : "") + '" title="' + escapeHtml(d.label) + '">' +
+        '<span class="d">' + escapeHtml(label) + '</span><span class="i">' + (WX_ICON[d.icon] || WX_ICON.cloud) + '</span>' +
+        '<span class="r">' + d.hi + '° / ' + d.lo + '°</span></div>';
+    }).join("");
+    var tripDays = (w.days || []).filter(function (d) { return d.inTrip; });
+    var wet = tripDays.filter(function (d) { return d.icon === "rain" || d.icon === "storm"; });
+    var note = w.tripDays
+      ? (wet.length ? "Rain likely on " + wet.map(function (d) { return niceDay(d.date, true); }).join(", ") + ". Your trip days are outlined."
+                    : "Your trip days are outlined" + (tripDays.length ? " — no rain in the forecast for them." : "."))
+      : "The next few days there. Add exact dates under Details and your trip days will be marked.";
+    box.innerHTML = '<div class="wx-place">' + escapeHtml(place) + '</div>' +
+      (checked ? '<div class="wx-checked">Checked ' + escapeHtml(checked) + '</div>' : '') +
+      (w.now ? '<div class="wx-now"><div class="wx-temp">' + w.now.temp + '°</div><div class="wx-cond">' + escapeHtml(w.now.label || "") + ' · right now</div></div>' : '') +
+      '<div class="wx-days">' + days + '</div>' +
+      '<div class="wx-note">' + escapeHtml(note) + '</div>' +
+      '<div class="wx-credit">' + escapeHtml(w.attribution || "") + '</div>';
+  }
+
+  // ---- bookings proposals in Chat ----
+  function bookingsCardHtml(doc, idx) {
+    var pb = doc.proposedBookings;
+    if (!pb || !Array.isArray(pb.bookings)) return "";
+    var list = '<div class="pb-list">' + pb.bookings.map(function (b) {
+      return '<div>' + (BOOKING_ICON[b.kind] || BOOKING_ICON.other) + ' ' + escapeHtml(b.title) + (b.confirmation ? ' <span class="muted">· ' + escapeHtml(b.confirmation) + '</span>' : '') + '</div>';
+    }).join("") + '</div>';
+    var st = doc.bookingsState;
+    if (st) {
+      var said = st === "applied" ? "✓ Saved to the trip’s bookings."
+        : st === "stale" ? "Not saved: the bookings changed after this was suggested, and saving it would have undone that. Ask again."
+        : "Discarded.";
+      return '<div class="msg-row a"><div class="proposed done' + (st === "applied" ? " ok" : "") + '"><div class="pc-label">Proposed bookings</div>' +
+        '<div class="pc-summary">' + escapeHtml(pb.summary || "") + '</div>' + list + '<div class="pc-done">' + said + '</div></div></div>';
+    }
+    return '<div class="msg-row a"><div class="proposed"><div class="pc-label">Proposed bookings</div>' +
+      '<div class="pc-summary">' + escapeHtml(pb.summary || "") + '</div>' + list +
+      '<div class="pc-actions"><button type="button" class="btn btn-primary pb-apply" data-idx="' + idx + '">Apply</button>' +
+      '<button type="button" class="btn btn-secondary pb-discard" data-idx="' + idx + '">Discard</button></div></div></div>';
+  }
+
+  async function applyProposedBookings(idx) {
+    var doc = qaDocs[idx];
+    if (!doc || !doc.proposedBookings) return;
+    setStatus(chatStatus, "Saving…");
+    try {
+      var payload = { bookings: doc.proposedBookings.bookings, messageId: doc.id || null };
+      if (Object.prototype.hasOwnProperty.call(doc.proposedBookings, "basedOn")) payload.basedOn = doc.proposedBookings.basedOn;
+      var res = await fetch("/api/trips/" + currentTripId + "/bookings/apply", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+      });
+      if (res.status === 401) { showAuthRequired(chatStatus); return; }
+      var saved = await res.json().catch(function () { return {}; });
+      if (res.status === 409) {
+        doc.bookingsState = "stale";
+        if (Array.isArray(saved.bookings)) { currentTrip.bookings = saved.bookings; renderBookings(); }
+        renderChat(); setStatus(chatStatus, "");
+        toast("The bookings changed since this was suggested — ask again");
+        return;
+      }
+      if (!res.ok || saved.error) throw new Error(saved.error || "failed");
+      doc.bookingsState = "applied";
+      currentTrip.bookings = saved.bookings || [];
+      renderChat(); renderBookings();
+      setStatus(chatStatus, "");
+      toast("Bookings saved");
+    } catch (e) { setStatus(chatStatus, "Couldn't save that. Try again.", "error"); }
+  }
+  function discardProposedBookings(idx) {
+    var doc = qaDocs[idx];
+    if (!doc) return;
+    doc.bookingsState = "discarded";
+    renderChat();
+    if (doc.id) fetch("/api/trips/" + currentTripId + "/messages/" + encodeURIComponent(doc.id) + "/discard", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ which: "bookings" })
+    }).catch(function () {});
   }
 
   /* ---------- Itinerary ---------- */
@@ -1600,8 +2090,16 @@
             '<button type="button" class="btn btn-secondary pc-discard" data-idx="' + idx + '">Discard</button>' +
           '</div></div></div>';
       }
+      // A turn can propose bookings as well as (or instead of) an itinerary.
+      html += bookingsCardHtml(doc, idx);
     });
     chatLog.innerHTML = html;
+    chatLog.querySelectorAll(".pb-apply").forEach(function (btn) {
+      btn.addEventListener("click", function () { applyProposedBookings(Number(btn.dataset.idx)); });
+    });
+    chatLog.querySelectorAll(".pb-discard").forEach(function (btn) {
+      btn.addEventListener("click", function () { discardProposedBookings(Number(btn.dataset.idx)); });
+    });
     chatLog.querySelectorAll(".pc-apply").forEach(function (btn) {
       btn.addEventListener("click", function () { applyProposedChange(Number(btn.dataset.idx)); });
     });
@@ -1641,6 +2139,7 @@
       // days it stores, so rendering the proposal would briefly show something
       // slightly different from what a reload will show.
       renderItinerary(Array.isArray(saved.days) ? saved.days : doc.proposedChange.days);
+      if (currentTrip) { currentTrip.days = itineraryDays; renderNextUp(); }
       setStatus(chatStatus, "");
       toast("Itinerary updated");
     } catch (e) { setStatus(chatStatus, "Couldn't save that. Try again.", "error"); }
@@ -1735,6 +2234,7 @@
       if (!res.ok || data.error) throw new Error(data.error || "failed");
       entry.answer = data.answer;
       entry.proposedChange = data.proposedChange || null;
+      entry.proposedBookings = data.proposedBookings || null;
       // Which stored message this is, so Apply / Discard can be recorded on
       // it and still be true after the chat is next loaded from the server.
       if (data.id) entry.id = data.id;
