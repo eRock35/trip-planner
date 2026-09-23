@@ -14,7 +14,7 @@
  * promise a user cannot inspect is worth very little. This way the consent
  * screen can name the senders, and the code is what enforces it.
  *
- * `searchQuery()` takes no user input on purpose. An earlier shape let the
+ * `searchQueries()` takes no user input on purpose. An earlier shape let the
  * caller pass extra terms, which would have made the consent copy a lie the
  * first time anyone used it.
  *
@@ -56,28 +56,85 @@ const SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
  * consent: whatever is here is what the screen promises and what the account
  * page can show back. Adding a domain widens what the app reads, so adding one
  * is a decision, not a tweak.
+ *
+ * Grouped so a consent screen can say WHAT KIND of company it reads - "car
+ * rentals, restaurants" - rather than naming four domains and "and 90 more".
+ *
+ * Widened on 2026-09-23 at Erik's request ("we need to search things like
+ * rental cars and all that"): the first list had four car-rental companies
+ * and no restaurants, tours or cruises, so a trip's rental car from National
+ * or its boat tour booked through FareHarbor was invisible.
+ *
+ * Left out on purpose: banks and card travel portals (capitalone.com,
+ * chase.com - far more statements than bookings), rideshare (a receipt a day
+ * from Uber would crowd out everything else), and anything whose domain also
+ * sends non-travel mail (disney.go.com, yelp.com).
  */
-const TRAVEL_SENDERS = [
-  // airlines
-  'delta.com', 'united.com', 'aa.com', 'southwest.com', 'alaskaair.com',
-  'jetblue.com', 'flyfrontier.com', 'spirit.com', 'britishairways.com',
-  'aircanada.ca', 'lufthansa.com', 'klm.com', 'airfrance.fr', 'ryanair.com',
-  'easyjet.com', 'iberia.com', 'tapairportugal.com',
-  // hotels and stays
-  'marriott.com', 'hilton.com', 'hyatt.com', 'ihg.com', 'choicehotels.com',
-  'wyndhamhotels.com', 'airbnb.com', 'vrbo.com', 'booking.com', 'hotels.com',
-  // agencies, rail and cars
-  'expedia.com', 'priceline.com', 'kayak.com', 'orbitz.com', 'travelocity.com',
-  'amtrak.com', 'eurail.com', 'trainline.com', 'raileurope.com',
-  'hertz.com', 'enterprise.com', 'avis.com', 'budget.com',
-];
+const SENDER_GROUPS = {
+  'Airlines': [
+    'delta.com', 'united.com', 'aa.com', 'southwest.com', 'alaskaair.com',
+    'jetblue.com', 'flyfrontier.com', 'spirit.com', 'hawaiianairlines.com',
+    'allegiantair.com', 'suncountry.com', 'flybreeze.com', 'aveloair.com',
+    'westjet.com', 'aircanada.ca', 'britishairways.com', 'virginatlantic.com',
+    'aerlingus.com', 'lufthansa.com', 'klm.com', 'airfrance.fr', 'iberia.com',
+    'tapairportugal.com', 'ryanair.com', 'easyjet.com', 'emirates.com',
+    'qatarairways.com', 'aeromexico.com', 'copaair.com',
+  ],
+  'Hotels & stays': [
+    'marriott.com', 'hilton.com', 'hyatt.com', 'ihg.com', 'choicehotels.com',
+    'wyndhamhotels.com', 'bestwestern.com', 'radissonhotels.com', 'accor.com',
+    'omnihotels.com', 'fourseasons.com', 'loewshotels.com', 'sonesta.com',
+    'airbnb.com', 'vrbo.com', 'vacasa.com', 'evolve.com', 'sonder.com',
+  ],
+  'Car rentals': [
+    'hertz.com', 'enterprise.com', 'nationalcar.com', 'alamo.com', 'avis.com',
+    'budget.com', 'sixt.com', 'thrifty.com', 'dollar.com', 'paylesscar.com',
+    'foxrentacar.com', 'europcar.com', 'turo.com', 'zipcar.com',
+    'getaround.com', 'rentalcars.com', 'autoslash.com',
+  ],
+  'Booking sites': [
+    'expedia.com', 'booking.com', 'hotels.com', 'priceline.com', 'kayak.com',
+    'orbitz.com', 'travelocity.com', 'hopper.com', 'agoda.com', 'trip.com',
+    'kiwi.com', 'costcotravel.com', 'tripit.com',
+  ],
+  'Trains & buses': [
+    'amtrak.com', 'brightline.com', 'greyhound.com', 'flixbus.com',
+    'eurail.com', 'trainline.com', 'raileurope.com', 'viarail.ca',
+  ],
+  'Cruises': [
+    'carnival.com', 'royalcaribbean.com', 'ncl.com', 'princess.com',
+    'celebritycruises.com',
+  ],
+  'Tours & tickets': [
+    // FareHarbor, Peek and Rezdy are what most small local operators - the
+    // boat tour, the kayak rental, the dolphin cruise - book through, so
+    // they find far more than the big brands would alone.
+    'viator.com', 'getyourguide.com', 'klook.com', 'fareharbor.com',
+    'peek.com', 'rezdy.com',
+  ],
+  'Restaurants': [
+    'opentable.com', 'resy.com', 'exploretock.com', 'sevenrooms.com',
+  ],
+  'Parking': [
+    'spothero.com', 'parkwhiz.com',
+  ],
+};
+
+/** The flat list the query is built from. Derived, never edited directly, so
+ *  the groups a consent screen shows and the senders actually searched
+ *  cannot disagree. */
+const TRAVEL_SENDERS = [...new Set(Object.values(SENDER_GROUPS).flat())];
 
 /** How far back a scan looks. A year covers next season's booking and last
  *  season's receipts without trawling a decade of mail. */
 const MONTHS_BACK = 12;
 /** Ceiling on messages per scan: each one is tokens through the extractor, and
- *  an unbounded scan is an unbounded bill. */
-const MAX_MESSAGES = 25;
+ *  an unbounded scan is an unbounded bill. Raised from 25 to 40 when the
+ *  sender list widened, with BODY_CHARS cut from 12000 to 8000 so a scan costs
+ *  about what it did: the booking details in a confirmation are near the top,
+ *  and what gets cut is the legal footer. */
+const MAX_MESSAGES = 40;
+const BODY_CHARS = 8000;
 
 function create(opts) {
   const {
@@ -89,12 +146,28 @@ function create(opts) {
 
   const enabled = () => Boolean(clientId() && clientSecret() && redirectUri());
 
-  /** The Gmail query. No arguments: see the note at the top of this file. */
-  function searchQuery(now = new Date()) {
+  /** The Gmail queries, one per sender group. No arguments: see the note at
+   *  the top of this file - nothing a request sends can widen what is read.
+   *
+   *  One query per group rather than one for everything, for two reasons.
+   *  A single query over a hundred senders is ~1,700 characters, longer than
+   *  anything Gmail documents supporting. And a single query shares one
+   *  message ceiling across every kind of booking, so a run of restaurant
+   *  reminders could push out the one car-rental confirmation that mattered.
+   *  search() takes the newest from each group in turn instead.
+   *
+   *  `-category:promotions -category:social` is what keeps a wider list from
+   *  meaning a noisier scan. Every airline and hotel here sends far more fare
+   *  sales than confirmations; Gmail files confirmations under Primary or
+   *  Updates. This narrows what is read, never widens it. */
+  function searchQueries(now = new Date()) {
     const after = new Date(now);
     after.setMonth(after.getMonth() - MONTHS_BACK);
-    const from = TRAVEL_SENDERS.map((d) => `from:${d}`).join(' OR ');
-    return `(${from}) after:${after.toISOString().slice(0, 10).replace(/-/g, '/')}`;
+    const tail = `-category:promotions -category:social after:${after.toISOString().slice(0, 10).replace(/-/g, '/')}`;
+    return Object.entries(SENDER_GROUPS).map(([group, domains]) => ({
+      group,
+      q: `from:(${domains.join(' OR ')}) ${tail}`,
+    }));
   }
 
   /** Where to send someone to grant access. `state` ties the round trip to
@@ -180,10 +253,23 @@ function create(opts) {
     return me.emailAddress || null;
   }
 
+  /** Up to MAX_MESSAGES ids, taken round-robin across the groups: the newest
+   *  of each group first, then the second newest of each, and so on. One
+   *  group failing does not sink the scan - the others still answer - but a
+   *  401 does, because that is the whole connection, not one query. */
   async function search(accessToken, now = new Date()) {
-    const q = encodeURIComponent(searchQuery(now));
-    const data = await api(accessToken, `/messages?q=${q}&maxResults=${MAX_MESSAGES}`);
-    return (data.messages || []).map((m) => m.id);
+    const lists = await Promise.all(searchQueries(now).map(({ q }) =>
+      api(accessToken, `/messages?q=${encodeURIComponent(q)}&maxResults=${MAX_MESSAGES}`)
+        .then((d) => (d.messages || []).map((m) => m.id))
+        .catch((e) => { if (e.status === 401) throw e; return []; })));
+    const out = [];
+    const seen = new Set();
+    for (let i = 0; out.length < MAX_MESSAGES && lists.some((l) => i < l.length); i++) {
+      for (const l of lists) {
+        if (i < l.length && !seen.has(l[i]) && out.length < MAX_MESSAGES) { seen.add(l[i]); out.push(l[i]); }
+      }
+    }
+    return out;
   }
 
   /** A message flattened to what the extractor needs: who, when, and the
@@ -200,11 +286,11 @@ function create(opts) {
       subject: headers.subject || '',
       date: headers.date || '',
       snippet: m.snippet || '',
-      body: plainText(m.payload).slice(0, 12000),
+      body: plainText(m.payload).slice(0, BODY_CHARS),
     };
   }
 
-  return { enabled, authUrl, exchange, accessFrom, revoke, address, search, message, searchQuery, SCOPE, TRAVEL_SENDERS, MONTHS_BACK, MAX_MESSAGES };
+  return { enabled, authUrl, exchange, accessFrom, revoke, address, search, message, searchQueries, SCOPE, TRAVEL_SENDERS, SENDER_GROUPS, MONTHS_BACK, MAX_MESSAGES };
 }
 
 /** Depth-first walk for the first text/plain part. */
@@ -220,4 +306,4 @@ function plainText(payload) {
   return '';
 }
 
-module.exports = { create, plainText, TRAVEL_SENDERS, SCOPE, MONTHS_BACK, MAX_MESSAGES };
+module.exports = { create, plainText, TRAVEL_SENDERS, SENDER_GROUPS, SCOPE, MONTHS_BACK, MAX_MESSAGES, BODY_CHARS };

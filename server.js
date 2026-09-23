@@ -734,6 +734,9 @@ app.get('/api/gmail', requireLogin, async (req, res) => {
     // The promise, served from the same constant the query is built from, so
     // the page cannot drift from what the code actually does.
     senders: gmailLib.TRAVEL_SENDERS,
+    // The same list by kind, so a consent screen can say "car rentals,
+    // restaurants" rather than naming four domains and "and 98 more".
+    senderGroups: gmailLib.SENDER_GROUPS,
     monthsBack: gmailLib.MONTHS_BACK,
     maxMessages: gmailLib.MAX_MESSAGES,
   });
@@ -872,9 +875,13 @@ app.post('/api/gmail/scan', requireLogin, identity.requireBudget, identity.requi
       system:
         'You are reading a traveller\'s booking confirmation emails and grouping them into trips. ' +
         'Group bookings that belong to the same journey - an outbound flight, a hotel and a return flight ' +
-        'are ONE trip, not three. Give each trip a short name, the destination, the dates as a readable ' +
-        'range, and notes carrying the confirmation numbers, flight numbers and hotel names exactly as ' +
-        'written. Ignore marketing, fare alerts, loyalty statements and anything already in the past. ' +
+        'are ONE trip, not three. A rental car, a tour, a restaurant reservation or a parking booking at the ' +
+        'same place and dates belongs to that trip too: put it in the trip\'s notes with its time and ' +
+        'confirmation number, not in a trip of its own. A restaurant or parking booking that is not part of ' +
+        'any journey is not a trip - leave it out. Give each trip a short name, the destination, the dates ' +
+        'as a readable range, and notes carrying the confirmation numbers, flight numbers, hotel names and ' +
+        'rental-car pickup and return times exactly as written. ' +
+        'Ignore marketing, fare alerts, loyalty statements and anything already in the past. ' +
         'If nothing is a real booking, report no trips. Never invent a detail that is not in the emails.',
       tools: [ITINERARY_TOOL],
       messages: [{ role: 'user', content: JSON.stringify(messages.map((m) => ({

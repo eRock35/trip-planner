@@ -99,14 +99,35 @@ global.fetch = async (url, init) => {
   ok('...and that nothing is connected yet', body.connected === false);
   ok('...and names the senders it will look at', Array.isArray(body.senders) && body.senders.length > 10, String(body.senders && body.senders.length));
 
-  // The query is built from that same list and takes no arguments, so the
+  // The queries are built from that same list and take no arguments, so the
   // screen cannot promise one thing while the code does another.
   const g = gmailLib.create({ clientId: () => 'x', clientSecret: () => 'y', redirectUri: () => 'z' });
-  const q = g.searchQuery(new Date('2026-09-21T00:00:00Z'));
-  ok('the query only names those senders',
-     body.senders.every((d) => q.includes('from:' + d)), q.slice(0, 60));
-  ok('...and is bounded by a date window', /after:\d{4}\/\d{2}\/\d{2}/.test(q), q.slice(-24));
-  ok('searchQuery takes no caller input at all', g.searchQuery.length <= 1, String(g.searchQuery.length));
+  const qs = g.searchQueries(new Date('2026-09-21T00:00:00Z'));
+  const all = qs.map((x) => x.q).join('\n');
+  const named = (all.match(/from:\(([^)]*)\)/g) || []).flatMap((f) => f.slice(6, -1).split(' OR '));
+  ok('every promised sender is searched', body.senders.every((d) => named.includes(d)), String(named.length));
+  ok('...and nothing else is', named.every((d) => body.senders.includes(d)) && named.length === body.senders.length);
+  ok('...one query per group the consent screen names',
+     qs.length === Object.keys(body.senderGroups || {}).length && qs.every((x) => body.senderGroups[x.group]));
+  ok('every query is bounded by a date window', qs.every((x) => /after:\d{4}\/\d{2}\/\d{2}/.test(x.q)));
+  ok('...and skips promotions and social mail', qs.every((x) => /-category:promotions -category:social/.test(x.q)));
+  ok('car rentals beyond the big four are searched (asked for 2026-09-23)',
+     ['nationalcar.com', 'alamo.com', 'sixt.com', 'turo.com'].every((d) => named.includes(d)));
+  ok('searchQueries takes no caller input at all', g.searchQueries.length <= 1, String(g.searchQueries.length));
+
+  // Round-robin: a group with many hits cannot crowd the others out.
+  const lists = qs.map((x, i) => x.group === 'Restaurants'
+    ? Array.from({ length: 60 }, (_, n) => 'r' + n)
+    : (x.group === 'Car rentals' ? ['car-1'] : []));
+  const fake = gmailLib.create({ clientId: () => 'x', clientSecret: () => 'y', redirectUri: () => 'z',
+    fetchImpl: async (url) => {
+      const q = decodeURIComponent(String(url).split('q=')[1].split('&')[0]);
+      const i = qs.findIndex((x) => x.q === q);
+      return new Response(JSON.stringify({ messages: (lists[i] || []).map((id) => ({ id })) }), { status: 200 });
+    } });
+  const ids = await fake.search('token', new Date('2026-09-21T00:00:00Z'));
+  ok('sixty restaurant reminders cannot push out the one car rental', ids.includes('car-1'), JSON.stringify(ids.slice(0, 5)));
+  ok('...and the scan is still capped', ids.length === gmailLib.MAX_MESSAGES, String(ids.length));
 
   /* ---------- connecting ---------- */
   r = await fetch(B + '/api/gmail/connect', { headers: { cookie }, redirect: 'manual' });

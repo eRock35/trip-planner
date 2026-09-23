@@ -900,9 +900,13 @@
       "Trip Planner can look through your booking confirmations and offer to turn them into trips. " +
       "Here is exactly what that means before you decide.";
     var n = gmailState.senders.length;
+    // By kind, from the same groups the search is built from - "car rentals,
+    // restaurants" says more than four domain names and "and 98 more".
+    var kinds = Object.keys(gmailState.senderGroups || {}).map(function (k) { return k.toLowerCase(); });
     $("gmailSenders").textContent =
-      "Only mail from " + n + " airlines, hotels, rail and booking sites \u2014 " +
-      gmailState.senders.slice(0, 4).join(", ") + " and " + (n - 4) + " more. Nothing else is searched.";
+      "Only mail from " + n + " travel companies \u2014 " +
+      (kinds.length ? kinds.slice(0, -1).join(", ") + " and " + kinds[kinds.length - 1] : "airlines, hotels and booking sites") +
+      ". Not promotions or social mail. Nothing else is searched.";
     $("gmailWindow").textContent =
       "Bookings from the last " + gmailState.monthsBack + " months, up to " + gmailState.maxMessages + " messages a scan.";
     // The uncomfortable truth, said plainly rather than left for someone to

@@ -298,9 +298,16 @@ turn them into trips. Consent is the feature, not the paperwork around it, and
 three rules hold the shape together — each enforced in code rather than
 promised in copy:
 
-1. **The query is fixed.** `gmail.js` compiles it from `TRAVEL_SENDERS`, a
-   curated list of airline, hotel, rail and booking domains, plus a 12-month
-   window. `searchQuery()` takes no caller input, deliberately: an earlier
+1. **The query is fixed.** `gmail.js` compiles it from `SENDER_GROUPS` — 102
+   curated domains in nine groups (airlines, hotels & stays, car rentals,
+   booking sites, trains & buses, cruises, tours & tickets, restaurants,
+   parking), widened on 2026-09-23 at Erik's request — plus a 12-month window.
+   One query per group, not one for everything: a single query over a hundred
+   senders is ~1,700 characters, and a shared 40-message ceiling would let a
+   run of restaurant reminders push out the one car-rental confirmation.
+   `search()` takes the newest from each group in turn, and every query
+   excludes `category:promotions` and `category:social`, which is what stops a
+   wider list meaning a noisier scan. `searchQueries()` takes no caller input, deliberately: an earlier
    shape let a request add terms, which would have made the consent screen a
    lie the first time anyone used it. The account page prints that same
    constant, so the promise and the query cannot drift.
