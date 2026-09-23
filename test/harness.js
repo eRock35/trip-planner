@@ -28,6 +28,7 @@ class FakeFirestore {
         for (const [f, op, val] of filters) rows = rows.filter((r) => {
           const got = r.data()[f];
           if (op === '==') return got === val;
+          if (op === 'array-contains') return Array.isArray(got) && got.includes(val);
           if (op === '>=') return String(got || '') >= String(val);
           if (op === '<=') return String(got || '') <= String(val);
           if (op === '>') return String(got || '') > String(val);

@@ -495,6 +495,20 @@
      column a few letters wide ("Lisbo / n / long / week / end"). */
   .trip-head .demo-banner { flex: 1 0 100%; }
   .trip-head > div:first-child { flex: 1 1 0; }
+  /* The status badge with the Share button under it, as one column on the
+     right, so the title keeps the width it had before sharing existed. */
+  .trip-head-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: 0 0 auto; }
+  .share-pill { display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 999px; padding: 5px 11px 5px 9px;
+                background: var(--tint-soft); color: var(--tint); font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .share-pill svg { width: 15px; height: 15px; }
+  .badge.shared { background: var(--tint-soft); color: var(--tint); }
+  .msg-who { font-size: 12px; color: var(--label-2); margin: 8px 6px 2px; text-align: right; }
+  .share-people { margin: 4px 0 14px; }
+  .share-people .row { cursor: default; }
+  .share-add { display: flex; gap: 8px; align-items: stretch; }
+  .share-add input { flex: 1 1 auto; min-width: 0; font-size: 17px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--sep); background: var(--card); color: var(--label); }
+  .share-add .btn { width: auto; min-height: 48px; }
+  .share-note { font-size: 13px; color: var(--label-2); line-height: 1.45; margin: 10px 2px 0; }
 
   /* Chat */
   .chat-log { display: flex; flex-direction: column; gap: 6px; min-height: 40vh; padding: 2px 0; }
@@ -700,7 +714,10 @@
         <p class="eyebrow" id="tripDest"></p>
         <h1 id="tripName"></h1>
       </div>
-      <span class="badge" id="tripBadge"></span>
+      <div class="trip-head-side">
+        <span class="badge" id="tripBadge"></span>
+        <button type="button" class="share-pill" id="shareBtn" hidden><svg><use href="#i-person"/></svg><span id="shareBtnText">Share</span></button>
+      </div>
       <div class="demo-banner" id="demoBanner" hidden>
         <span id="demoText"><b>This is an example trip.</b> Everything here is read-only. <a href="/login">Sign in</a> to plan one of your own.</span>
         <button type="button" class="btn btn-primary btn-sm" id="demoCopyBtn" hidden style="margin-top:8px">Start my own from this</button>
@@ -1787,6 +1804,125 @@
     $("lockRow").hidden = on;
   }
 
+  /* ---------- Sharing ----------
+     A trip is shared by email (see "Sharing a trip" in server.js): the other
+     person sees it once they sign in with that address. Nothing is sent to
+     them - there is no mail service - so after sharing, the sheet offers a
+     message to send them from the phone's own share sheet. */
+  function isShared() { return !!(currentTrip && currentTrip.sharing && currentTrip.sharing.members && currentTrip.sharing.members.length); }
+  function amMember() { return !!(currentTrip && currentTrip.role === "member"); }
+  function personName(email) {
+    var local = String(email || "").split("@")[0].split(/[._+-]/)[0].replace(/\d+$/, "");
+    return local ? local.charAt(0).toUpperCase() + local.slice(1) : String(email || "");
+  }
+  function whoAsked(uid) {
+    if (!uid || !isShared()) return "";
+    if (me && uid === me.uid) return "You";
+    var sh = currentTrip.sharing;
+    if (sh.owner && sh.owner.uid === uid) return personName(sh.owner.email);
+    for (var i = 0; i < sh.members.length; i++) if (sh.members[i].uid === uid) return personName(sh.members[i].email);
+    return "";
+  }
+  function renderShareState() {
+    var btn = $("shareBtn");
+    if (!currentTrip || currentTrip.demo || !currentTrip.sharing) { btn.hidden = true; $("deleteBtn").hidden = false; return; }
+    btn.hidden = false;
+    var n = currentTrip.sharing.members.length;
+    $("shareBtnText").textContent = amMember() ? "Shared" : (n ? "Shared · " + (n + 1) : "Share");
+    // Only the owner can delete; a member leaves from the Share sheet.
+    $("deleteBtn").hidden = amMember();
+  }
+  function shareMessage(email) {
+    var url = location.origin + "/#/trip/" + currentTripId;
+    return {
+      title: "Trip Planner",
+      text: "I shared our trip “" + (currentTrip.name || "our trip") + "” with you on Trip Planner. Open this and sign in — or create an account — with " + email + ":",
+      url: url,
+    };
+  }
+  async function tellThem(email, statusEl) {
+    var m = shareMessage(email);
+    if (navigator.share) {
+      try { await navigator.share(m); return; } catch (e) { if (e && e.name === "AbortError") return; }
+    }
+    try { await navigator.clipboard.writeText(m.text + " " + m.url); setStatus(statusEl, "Copied. Paste it into a message to " + personName(email) + ".", "ok"); }
+    catch (e) { setStatus(statusEl, m.text + " " + m.url, ""); }
+  }
+  function openShareSheet() {
+    if (!currentTrip || !currentTrip.sharing) return;
+    var sh = currentTrip.sharing, member = amMember();
+    var body = document.createElement("div");
+    var intro = member
+      ? '<p class="share-note" style="margin:0 2px 12px">' + escapeHtml(personName(sh.owner.email)) + ' shared this trip with you. You can change anything here; only they can delete it or change who it’s shared with.</p>'
+      : '<p class="share-note" style="margin:0 2px 12px">Anyone you share with sees and changes everything here — chat, itinerary, packing, budget and photos. Only you can delete the trip or change who it’s shared with.</p>';
+    body.innerHTML = intro + '<div class="section-header" style="margin-top:0">People</div><div class="list share-people" id="sharePeople"></div>' +
+      (member ? '<button type="button" class="btn btn-danger" id="shareLeave">Leave this trip</button>'
+              : '<div class="share-add"><input type="email" id="shareEmail" placeholder="Their email address" autocomplete="email" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="email" enterkeyhint="send"><button type="button" class="btn btn-primary" id="shareAdd">Share</button></div>' +
+                '<p class="share-note">They’ll see it once they sign in to Trip Planner with that address — or create an account with it, if they don’t have one yet.</p>') +
+      '<div class="status" id="shareStatus"></div>';
+    function drawPeople() {
+      // Read fresh each time: sharing or removing someone replaces
+      // currentTrip.sharing, and the list must show the new one.
+      var sh = currentTrip.sharing;
+      var list = body.querySelector("#sharePeople");
+      list.innerHTML = "";
+      var owner = document.createElement("div"); owner.className = "row";
+      owner.innerHTML = '<div class="row-main"><div class="row-title">' + escapeHtml(personName(sh.owner.email)) + (me && me.uid === sh.owner.uid ? " (you)" : "") + '</div><div class="row-sub">' + escapeHtml(sh.owner.email) + ' · Started this trip</div></div>';
+      list.appendChild(owner);
+      sh.members.forEach(function (m) {
+        var row = document.createElement("div"); row.className = "row";
+        row.innerHTML = '<div class="row-main"><div class="row-title">' + escapeHtml(personName(m.email)) + (me && me.uid === m.uid ? " (you)" : "") + '</div><div class="row-sub">' + escapeHtml(m.email) + '</div></div>';
+        if (!member) {
+          var tell = document.createElement("button"); tell.type = "button"; tell.className = "btn btn-secondary btn-sm"; tell.textContent = "Send link"; tell.style.whiteSpace = "nowrap"; tell.style.padding = "6px 12px";
+          tell.addEventListener("click", function () { tellThem(m.email, body.querySelector("#shareStatus")); });
+          var rm = document.createElement("button"); rm.type = "button"; rm.className = "cl-del"; rm.setAttribute("aria-label", "Stop sharing with " + m.email); rm.innerHTML = svgUse("i-x");
+          rm.style.marginLeft = "6px";
+          rm.addEventListener("click", async function () {
+            var ok = await confirmSheet({ title: "Stop sharing with " + personName(m.email) + "?", message: " They won’t see this trip any more. What they added stays.", confirmLabel: "Stop sharing", destructive: true });
+            if (!ok) { openShareSheet(); return; }
+            var res = await fetch("/api/trips/" + currentTripId + "/share/" + encodeURIComponent(m.uid), { method: "DELETE" });
+            var d = await res.json().catch(function () { return {}; });
+            if (res.ok) { currentTrip.sharing = d; renderShareState(); renderChat(); }
+            openShareSheet();
+          });
+          row.appendChild(tell); row.appendChild(rm);
+        }
+        list.appendChild(row);
+      });
+    }
+    drawPeople();
+    openSheet({ title: member ? "Shared trip" : "Share this trip", body: body, focus: member ? null : "#shareEmail" });
+    var status = body.querySelector("#shareStatus");
+    if (member) {
+      body.querySelector("#shareLeave").addEventListener("click", async function () {
+        var ok = await confirmSheet({ title: "Leave this trip?", message: " It will disappear from your trips. " + personName(sh.owner.email) + " can share it with you again.", confirmLabel: "Leave", destructive: true });
+        if (!ok) { openShareSheet(); return; }
+        var res = await fetch("/api/trips/" + currentTripId + "/share/" + encodeURIComponent(me.uid), { method: "DELETE" });
+        if (res.ok) goToTrips(); else openShareSheet();
+      });
+      return;
+    }
+    var input = body.querySelector("#shareEmail"), add = body.querySelector("#shareAdd");
+    async function doAdd() {
+      var email = input.value.trim();
+      if (!email) { input.focus(); return; }
+      add.disabled = true; setStatus(status, "Sharing…");
+      try {
+        var res = await fetch("/api/trips/" + currentTripId + "/share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email }) });
+        var d = await res.json().catch(function () { return {}; });
+        if (!res.ok) { setStatus(status, d.error || "Could not share the trip.", "error"); return; }
+        currentTrip.sharing = d; renderShareState(); renderChat();
+        input.value = "";
+        drawPeople();
+        setStatus(status, "Shared with " + email.toLowerCase() + ". Tap Send link to tell them.", "ok");
+      } catch (e) { setStatus(status, "Could not reach the server. Try again.", "error"); }
+      finally { add.disabled = false; }
+    }
+    add.addEventListener("click", doAdd);
+    input.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); doAdd(); } });
+  }
+  $("shareBtn").addEventListener("click", openShareSheet);
+
   async function loadTripsList() {
     var list = $("tripsList");
     list.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
@@ -1822,7 +1958,11 @@
           var btn = document.createElement("button"); btn.type = "button"; btn.className = "row";
           var sub = [t.destination, t.dateRange].filter(Boolean).join(" · ") || "No details yet";
           var extra = t.dayCount ? " · " + t.dayCount + (t.dayCount === 1 ? " day" : " days") : "";
-          btn.innerHTML = '<div class="row-main"><div class="row-title">' + escapeHtml(t.name) + '</div><div class="row-sub">' + escapeHtml(sub + extra) + '</div></div>' +
+          // Whose trip it is, when it is not only yours.
+          var shared = t.role === "member" ? "Shared by " + personName(t.sharedBy)
+            : (t.sharedWith && t.sharedWith.length ? "Shared with " + t.sharedWith.map(personName).join(", ") : "");
+          btn.innerHTML = '<div class="row-main"><div class="row-title">' + escapeHtml(t.name) + '</div><div class="row-sub">' + escapeHtml(sub + extra) + '</div>' +
+            (shared ? '<div class="row-sub" style="color:var(--tint)">' + escapeHtml(shared) + '</div>' : '') + '</div>' +
             (t.status === "locked" ? '<span class="badge locked">Locked</span>' : '') + svgUse("i-chev-r", "row-chevron");
           btn.addEventListener("click", function () { goToTrip(t.id); });
           ul.appendChild(btn);
@@ -1898,6 +2038,7 @@
     qaDocs = []; watches = []; itineraryDays = [];
     $("tripName").textContent = "Loading…"; $("tripDest").textContent = ""; navTitle.textContent = "";
     $("tripBadge").className = "badge"; $("tripBadge").textContent = "";
+    $("shareBtn").hidden = true;
     clearOverview();
     packItems = []; budgetData = { target: null, lines: [], booked: [] };
     ["pkSuggest", "bgSuggest", "bgReceipt"].forEach(function (id) { $(id).hidden = true; $(id).innerHTML = ""; });
@@ -1919,6 +2060,7 @@
     badge.textContent = currentTrip.status === "locked" ? "Locked in" : "Planning";
     badge.className = "badge " + (currentTrip.status === "locked" ? "locked" : "planning");
     setDemoMode(!!currentTrip.demo);
+    renderShareState();
 
     $("dName").value = currentTrip.name || "";
     $("dDest").value = currentTrip.destination || "";
@@ -2178,7 +2320,7 @@
   async function runChatAction(label, url, working) {
     var id = currentTripId;
     selectTripTab("chat");
-    var entry = { question: label, answer: null, askedAt: new Date().toISOString() };
+    var entry = { question: label, answer: null, askedAt: new Date().toISOString(), askedBy: me && me.uid };
     qaDocs.push(entry); renderChat(); scrollChatToEnd();
     setStatus(chatStatus, working);
     try {
@@ -3127,6 +3269,9 @@
     chatEmpty.hidden = true;
     var html = "";
     qaDocs.forEach(function (doc, idx) {
+      // On a shared trip, whose question it was.
+      var who = whoAsked(doc.askedBy);
+      if (who) html += '<div class="msg-who">' + escapeHtml(who) + "</div>";
       html += '<div class="msg-row q"><div class="bubble">' + escapeHtml(doc.question || "") + "</div></div>";
       if (doc.answer) {
         html += '<div class="msg-row a"><div class="bubble">' + renderMarkdown(doc.answer) + "</div></div>";
@@ -3241,7 +3386,7 @@
     if (!text || !currentTripId) return;
     chatSend.disabled = true;
     setStatus(chatStatus, "");
-    var entry = { question: text, answer: null, askedAt: new Date().toISOString() };
+    var entry = { question: text, answer: null, askedAt: new Date().toISOString(), askedBy: me && me.uid };
     qaDocs.push(entry);
     renderChat();
     chatText.value = ""; autoGrowChatText(); chatSend.disabled = true;

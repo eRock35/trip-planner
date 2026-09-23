@@ -332,11 +332,54 @@ async function loadOwnedTrip(req, res) {
     return null;
   }
   const data = doc.data();
-  if (!req.user || data.ownerId !== req.user.uid) {
+  const role = roleIn(data, req.user && req.user.uid);
+  if (!role) {
     res.status(404).json({ error: 'Trip not found.' });
     return null;
   }
-  return { ref, doc, data };
+  return { ref, doc, data, role };
+}
+
+/* ---------- Sharing a trip ----------
+ * A trip belongs to the account that started it (ownerId) and can be shared
+ * with other people by email (memberIds). Members use the trip exactly as the
+ * owner does - chat, itinerary, packing, budget, photos - because the case
+ * this exists for is two people planning one family trip. Two things stay
+ * the owner's: deleting the trip, and deciding who it is shared with. A
+ * member can always leave.
+ *
+ * SHARED BY EMAIL, NOT BY LINK. An account's uid is the base64url of its
+ * lowercased email (identity.uidFor), so an address can be added before that
+ * person has an account at all: the moment they sign up or sign in with it,
+ * the trip is in their list. Nothing is sent to them - there is no mail
+ * service - so the page offers a message to send them itself. The link in
+ * that message opens the trip only for the account it was shared with; a
+ * forwarded link is a 404 to anyone else.
+ *
+ * Whether an address already has an account is never said. Adding one looks
+ * the same either way, for the reason reset-request answers identically.
+ *
+ * Money: whoever presses an AI button pays for it, as everywhere else. The
+ * hourly watch sweep still charges the OWNER (ownerMaySpend asks by ownerId),
+ * since the watches run on their trip. */
+const MAX_MEMBERS = 10;
+const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+function roleIn(data, uid) {
+  if (!uid || !data) return null;
+  if (data.ownerId === uid) return 'owner';
+  if (Array.isArray(data.memberIds) && data.memberIds.includes(uid)) return 'member';
+  return null;
+}
+/** The address a uid was made from. uids are base64url(lowercased email),
+ *  so this is exact for every account this app has created. */
+function emailOfUid(uid) {
+  try { const e = Buffer.from(String(uid || ''), 'base64url').toString('utf8'); return EMAIL_RE.test(e) ? e : ''; } catch (e) { return ''; }
+}
+function sharingOut(data) {
+  return {
+    owner: { uid: data.ownerId, email: emailOfUid(data.ownerId) },
+    members: (Array.isArray(data.members) ? data.members : []).map((m) => ({ uid: m.uid, email: m.email, addedAt: m.addedAt || null })),
+  };
 }
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -404,9 +447,15 @@ app.get('/api/trips/:id/weather', requireLogin, async (req, res) => {
 // Trips - the core data model. One document per trip; chat history and
 // watched listings live in subcollections underneath it.
 // ---------------------------------------------------------------------------
-function tripSummary(id, data) {
+function tripSummary(id, data, uid) {
+  const members = Array.isArray(data.members) ? data.members : [];
+  const role = roleIn(data, uid) || 'owner';
   return {
     id,
+    role,
+    // "Shared with Sarah" on your own trip, "Shared by Erik" on someone else's.
+    sharedWith: role === 'owner' ? members.map((m) => m.email) : [],
+    sharedBy: role === 'member' ? emailOfUid(data.ownerId) : '',
     name: data.name || 'Untitled trip',
     destination: data.destination || '',
     dateRange: data.dateRange || '',
@@ -420,10 +469,22 @@ function tripSummary(id, data) {
 
 app.get('/api/trips', requireLogin, async (req, res) => {
   try {
-    const snap = await db.collection('trips')
-      .where('ownerId', '==', req.user.uid)
-      .orderBy('updatedAt', 'desc').limit(100).get();
-    res.json(snap.docs.map((d) => tripSummary(d.id, d.data())));
+    // Two queries rather than one: Firestore cannot OR an equality on
+    // ownerId with array-contains on memberIds. The shared one has no
+    // orderBy so it needs no composite index; the merge sorts both.
+    const [mine, shared] = await Promise.all([
+      db.collection('trips').where('ownerId', '==', req.user.uid).orderBy('updatedAt', 'desc').limit(100).get(),
+      db.collection('trips').where('memberIds', 'array-contains', req.user.uid).limit(100).get(),
+    ]);
+    const seen = new Set();
+    const all = [];
+    for (const d of mine.docs.concat(shared.docs)) {
+      if (seen.has(d.id)) continue;
+      seen.add(d.id);
+      all.push(tripSummary(d.id, d.data(), req.user.uid));
+    }
+    all.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+    res.json(all);
   } catch (err) {
     console.error('GET /api/trips', err);
     res.status(500).json({ error: 'Failed to load trips.' });
@@ -514,7 +575,7 @@ app.get('/api/trips/:id', requireLogin, async (req, res) => {
   try {
     const owned = await loadOwnedTrip(req, res);
     if (!owned) return;
-    res.json(tripOut(owned.doc.id, owned.data));
+    res.json(Object.assign(tripOut(owned.doc.id, owned.data), { role: owned.role, sharing: sharingOut(owned.data) }));
   } catch (err) {
     console.error('GET /api/trips/:id', err);
     res.status(500).json({ error: 'Failed to load trip.' });
@@ -543,6 +604,9 @@ app.delete('/api/trips/:id', requireLogin, async (req, res) => {
   try {
     const owned = await loadOwnedTrip(req, res);
     if (!owned) return;
+    if (owned.role !== 'owner') {
+      return res.status(403).json({ error: 'Only the person who started this trip can delete it. You can leave it from Share instead.' });
+    }
     await owned.ref.delete();
     // Its photos go with it. Awaited, because this service stops working the
     // moment a response is sent (see "Billed per request" in CLAUDE.md), but
@@ -561,6 +625,51 @@ app.delete('/api/trips/:id', requireLogin, async (req, res) => {
 // in the same app. It stops showing up as an active planning target and
 // drops out of the watch batch-check below. That is the entire "make it its
 // own thing" mechanism - see CLAUDE.md.
+/** Share with an email address. Owner only. */
+app.post('/api/trips/:id/share', requireLogin, async (req, res) => {
+  try {
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    if (owned.role !== 'owner') return res.status(403).json({ error: 'Only the person who started this trip can share it.' });
+    const email = String((req.body || {}).email || '').trim().toLowerCase();
+    if (!EMAIL_RE.test(email) || email.length > 200) return res.status(400).json({ error: 'That doesn\'t look like an email address.' });
+    const uid = identityLib.uidFor(email);
+    if (uid === owned.data.ownerId) return res.status(400).json({ error: 'That\'s your own address - the trip is already yours.' });
+    const members = Array.isArray(owned.data.members) ? owned.data.members.slice() : [];
+    if (!members.some((m) => m.uid === uid)) {
+      if (members.length >= MAX_MEMBERS) return res.status(400).json({ error: `A trip can be shared with up to ${MAX_MEMBERS} people.` });
+      members.push({ uid, email, addedAt: new Date().toISOString() });
+      // memberIds is what the trips list queries (array-contains); members is
+      // what the page shows. Written together, always.
+      await owned.ref.update({ members, memberIds: members.map((m) => m.uid) });
+      identity.log('trip.shared', req, { detail: owned.doc.id });
+    }
+    res.json(sharingOut(Object.assign({}, owned.data, { members })));
+  } catch (err) {
+    console.error('POST share', err);
+    res.status(500).json({ error: 'Could not share the trip.' });
+  }
+});
+
+/** Stop sharing with someone (the owner), or leave a trip (a member, for
+ *  themselves). */
+app.delete('/api/trips/:id/share/:uid', requireLogin, async (req, res) => {
+  try {
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    const target = String(req.params.uid || '');
+    const leaving = owned.role === 'member' && target === req.user.uid;
+    if (owned.role !== 'owner' && !leaving) return res.status(403).json({ error: 'Only the person who started this trip can change who it\'s shared with.' });
+    const members = (Array.isArray(owned.data.members) ? owned.data.members : []).filter((m) => m.uid !== target);
+    await owned.ref.update({ members, memberIds: members.map((m) => m.uid) });
+    identity.log(leaving ? 'trip.left' : 'trip.unshared', req, { detail: owned.doc.id });
+    res.json(leaving ? { ok: true, left: true } : sharingOut(Object.assign({}, owned.data, { members })));
+  } catch (err) {
+    console.error('DELETE share', err);
+    res.status(500).json({ error: 'Could not change the sharing.' });
+  }
+});
+
 app.post('/api/trips/:id/lock', requireLogin, async (req, res) => {
   try {
     const owned = await loadOwnedTrip(req, res);
@@ -789,6 +898,9 @@ app.post('/api/trips/:id/chat', requireLogin, identity.requireBudget, identity.r
     const saved = await tripRef.collection('messages').add({
       question,
       answer,
+      // Who asked, so a trip shared between two people shows whose question
+      // each one was.
+      askedBy: req.user.uid,
       // The proposal is stored too, so reopening the trip still shows the
       // Apply card - and it carries `days`, so it needs the same nested-array
       // treatment the trip itself does. Without it the whole chat turn fails
@@ -1239,7 +1351,7 @@ app.post('/api/trips/:id/gmail-bookings', requireLogin, identity.requireBudget, 
     }
     const at = new Date().toISOString();
     const saved = await owned.ref.collection('messages').add({
-      question, answer, proposedChange: null, proposedBookings, askedAt: at, answeredAt: at,
+      question, answer, proposedChange: null, proposedBookings, askedAt: at, answeredAt: at, askedBy: req.user.uid,
     });
     send({ id: saved.id, question, answer, proposedBookings });
   } catch (err) {

@@ -494,6 +494,38 @@ on Memories. The token comes from the metadata server; no key.
 Tests: `test/trip-receipts.js`, `test/trip-photos.js` (Cloud Storage faked at
 `global.fetch`). Rendered at 390px and 1280px before shipping.
 
+## Sharing a trip (2026-09-23)
+
+Erik asked for this so his wife could use the same trips. A trip still has one
+owner (`ownerId`); the owner can share it by email with up to 10 people
+(`members: [{uid, email, addedAt}]` plus `memberIds: [uid]`, written
+together — `memberIds` is what the trips list queries with `array-contains`,
+`members` is what the page shows).
+
+- **By email, not by link.** A uid is `base64url(lowercased email)`
+  (`identity.uidFor`), so an address can be shared before its owner has an
+  account: the moment they sign up or sign in with it, the trip is in their
+  list. There is no mail service, so the sheet's "Send link" hands a message to
+  the phone's share sheet (or copies it). That link opens the trip only for
+  the account it was shared with; anyone else gets the usual 404.
+- **Members can do everything except two things.** `loadOwnedTrip` now
+  admits owner or member and returns `role`; every existing route therefore
+  works for a member — chat, itinerary, packing, budget, receipts, statements,
+  photos, lock. Deleting the trip and changing who it is shared with stay the
+  owner's (403 for a member). A member can remove themselves (leave).
+- **Never says whether an address has an account**, for the reason
+  reset-request answers identically.
+- **Money:** whoever presses an AI button pays, as everywhere. The hourly
+  watch sweep still charges the owner (`ownerMaySpend` asks by `ownerId`).
+- The list merges two queries (own by `ownerId` + `updatedAt` index, shared by
+  `memberIds array-contains` with no orderBy, so no new index) and sorts in
+  memory. Chat messages record `askedBy`, so a shared chat says whose question
+  each was.
+
+`test/trip-sharing.js` covers sharing before sign-up, what a member can and
+cannot do, strangers still 404, removing and leaving, the cap, and the merged
+list.
+
 ### Gmail connections end after seven days — by Google's rule
 
 An OAuth app in **Testing** that asks for more than basic profile gets refresh
