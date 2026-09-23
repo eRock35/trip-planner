@@ -434,7 +434,14 @@ promised in copy:
    run of restaurant reminders push out the one car-rental confirmation.
    `search()` takes the newest from each group in turn, and every query
    excludes `category:promotions` and `category:social`, which is what stops a
-   wider list meaning a noisier scan. `searchQueries()` takes no caller input, deliberately: an earlier
+   wider list meaning a noisier scan. **Forwarded bookings** (2026-09-23): each
+   group also has `subject:(fwd OR fw) ("<domain>" OR …)` — the same senders'
+   mail forwarded in. Found because Erik's National rental agreement was
+   booked at work and forwarded home, so its From was the work address and
+   `from:` never matched. The privacy policy and both consent sheets say so.
+   Forwards from work clients are often HTML-only, so `plainText()` now falls
+   back to the HTML part with markup stripped instead of returning nothing.
+   `searchQueries()` takes no caller input, deliberately: an earlier
    shape let a request add terms, which would have made the consent screen a
    lie the first time anyone used it. The account page prints that same
    constant, so the promise and the query cannot drift.

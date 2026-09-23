@@ -107,8 +107,31 @@ global.fetch = async (url, init) => {
   const named = (all.match(/from:\(([^)]*)\)/g) || []).flatMap((f) => f.slice(6, -1).split(' OR '));
   ok('every promised sender is searched', body.senders.every((d) => named.includes(d)), String(named.length));
   ok('...and nothing else is', named.every((d) => body.senders.includes(d)) && named.length === body.senders.length);
-  ok('...one query per group the consent screen names',
-     qs.length === Object.keys(body.senderGroups || {}).length && qs.every((x) => body.senderGroups[x.group]));
+  ok('...one direct query per group the consent screen names',
+     qs.filter((x) => !x.forwarded).length === Object.keys(body.senderGroups || {}).length && qs.every((x) => body.senderGroups[x.group]));
+  // Forwarded bookings (2026-09-23): a National rental agreement forwarded
+  // from a work address had the work address as its sender, so from: never
+  // matched. The second query per group looks for a Fwd/FW subject naming
+  // the same group's senders - and only those.
+  const fwd = qs.filter((x) => x.forwarded);
+  ok('each group also has a forwarded query', fwd.length === Object.keys(body.senderGroups || {}).length);
+  ok('...which names exactly that group\'s senders, nothing more',
+     fwd.every((x) => {
+       const inQ = (x.q.match(/"([^"]+)"/g) || []).map((d) => d.slice(1, -1));
+       const want = body.senderGroups[x.group];
+       return inQ.length === want.length && inQ.every((d) => want.includes(d));
+     }));
+  ok('...only for mail whose subject says it was forwarded', fwd.every((x) => x.q.startsWith('subject:(fwd OR fw) ')));
+  ok('the National forward is covered', fwd.some((x) => x.q.includes('"nationalcar.com"')));
+
+  // A work client often forwards HTML only; that used to reach the extractor blank.
+  const b64 = (t) => Buffer.from(t).toString('base64url');
+  const htmlOnly = gmailLib.plainText({ mimeType: 'multipart/mixed', parts: [{ mimeType: 'text/html', body: { data: b64(
+    '<head><style>p{color:red}</style></head><p>From: &lt;DoNotReply@nationalcar.com&gt;</p><table><tr><td>Pickup</td><td>Sep 22&nbsp;10:00</td></tr></table>') } }] });
+  ok('an HTML-only message is read as text', /DoNotReply@nationalcar\.com/.test(htmlOnly) && /Pickup Sep 22 10:00/.test(htmlOnly), JSON.stringify(htmlOnly));
+  ok('...without its stylesheet or tags', !/color:red|<\/?(p|td|tr|table|style|head)\b/.test(htmlOnly));
+  ok('...and a plain-text part still wins when there is one', gmailLib.plainText({ mimeType: 'multipart/alternative', parts: [
+    { mimeType: 'text/plain', body: { data: b64('plain') } }, { mimeType: 'text/html', body: { data: b64('<b>html</b>') } }] }) === 'plain');
   ok('every query is bounded by a date window', qs.every((x) => /after:\d{4}\/\d{2}\/\d{2}/.test(x.q)));
   ok('...and skips promotions and social mail', qs.every((x) => /-category:promotions -category:social/.test(x.q)));
   ok('car rentals beyond the big four are searched (asked for 2026-09-23)',

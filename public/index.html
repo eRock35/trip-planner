@@ -1167,7 +1167,7 @@
     $("gmailSenders").textContent =
       "Only mail from " + n + " travel companies \u2014 " +
       (kinds.length ? kinds.slice(0, -1).join(", ") + " and " + kinds[kinds.length - 1] : "airlines, hotels and booking sites") +
-      ". Not promotions or social mail. Nothing else is searched.";
+      ", or bookings from them that you forwarded to yourself. Not promotions or social mail. Nothing else is searched.";
     $("gmailWindow").textContent =
       "Bookings from the last " + gmailState.monthsBack + " months, up to " + gmailState.maxMessages + " messages a scan.";
     // The uncomfortable truth, said plainly rather than left for someone to

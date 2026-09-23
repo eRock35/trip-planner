@@ -160,15 +160,24 @@ function create(opts) {
    *  `-category:promotions -category:social` is what keeps a wider list from
    *  meaning a noisier scan. Every airline and hotel here sends far more fare
    *  sales than confirmations; Gmail files confirmations under Primary or
-   *  Updates. This narrows what is read, never widens it. */
+   *  Updates. This narrows what is read, never widens it.
+   *
+   *  FORWARDED BOOKINGS (2026-09-23). Each group has a second query for the
+   *  same senders' mail forwarded in: a subject starting Fwd/FW that names
+   *  one of those domains in its text. Reported as "not picking up my
+   *  National car rental email": it had been booked through a work address
+   *  and forwarded home, so the From line was the work address and `from:`
+   *  could never match - National appeared only inside the forwarded text.
+   *  Same senders, same window, same exclusions; the privacy policy and both
+   *  consent sheets say so. */
   function searchQueries(now = new Date()) {
     const after = new Date(now);
     after.setMonth(after.getMonth() - MONTHS_BACK);
     const tail = `-category:promotions -category:social after:${after.toISOString().slice(0, 10).replace(/-/g, '/')}`;
-    return Object.entries(SENDER_GROUPS).map(([group, domains]) => ({
-      group,
-      q: `from:(${domains.join(' OR ')}) ${tail}`,
-    }));
+    return Object.entries(SENDER_GROUPS).flatMap(([group, domains]) => [
+      { group, forwarded: false, q: `from:(${domains.join(' OR ')}) ${tail}` },
+      { group, forwarded: true, q: `subject:(fwd OR fw) (${domains.map((d) => `"${d}"`).join(' OR ')}) ${tail}` },
+    ]);
   }
 
   /** Where to send someone to grant access. `state` ties the round trip to
@@ -303,17 +312,51 @@ function create(opts) {
   return { enabled, authUrl, exchange, accessFrom, revoke, address, search, message, searchQueries, SCOPE, TRAVEL_SENDERS, SENDER_GROUPS, MONTHS_BACK, MAX_MESSAGES };
 }
 
-/** Depth-first walk for the first text/plain part. */
+/** The message as text: the first text/plain part, depth first. Failing
+ *  that, the first text/html part with its markup taken out - a forward from
+ *  a work mail client is often HTML only, and returning nothing there meant a
+ *  message the search had found reached the extractor as a blank. */
 function plainText(payload) {
+  return firstPart(payload, 'text/plain') || htmlToText(firstPart(payload, 'text/html'));
+}
+
+function firstPart(payload, type) {
   if (!payload) return '';
-  if (payload.mimeType === 'text/plain' && payload.body && payload.body.data) {
+  if (payload.mimeType === type && payload.body && payload.body.data) {
     return Buffer.from(payload.body.data, 'base64url').toString('utf8');
   }
   for (const part of (payload.parts || [])) {
-    const found = plainText(part);
+    const found = firstPart(part, type);
     if (found) return found;
   }
   return '';
+}
+
+/** Enough of an HTML-to-text pass for an extractor: the style and script
+ *  blocks go whole (otherwise the model reads a page of CSS), block tags
+ *  become line breaks, the rest of the markup goes, and the common entities
+ *  come back as characters. */
+function htmlToText(html) {
+  if (!html) return '';
+  const named = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", '#39': "'" };
+  return html
+    .replace(/<(style|script|head)\b[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<(br|\/p|\/div|\/tr|\/li|\/h[1-6]|\/table)\b[^>]*>/gi, '\n')
+    .replace(/<(td|th)\b[^>]*>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&(#\d+|#x[0-9a-f]+|[a-z0-9]+);/gi, (m, e) => {
+      const k = e.toLowerCase();
+      if (named[k] !== undefined) return named[k];
+      if (k[0] === '#') {
+        const n = k[1] === 'x' ? parseInt(k.slice(2), 16) : parseInt(k.slice(1), 10);
+        return Number.isFinite(n) && n > 0 && n < 0x110000 ? String.fromCodePoint(n) : ' ';
+      }
+      return m;
+    })
+    .replace(/[ \t\f\v\u00a0]+/g, ' ')
+    .replace(/ *\n[\s]*/g, '\n')
+    .trim();
 }
 
 module.exports = { create, plainText, TRAVEL_SENDERS, SENDER_GROUPS, SCOPE, MONTHS_BACK, MAX_MESSAGES, BODY_CHARS };
