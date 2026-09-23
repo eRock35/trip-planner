@@ -270,6 +270,35 @@ what you see is what a reload will show.
 
 Runs on `claude-sonnet-5` (tool use + web search).
 
+### What became of a proposal is stored, not remembered (2026-09-23)
+
+Reported as "after applying to itinerary it stays". Apply saved the
+itinerary, but "applied" was a flag in the page's memory, so the next load of
+the chat from the server — reopening the trip, coming back to the app — drew
+the Apply card again with live buttons. Discard had the same flaw.
+
+It was worse than untidy. A proposal is a **complete replacement** `days`
+array, so pressing a resurrected card would put back a plan from before any
+later change. The vacation app had the identical trap (see its CLAUDE.md,
+"Two phones, one plan").
+
+- `POST /schedule/apply` takes `messageId` and writes `changeState:
+  'applied'` on that message; `POST /messages/:mid/discard` writes
+  `'discarded'`. The page draws a decided card as its outcome, from the
+  server's field, so it survives any reload.
+- Each proposal carries `basedOn` — the trip's **`daysUpdatedAt`**, not
+  `updatedAt`, because every chat turn, rename and lock moves `updatedAt` and a
+  guard keyed to it would refuse proposals for nothing. Apply sets
+  `daysUpdatedAt`; a proposal whose `basedOn` no longer matches is refused with
+  **409**, the current itinerary attached, and the message marked `'stale'`.
+- `basedOn` and `messageId` are optional, so cards from before this still
+  apply as they always did.
+
+`test/proposal-state.js` holds it: applied survives a reload, a proposal made
+before another was applied is refused and the first survives, discard is
+remembered, a lock or rename does not make a suggestion stale, and nobody else
+can mark your proposals.
+
 ### Long answers stream whitespace
 
 Chat and the manual watch check (`POST /api/trips/:id/watches/:wid/check`)

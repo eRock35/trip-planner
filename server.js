@@ -637,6 +637,12 @@ app.post('/api/trips/:id/chat', requireLogin, identity.requireBudget, identity.r
         // Checked here, not only on apply: an Apply button that leads to a 400
         // is worse than a proposal that was never offered.
         days: schedule.validate(toolBlock.input.days),
+        // Which itinerary this was written against. A proposal is a COMPLETE
+        // replacement, so applying one written before a later change would
+        // silently undo that change - see /schedule/apply. daysUpdatedAt, not
+        // updatedAt: every chat turn and every lock moves updatedAt, and a
+        // guard keyed to it would refuse proposals for no reason.
+        basedOn: owned.data.daysUpdatedAt || null,
       };
       if (!answer) {
         answer = "I've drafted a plan: " + proposedChange.summary + ' Review it below and tap Apply to save it.';
@@ -651,7 +657,7 @@ app.post('/api/trips/:id/chat', requireLogin, identity.requireBudget, identity.r
     }
 
     const askedAt = new Date().toISOString();
-    await tripRef.collection('messages').add({
+    const saved = await tripRef.collection('messages').add({
       question,
       answer,
       // The proposal is stored too, so reopening the trip still shows the
@@ -666,7 +672,8 @@ app.post('/api/trips/:id/chat', requireLogin, identity.requireBudget, identity.r
     });
     await tripRef.update({ updatedAt: new Date().toISOString() });
 
-    send({ answer, proposedChange });
+    // The id, so the page can tell the server what became of the proposal.
+    send({ id: saved.id, answer, proposedChange });
   } catch (err) {
     console.error('POST /api/trips/:id/chat', err);
     // Same reason as the self-test above: without this the reason is lost.
@@ -683,21 +690,70 @@ app.post('/api/trips/:id/chat', requireLogin, identity.requireBudget, identity.r
   }
 });
 
+/** What became of a proposal, written on the chat message that carried it.
+ *
+ *  This used to live only in the page's memory, so the next time the chat
+ *  was loaded from the server - reopening the trip, coming back to the app -
+ *  every Apply card came back with its buttons, as if nothing had been
+ *  decided. Reported 2026-09-23 as "after applying to itinerary it stays".
+ *  Worse than untidy: tapping one again would replace the whole itinerary
+ *  with a plan from before any later change. */
+async function markProposal(tripRef, messageId, state) {
+  if (!messageId || typeof messageId !== 'string' || messageId.length > 64) return;
+  const ref = tripRef.collection('messages').doc(messageId);
+  const snap = await ref.get();
+  if (!snap.exists || !snap.data().proposedChange) return;
+  await ref.update({ changeState: state, changeHandledAt: new Date().toISOString() });
+}
+
 app.post('/api/trips/:id/schedule/apply', requireLogin, async (req, res) => {
   try {
-    const days = schedule.validate((req.body || {}).days);
+    const body = req.body || {};
+    const days = schedule.validate(body.days);
     const owned = await loadOwnedTrip(req, res);
     if (!owned) return;
+
+    // A proposal written against an older itinerary would undo whatever
+    // changed since - on another device, or from a later proposal already
+    // applied. Refuse it with the current itinerary attached. `basedOn` is
+    // optional so a card from before this existed still applies as it did.
+    if (Object.prototype.hasOwnProperty.call(body, 'basedOn')) {
+      const now = owned.data.daysUpdatedAt || null;
+      if ((body.basedOn || null) !== now) {
+        await markProposal(owned.ref, body.messageId, 'stale').catch(() => {});
+        return res.status(409).json({
+          error: 'The itinerary changed after this was suggested, so applying it would undo that change. '
+            + 'Ask again for a plan based on the current one.',
+          days: schedule.fromStore(owned.data.days || []),
+        });
+      }
+    }
+
     // toStore, not days: Firestore cannot hold an array inside an array, and
     // `blocks` is a list of [time, plan] pairs. Writing the pairs straight in
     // fails with "Property array contains an invalid nested entity", which is
     // what Apply had been doing every time. See schedule.js.
-    await owned.ref.update({ days: schedule.toStore(days), updatedAt: new Date().toISOString() });
+    const at = new Date().toISOString();
+    await owned.ref.update({ days: schedule.toStore(days), updatedAt: at, daysUpdatedAt: at });
+    await markProposal(owned.ref, body.messageId, 'applied').catch((e) => console.error('markProposal', e));
     res.json({ ok: true, days });
   } catch (err) {
     if (err.status === 400) return res.status(400).json({ error: err.message });
     console.error('POST /api/trips/:id/schedule/apply', err);
     res.status(500).json({ error: 'Could not save the itinerary.' });
+  }
+});
+
+/** Discarding is a decision too, and it has to survive a reload the same way. */
+app.post('/api/trips/:id/messages/:mid/discard', requireLogin, async (req, res) => {
+  try {
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    await markProposal(owned.ref, req.params.mid, 'discarded');
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('POST /api/trips/:id/messages/:mid/discard', err);
+    res.status(500).json({ error: 'Could not save that.' });
   }
 });
 

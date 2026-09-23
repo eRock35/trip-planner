@@ -245,6 +245,11 @@
   @keyframes blink { 0%, 80%, 100% { opacity: 0.3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
   .proposed { max-width: 92%; background: var(--card); border: 1.5px solid var(--tint); border-radius: 16px; padding: 12px 14px; box-shadow: var(--shadow); }
   .pc-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--tint); margin-bottom: 4px; }
+  /* A decided proposal: quieter border, and the outcome where the buttons were. */
+  .proposed.done { border-color: var(--sep); }
+  .proposed.done .pc-label { color: var(--label-2); }
+  .pc-done { margin-top: 10px; font-size: 14px; color: var(--label-2); line-height: 1.4; }
+  .proposed.done.ok .pc-done { color: var(--green, #30d158); font-weight: 600; }
   .pc-summary { font-size: 15px; line-height: 1.4; margin-bottom: 10px; }
   .pc-actions { display: flex; gap: 8px; }
   .pc-actions .btn { min-height: 40px; font-size: 15px; border-radius: 10px; }
@@ -1573,7 +1578,20 @@
       } else {
         html += '<div class="msg-row a"><div class="bubble" aria-label="Waiting for a reply"><span class="typing"><i></i><i></i><i></i></span></div></div>';
       }
-      if (doc.proposedChange && !doc._changeHandled) {
+      // A decided card says what was decided rather than vanishing - "was
+      // that applied?" should be answerable by looking. The state is read
+      // from the server (changeState on the message), not remembered by the
+      // page, so it survives a reload; that is the whole fix.
+      var state = doc.proposedChange ? (doc.changeState || null) : null;
+      if (state) {
+        var said = state === "applied" ? "\u2713 Applied to the itinerary."
+          : state === "stale" ? "Not applied: the itinerary changed after this was suggested, and applying it would have undone that. Ask again for a fresh plan."
+          : "Discarded.";
+        html += '<div class="msg-row a"><div class="proposed done' + (state === "applied" ? " ok" : "") + '">' +
+          '<div class="pc-label">Proposed itinerary</div>' +
+          '<div class="pc-summary">' + escapeHtml(doc.proposedChange.summary || "Itinerary update") + '</div>' +
+          '<div class="pc-done">' + said + '</div></div></div>';
+      } else if (doc.proposedChange) {
         html += '<div class="msg-row a"><div class="proposed">' +
           '<div class="pc-label">Proposed itinerary</div>' +
           '<div class="pc-summary">' + escapeHtml(doc.proposedChange.summary || "Itinerary update") + '</div>' +
@@ -1597,14 +1615,27 @@
     if (!doc || !doc.proposedChange) return;
     setStatus(chatStatus, "Saving…");
     try {
+      var payload = { days: doc.proposedChange.days, messageId: doc.id || null };
+      // Only when the proposal recorded one: a card from before this existed
+      // has none, and sending null for it would read as "written against an
+      // empty itinerary" and refuse a good apply.
+      if (Object.prototype.hasOwnProperty.call(doc.proposedChange, "basedOn")) payload.basedOn = doc.proposedChange.basedOn;
       var res = await fetch("/api/trips/" + currentTripId + "/schedule/apply", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ days: doc.proposedChange.days })
+        body: JSON.stringify(payload)
       });
       if (res.status === 401) { showAuthRequired(chatStatus); return; }
       var saved = await res.json().catch(function () { return {}; });
+      if (res.status === 409) {
+        doc.changeState = "stale";
+        renderChat();
+        if (Array.isArray(saved.days)) renderItinerary(saved.days);
+        setStatus(chatStatus, "");
+        toast("The itinerary changed since this was suggested \u2014 ask again");
+        return;
+      }
       if (!res.ok || saved.error) throw new Error(saved.error || "failed");
-      doc._changeHandled = true;
+      doc.changeState = "applied";
       renderChat();
       // Draw what was SAVED, not what was proposed. The server normalises the
       // days it stores, so rendering the proposal would briefly show something
@@ -1617,8 +1648,11 @@
   function discardProposedChange(idx) {
     var doc = qaDocs[idx];
     if (!doc) return;
-    doc._changeHandled = true;
+    doc.changeState = "discarded";
     renderChat();
+    // Recorded on the server so it stays discarded after a reload. Best
+    // effort: if it fails, the worst case is the card coming back.
+    if (doc.id) fetch("/api/trips/" + currentTripId + "/messages/" + encodeURIComponent(doc.id) + "/discard", { method: "POST" }).catch(function () {});
   }
 
   function autoGrowChatText() {
@@ -1701,6 +1735,9 @@
       if (!res.ok || data.error) throw new Error(data.error || "failed");
       entry.answer = data.answer;
       entry.proposedChange = data.proposedChange || null;
+      // Which stored message this is, so Apply / Discard can be recorded on
+      // it and still be true after the chat is next loaded from the server.
+      if (data.id) entry.id = data.id;
       setStatus(chatStatus, "");
       renderChat();
       scrollChatToEnd();
