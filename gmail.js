@@ -36,8 +36,9 @@
  *
  * `gmail.readonly` is a RESTRICTED scope. Offering this publicly needs Google
  * app verification plus an annual third-party security assessment (CASA). The
- * app therefore runs in TESTING mode - up to 100 users, each added by address
- * in the Cloud Console, who see an "unverified app" warning once. That ceiling
+ * app is therefore PUBLISHED BUT UNVERIFIED (since 2026-09-23; it ran in
+ * Testing before that): anyone may connect, up to Google's 100-user cap for an
+ * unverified app, and each sees an "unverified app" warning once. That ceiling
  * is a product decision, not a bug: see the deploy notes before trying to lift
  * it.
  */
@@ -199,10 +200,11 @@ function create(opts) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       // invalid_grant is Google saying the stored connection is over: revoked
-      // by the person, or - the common case here - EXPIRED. An OAuth app in
-      // Testing mode that asks for more than basic profile gets refresh
-      // tokens that die after seven days. That is a "reconnect", not a
-      // failure, and callers must be able to tell the two apart.
+      // by the person, or expired. (While the app was in Testing, every
+      // refresh token died after seven days, and that was the common case;
+      // published, it is rarer - a revoke, a password change, six months
+      // unused.) That is a "reconnect", not a failure, and callers must be
+      // able to tell the two apart.
       if (data.error === 'invalid_grant') {
         throw Object.assign(new Error('Google ended this Gmail connection'), { status: 401, expired: true });
       }

@@ -403,11 +403,20 @@ connected and says why, and reconnecting clears it (explicitly — a merge
 write keeps nested fields it does not mention, and the test harness now merges
 the way Firestore does so that would be caught).
 
-The lasting fix is Erik's: publishing the OAuth app to **In production**
-(still unverified) removes the seven-day expiry, keeps the 100-user ceiling
-and the "unverified app" warning, and drops the test-user allowlist — anyone
-with an account could then connect their own Gmail. That is a product call,
-not a code change.
+**Published 2026-09-23.** Erik moved the OAuth app to **In production**
+(unverified, no logo — a logo would force verification), which ends the
+seven-day expiry, keeps the 100-user ceiling and the "unverified app" warning,
+and drops the test-user allowlist: anyone with an account can now connect
+their own Gmail. Publishing needed a public privacy policy and terms, now at
+`strongtechnicalconsulting.com/privacy` and `/terms` (`eriks-projects/site/`).
+**The Gmail section of that privacy policy describes this code** — the sender
+list, the 40-message cap, bodies never stored, Anthropic as the extractor.
+Change the behaviour and that page must change with it.
+
+`invalid_grant` still happens (a revoke, a password change, six months
+unused), so the expired handling stays; its wording no longer blames Testing.
+Connections made while the app was in Testing may still carry the old expiry;
+reconnecting once issues a lasting one.
 
 ## Reading Gmail for bookings (2026-09-21)
 
@@ -458,9 +467,9 @@ else's mailbox off your account.
 
 `gmail.readonly` is a **restricted** scope. Offering it publicly requires
 Google app verification *plus* an annual third-party security assessment
-(CASA), which is a real recurring cost. So the OAuth app runs in **testing
-mode**: up to 100 users, each added by address in the Cloud Console, who see
-an "unverified app" warning once.
+(CASA), which is a real recurring cost. So the OAuth app is **published but
+unverified** (Testing until 2026-09-23): up to 100 users, who see an
+"unverified app" warning once.
 
 That ceiling is a product decision, not a bug. Do not try to lift it by
 widening scopes or by asking users to work around the warning. If the feature
@@ -484,9 +493,8 @@ bound to `trip-planner-run@` and `vacation-run@`, mounted as `GOOGLE_CLIENT_ID`
 / `GOOGLE_CLIENT_SECRET`. Google accepted the vacation app's `*.run.app`
 redirect URI on the same client, so no custom domain was needed there.
 
-Only addresses added under **Audience → Test users** can connect. Anyone else
-gets Google's "access blocked" page, which is the testing-mode ceiling doing
-its job, not a bug.
+While it was in Testing, only addresses under **Audience → Test users** could
+connect. Since publishing, anyone can, up to the unverified-app cap.
 
 `gmail.js` is now `eriks-projects/shared/gmail.js`, synced here and into the
 vacation app, because `TRAVEL_SENDERS` is a consent-screen promise and two

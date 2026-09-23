@@ -111,11 +111,11 @@ const get = async (p, c) => (await realFetch(B + p, { headers: { cookie: c } }))
   msgs = await get(`/api/trips/${trip.id}/messages`, me);
   ok('discarding it is remembered', msgs.find((m) => m.id === g.id).bookingsState === 'discarded');
 
-  /* ---------- Google ends the connection after seven days ---------- */
+  /* ---------- Google ends the connection ---------- */
   global.__expire = true;
   r = await post(`/api/trips/${trip.id}/gmail-bookings`, {}, me);
   let ended = await r.json();
-  ok('an expired Gmail connection is explained, and asks to reconnect', ended.needsConnect === true && /seven days/.test(ended.error || ''), JSON.stringify(ended).slice(0, 120));
+  ok('an expired Gmail connection is explained, and asks to reconnect', ended.needsConnect === true && /connection has ended/.test(ended.error || ''), JSON.stringify(ended).slice(0, 120));
   let gs = await get('/api/gmail', me);
   ok('...and the account stops saying connected', gs.connected === false && gs.expired === true, JSON.stringify({ c: gs.connected, e: gs.expired }));
   r = await post(`/api/trips/${trip.id}/gmail-bookings`, {}, me);

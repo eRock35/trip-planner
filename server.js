@@ -1057,8 +1057,8 @@ async function gmailRefreshFor(uid) {
 
 /** Google refused the stored connection. Remember that, so the page stops
  *  saying "connected" and offers to reconnect, and say so in words. */
-const GMAIL_EXPIRED = 'Your Gmail connection has ended \u2014 Google closes connections from apps in testing '
-  + 'after seven days. Connect Gmail again and this will work.';
+const GMAIL_EXPIRED = 'Your Gmail connection has ended \u2014 it was removed in your Google account, or Google ended it. '
+  + 'Connect Gmail again and this will work.';
 async function markGmailExpired(uid) {
   await db.collection('users').doc(uid).set({ gmail: { expiredAt: new Date().toISOString() } }, { merge: true }).catch(() => {});
 }
