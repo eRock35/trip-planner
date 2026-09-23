@@ -45,4 +45,9 @@ t('soonest first, undated last', () => {
 t('capped', () => assert.strictEqual(validate(Array.from({ length: 100 }, (_, i) => ({ title: 't' + i }))).length, 40));
 t('not a list is an empty list', () => { assert.deepStrictEqual(validate(null), []); assert.deepStrictEqual(validate('x'), []); });
 t('every kind the tool offers is one the validator keeps', () => KINDS.forEach((k) => assert.strictEqual(validate([{ kind: k, title: 'x' }])[0].kind, k)));
+t('a price is read as money, or left out', () => {
+  assert.strictEqual(validate([{ title: 'car', total: '$319.86' }])[0].total, 319.86);
+  assert.strictEqual(validate([{ title: 'car' }])[0].total, null);
+  assert.strictEqual(validate([{ title: 'car', total: 'TBD' }])[0].total, null);
+});
 console.log(`\n${n} assertions passed.`);

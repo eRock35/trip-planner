@@ -13,6 +13,8 @@ const schedule = require('./schedule');
 const { tripDates } = require('./tripdates');
 const bookingsLib = require('./bookings');
 const ideasLib = require('./ideas');
+const packingLib = require('./packing');
+const budgetLib = require('./budget');
 const weatherLib = require('./weather');
 const demo = require('./demo');
 
@@ -1101,8 +1103,8 @@ app.post('/api/gmail/scan', requireLogin, identity.requireBudget, identity.requi
         'as a readable range, and notes carrying the confirmation numbers, flight numbers, hotel names and ' +
         'rental-car pickup and return times exactly as written. Also list each booking on its own in ' +
         'bookings, so the trip can show it as a card: its kind, a short title, the company, the confirmation ' +
-        'number, when it starts and ends, the address and phone if given, and a https link to manage it if the ' +
-        'email has one. ' +
+        'number, when it starts and ends, the address and phone if given, a https link to manage it if the ' +
+        'email has one, and its total price in dollars when the email states one. ' +
         'Ignore marketing, fare alerts, loyalty statements and anything already in the past. ' +
         'If nothing is a real booking, report no trips. Never invent a detail that is not in the emails.',
       tools: [ITINERARY_TOOL],
@@ -1242,6 +1244,260 @@ app.post('/api/trips/:id/ideas', requireLogin, identity.requireBudget, identity.
     console.error('POST /api/trips/:id/ideas', err);
     if (send) return send({ error: 'Could not find things to do right now.' });
     res.status(500).json({ error: 'Could not find things to do right now.' });
+  }
+});
+
+/* ==========================================================================
+ * Packing and Budget (2026-09-23)
+ *
+ * The vacation app's two tabs, for every trip. Both are stored one document
+ * per row (see packing.js and budget.js for why), both are shared between
+ * everyone looking at the trip, and in both a model only ever SUGGESTS: what
+ * it proposes comes back to the page unsaved, and is added by a tap.
+ * ========================================================================== */
+
+const ROW_ID = /^[A-Za-z0-9_-]{1,40}$/;
+const packingCol = (ref) => ref.collection('packing');
+const budgetCol = (ref) => ref.collection('budget');
+
+async function rows(col) {
+  const snap = await col.get();
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.order || 0) - (b.order || 0) || String(a.createdAt).localeCompare(String(b.createdAt)));
+}
+
+/** What a model needs to know about a trip to suggest something sensible:
+ *  where, when, who (the notes), what they are doing, what is booked, and -
+ *  free, if there is one - the forecast. */
+async function tripContext(owned) {
+  const trip = tripOut(owned.doc.id, owned.data);
+  const out = ['Trip: ' + (trip.name || 'Untitled')];
+  if (trip.destination) out.push('Destination: ' + trip.destination);
+  if (trip.dates) out.push('Dates: ' + trip.dates.start + ' to ' + trip.dates.end + (trip.dates.precision === 'month' ? ' (month only)' : ''));
+  else if (trip.dateRange) out.push('When: ' + trip.dateRange);
+  if (trip.notes) out.push('Notes (who is going, preferences): ' + String(trip.notes).slice(0, 1500));
+  const days = Array.isArray(trip.days) ? trip.days : [];
+  if (days.length) out.push('Itinerary:\n' + days.slice(0, 14).map((d) => '- ' + (d.dateLabel || d.date || '') + ': ' + (d.title || '') +
+    ' - ' + (d.blocks || []).map((b) => b[1]).join('; ')).join('\n'));
+  const bookings = bookingsLib.validate(owned.data.bookings || []);
+  if (bookings.length) out.push('Bookings:\n' + bookings.map((b) => '- ' + b.kind + ': ' + b.title + (b.when ? ' (' + b.when + ')' : '') +
+    (b.total != null ? ', $' + b.total : '')).join('\n'));
+  const w = await weatherFor(owned.ref, owned.data).catch(() => null);
+  if (w && w.status === 'forecast' && w.days && w.days.length) {
+    const ds = w.tripDays ? w.days.filter((d) => d.inTrip) : w.days;
+    if (ds.length) out.push('Forecast:\n' + ds.map((d) => '- ' + d.date + ': ' + d.label + ', ' + d.hi + '/' + d.lo + 'F' + (d.rainMm ? ', rain ' + d.rainMm + 'mm' : '')).join('\n'));
+  }
+  return out.join('\n');
+}
+
+// ---- the example trip, read-only ------------------------------------------
+app.get(`/api/trips/${demo.DEMO_ID}/packing`, (req, res) => res.json({ items: demo.DEMO_PACKING || [] }));
+app.get(`/api/trips/${demo.DEMO_ID}/budget`, (req, res) => res.json(Object.assign({ lines: [], target: null }, demo.DEMO_BUDGET || {}, {
+  booked: bookingsLib.validate(demo.DEMO_TRIP.bookings || []).filter((b) => b.total != null)
+    .map((b) => ({ id: b.id, kind: b.kind, title: b.title, provider: b.provider, total: b.total })),
+})));
+
+// ---- packing ------------------------------------------------------------------
+app.get('/api/trips/:id/packing', requireLogin, async (req, res) => {
+  const owned = await loadOwnedTrip(req, res);
+  if (!owned) return;
+  try { res.json({ items: await rows(packingCol(owned.ref)) }); }
+  catch (err) { console.error('GET packing', err); res.status(500).json({ error: 'Could not load the packing list.' }); }
+});
+
+app.post('/api/trips/:id/packing', requireLogin, async (req, res) => {
+  const owned = await loadOwnedTrip(req, res);
+  if (!owned) return;
+  try {
+    const body = req.body || {};
+    const incoming = (Array.isArray(body.items) ? body.items : [body]).map(packingLib.item).filter(Boolean);
+    if (!incoming.length) return res.status(400).json({ error: 'Write what to pack.' });
+    const have = await rows(packingCol(owned.ref));
+    if (have.length + incoming.length > packingLib.MAX_ITEMS) return res.status(400).json({ error: 'That list is full.' });
+    const now = Date.now();
+    await Promise.all(incoming.map((it, i) => packingCol(owned.ref).add({
+      ...it, checked: false, order: now + i, createdAt: new Date(now).toISOString(),
+    })));
+    res.json({ items: await rows(packingCol(owned.ref)) });
+  } catch (err) { console.error('POST packing', err); res.status(500).json({ error: 'Could not add that.' }); }
+});
+
+app.patch('/api/trips/:id/packing/:iid', requireLogin, async (req, res) => {
+  const owned = await loadOwnedTrip(req, res);
+  if (!owned) return;
+  if (!ROW_ID.test(req.params.iid)) return res.status(404).json({ error: 'No such item.' });
+  try {
+    const ref = packingCol(owned.ref).doc(req.params.iid);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ error: 'No such item.' });
+    const b = req.body || {};
+    const patch = {};
+    if (typeof b.checked === 'boolean') patch.checked = b.checked;
+    if (b.text !== undefined || b.group !== undefined) {
+      const it = packingLib.item({ text: b.text !== undefined ? b.text : snap.data().text, group: b.group !== undefined ? b.group : snap.data().group });
+      if (!it) return res.status(400).json({ error: 'Write what to pack.' });
+      Object.assign(patch, it);
+    }
+    if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to change.' });
+    await ref.update(patch);
+    res.json({ item: { id: ref.id, ...snap.data(), ...patch } });
+  } catch (err) { console.error('PATCH packing', err); res.status(500).json({ error: 'Could not save that.' }); }
+});
+
+app.delete('/api/trips/:id/packing/:iid', requireLogin, async (req, res) => {
+  const owned = await loadOwnedTrip(req, res);
+  if (!owned) return;
+  if (!ROW_ID.test(req.params.iid)) return res.status(404).json({ error: 'No such item.' });
+  try {
+    const ref = packingCol(owned.ref).doc(req.params.iid);
+    if (!(await ref.get()).exists) return res.status(404).json({ error: 'No such item.' });
+    await ref.delete();
+    res.json({ ok: true });
+  } catch (err) { console.error('DELETE packing', err); res.status(500).json({ error: 'Could not remove that.' }); }
+});
+
+/** Untick everything - the list for the trip home, or the next trip. */
+app.post('/api/trips/:id/packing/reset', requireLogin, async (req, res) => {
+  const owned = await loadOwnedTrip(req, res);
+  if (!owned) return;
+  try {
+    const snap = await packingCol(owned.ref).get();
+    await Promise.all(snap.docs.filter((d) => d.data().checked).map((d) => d.ref.update({ checked: false })));
+    res.json({ items: await rows(packingCol(owned.ref)) });
+  } catch (err) { console.error('reset packing', err); res.status(500).json({ error: 'Could not reset the list.' }); }
+});
+
+/** Suggest what to pack. Returned, not saved: the page shows it and adds
+ *  only what is tapped. Never removes or unticks anything. */
+app.post('/api/trips/:id/packing/suggest', requireLogin, identity.requireBudget, identity.requireDailyCap, async (req, res) => {
+  let send = null;
+  try {
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    send = streamedJson(res);
+    const have = await rows(packingCol(owned.ref));
+    const plan = identityLib.planFor(req.user, MODEL_TIERS);
+    const response = await completeTurn({
+      model: plan.model,
+      max_tokens: 4096,
+      system:
+        'Suggest a packing list for this trip. Be specific to it - the place, the weather, what they are doing, who is ' +
+        'going - rather than a generic list: a rental car with small kids means car seats, a boat tour means motion-sickness ' +
+        'tablets, rain in the forecast means a rain layer. Group by person when the notes say who is going, otherwise by ' +
+        'category. Leave out anything already on their list. Then call packing_list.\n\n' + await tripContext(owned) +
+        '\n\nAlready on the list:\n' + (have.map((i) => '- ' + i.text).join('\n') || '(nothing yet)'),
+      tools: [packingLib.TOOL],
+      messages: [{ role: 'user', content: 'What should we pack?' }],
+    }, req.user);
+    const block = response.content.find((b) => b.type === 'tool_use' && b.name === 'packing_list');
+    const items = packingLib.newOnly(block && block.input && block.input.items, have);
+    send({ items });
+  } catch (err) {
+    console.error('suggest packing', err);
+    if (send) return send({ error: 'Could not suggest a list right now.' });
+    res.status(500).json({ error: 'Could not suggest a list right now.' });
+  }
+});
+
+// ---- budget -------------------------------------------------------------------
+async function budgetView(owned) {
+  const booked = bookingsLib.validate(owned.data.bookings || []).filter((b) => b.total != null)
+    .map((b) => ({ id: b.id, kind: b.kind, title: b.title, provider: b.provider, total: b.total }));
+  return { target: budgetLib.money(owned.data.budgetTarget), lines: await rows(budgetCol(owned.ref)), booked };
+}
+
+app.get('/api/trips/:id/budget', requireLogin, async (req, res) => {
+  const owned = await loadOwnedTrip(req, res);
+  if (!owned) return;
+  try { res.json(await budgetView(owned)); }
+  catch (err) { console.error('GET budget', err); res.status(500).json({ error: 'Could not load the budget.' }); }
+});
+
+app.put('/api/trips/:id/budget/target', requireLogin, async (req, res) => {
+  const owned = await loadOwnedTrip(req, res);
+  if (!owned) return;
+  try {
+    const target = budgetLib.money((req.body || {}).target);
+    await owned.ref.update({ budgetTarget: target });
+    res.json({ target });
+  } catch (err) { console.error('PUT budget target', err); res.status(500).json({ error: 'Could not save that.' }); }
+});
+
+app.post('/api/trips/:id/budget/lines', requireLogin, async (req, res) => {
+  const owned = await loadOwnedTrip(req, res);
+  if (!owned) return;
+  try {
+    const body = req.body || {};
+    const incoming = (Array.isArray(body.lines) ? body.lines : [body]).map(budgetLib.line).filter(Boolean);
+    if (!incoming.length) return res.status(400).json({ error: 'Give the line a name.' });
+    const have = await rows(budgetCol(owned.ref));
+    if (have.length + incoming.length > budgetLib.MAX_LINES) return res.status(400).json({ error: 'That budget is full.' });
+    const now = Date.now();
+    await Promise.all(incoming.map((l, i) => budgetCol(owned.ref).add({ ...l, order: now + i, createdAt: new Date(now).toISOString() })));
+    res.json(await budgetView(owned));
+  } catch (err) { console.error('POST budget line', err); res.status(500).json({ error: 'Could not add that.' }); }
+});
+
+app.patch('/api/trips/:id/budget/lines/:lid', requireLogin, async (req, res) => {
+  const owned = await loadOwnedTrip(req, res);
+  if (!owned) return;
+  if (!ROW_ID.test(req.params.lid)) return res.status(404).json({ error: 'No such line.' });
+  try {
+    const ref = budgetCol(owned.ref).doc(req.params.lid);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ error: 'No such line.' });
+    const merged = budgetLib.line({ ...snap.data(), ...(req.body || {}) });
+    if (!merged) return res.status(400).json({ error: 'Give the line a name.' });
+    await ref.update(merged);
+    res.json({ line: { id: ref.id, ...snap.data(), ...merged } });
+  } catch (err) { console.error('PATCH budget line', err); res.status(500).json({ error: 'Could not save that.' }); }
+});
+
+app.delete('/api/trips/:id/budget/lines/:lid', requireLogin, async (req, res) => {
+  const owned = await loadOwnedTrip(req, res);
+  if (!owned) return;
+  if (!ROW_ID.test(req.params.lid)) return res.status(404).json({ error: 'No such line.' });
+  try {
+    const ref = budgetCol(owned.ref).doc(req.params.lid);
+    if (!(await ref.get()).exists) return res.status(404).json({ error: 'No such line.' });
+    await ref.delete();
+    res.json({ ok: true });
+  } catch (err) { console.error('DELETE budget line', err); res.status(500).json({ error: 'Could not remove that.' }); }
+});
+
+/** Estimate the spending the bookings do not already cover. Returned, not
+ *  saved - the page adds what is tapped. Web search, because "what does a
+ *  dolphin cruise cost in Destin" is a question about now. */
+app.post('/api/trips/:id/budget/suggest', requireLogin, identity.requireBudget, identity.requireDailyCap, async (req, res) => {
+  let send = null;
+  try {
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    send = streamedJson(res);
+    const view = await budgetView(owned);
+    const plan = identityLib.planFor(req.user, MODEL_TIERS);
+    const response = await completeTurn({
+      model: plan.model,
+      max_tokens: 8192,
+      system:
+        'Estimate a spending budget for this trip, in US dollars, by line: groceries, meals out, activities they have ' +
+        'planned or are likely to do, gas or transit, parking, and a little for extras. Bookings that list a price are ' +
+        'ALREADY counted - do not include them again. Use web search for real prices where it matters (tickets, tours, ' +
+        'typical meal costs there) and keep each note to one line on how you got the number. Skip lines they already ' +
+        'have. Then call budget_estimate.\n\n' + await tripContext(owned) +
+        '\n\nLines they already have:\n' + (view.lines.map((l) => '- ' + l.category + ': ' + l.label + (l.planned != null ? ' $' + l.planned : '')).join('\n') || '(none yet)'),
+      tools: [plan.webSearch, budgetLib.TOOL],
+      messages: [{ role: 'user', content: 'What should we budget?' }],
+    }, req.user);
+    const block = response.content.find((b) => b.type === 'tool_use' && b.name === 'budget_estimate');
+    const lines = (block && block.input && Array.isArray(block.input.lines) ? block.input.lines : [])
+      .map(budgetLib.line).filter((l) => l && l.planned != null).slice(0, 20);
+    if (!lines.length) return send({ error: 'The estimate came back empty. Try again in a moment.' });
+    send({ lines });
+  } catch (err) {
+    console.error('suggest budget', err);
+    if (send) return send({ error: 'Could not estimate a budget right now.' });
+    res.status(500).json({ error: 'Could not estimate a budget right now.' });
   }
 });
 

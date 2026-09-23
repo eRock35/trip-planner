@@ -365,6 +365,50 @@ into a next step when it has nothing to show.
 Tests: `tripdates.js`, `weather.js`, `bookings.js`, `trip-bookings.js`,
 `trip-ideas.js`. Rendered at phone and desktop width before shipping.
 
+## Packing and Budget (2026-09-23)
+
+The vacation app's other two tabs, for every trip. On a phone the bar keeps
+five items — Overview, Itinerary, Chat, Packing, **More** (Budget, Watches,
+Details) — the vacation app's own pattern; the desktop sidebar shows all
+seven. The Overview has a tile for each.
+
+- **Stored one document per row** — `trips/<id>/packing/<item>` and
+  `trips/<id>/budget/<line>` — not as an array on the trip. These are the
+  lists two people edit at once; with one array, the second phone's save
+  writes back a list without the first phone's tick. `test/trip-packing-budget.js`
+  ticks two items concurrently and checks both stick. (The vacation app's
+  packing list is per-phone localStorage; this one is shared.)
+- **A model only suggests.** `/packing/suggest` and `/budget/suggest` return
+  rows unsaved; the page shows them ticked, and adds what is still ticked on a
+  tap. A suggestion never removes or unticks anything, and packing skips what
+  is already on the list. Both see the trip through `tripContext()` — place,
+  dates, notes (who is going), itinerary, bookings, and the forecast. Budget
+  uses web search; packing does not need it.
+- **Money** goes through `budget.money()`: "$1,240.50" reads as 1240.5,
+  "about $40" as 40, and anything without a digit as *no figure* — "free" once
+  came out as $0.00, because `Number("")` is 0.
+- **Bookings carry an optional `total`**, and the Budget counts those as
+  booked money, so a suggested budget is told not to count them twice.
+- The example trip has read-only packing and budget (`demo.DEMO_PACKING`,
+  `DEMO_BUDGET`).
+
+### Gmail connections end after seven days — by Google's rule
+
+An OAuth app in **Testing** that asks for more than basic profile gets refresh
+tokens that expire after **seven days**. `gmail.readonly` qualifies, so every
+connection dies weekly. Refreshing then fails with `invalid_grant`, which both
+apps now treat as "ended", not "failed": `gmail.js` throws it as a 401 marked
+`expired`, the connection is recorded as `expiredAt`, the page stops saying
+connected and says why, and reconnecting clears it (explicitly — a merge
+write keeps nested fields it does not mention, and the test harness now merges
+the way Firestore does so that would be caught).
+
+The lasting fix is Erik's: publishing the OAuth app to **In production**
+(still unverified) removes the seven-day expiry, keeps the 100-user ceiling
+and the "unverified app" warning, and drops the test-user allowlist — anyone
+with an account could then connect their own Gmail. That is a product call,
+not a code change.
+
 ## Reading Gmail for bookings (2026-09-21)
 
 Trip Planner can look through someone's booking confirmations and offer to

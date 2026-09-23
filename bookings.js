@@ -17,6 +17,7 @@
  */
 
 const crypto = require('crypto');
+const { money } = require('./budget');
 
 const KINDS = ['flight', 'stay', 'car', 'reservation', 'activity', 'transport', 'other'];
 const MAX = 40;
@@ -65,6 +66,9 @@ function validate(list) {
       phone: phone(b.phone),
       url: url(b.url),
       notes: text(b.notes, 500),
+      // What it cost, in dollars, when the confirmation says - the Budget tab
+      // counts these as already committed.
+      total: money(b.total),
     };
     if (!item.title && !item.provider && !item.confirmation) continue;
     if (!item.title) item.title = item.provider || 'Booking';
@@ -111,6 +115,7 @@ const TOOL = {
             phone: { type: 'string' },
             url: { type: 'string', description: 'https link to manage the booking, when the email has one.' },
             notes: { type: 'string', description: 'Anything worth knowing: door code instructions, what is included, how to skip the counter.' },
+            total: { type: 'number', description: 'Total price in US dollars when stated, e.g. 319.86. Omit if not stated - never estimate it.' },
           },
           required: ['kind', 'title'],
         },

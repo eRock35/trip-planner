@@ -19,10 +19,11 @@ const DEMO_TRIP = {
   // page, so the confirmation codes are plainly made up.
   bookings: [
     { id: 'demoflight01', kind: 'flight', title: 'ATL to LIS - TAP 228', provider: 'TAP Air Portugal', confirmation: 'EXAMPLE1',
-      when: 'Wed, Sep 30 - 6:05 PM', until: 'Thu, Oct 1 - 3:40 PM', date: '2026-09-30' },
+      when: 'Wed, Sep 30 - 6:05 PM', until: 'Thu, Oct 1 - 3:40 PM', date: '2026-09-30', total: 1386 },
     { id: 'demostay0001', kind: 'stay', title: 'Memmo Alfama - river-view room', provider: 'Booking.com', confirmation: 'EXAMPLE2',
       when: 'Thu, Oct 1 - from 3 PM', until: 'Mon, Oct 5 - by 11 AM', date: '2026-10-01',
-      address: 'Travessa Merceeiras 27, 1100-348 Lisboa', notes: 'Rooftop bar closes at midnight; ask for a room away from the terrace.' },
+      address: 'Travessa Merceeiras 27, 1100-348 Lisboa', total: 1120,
+      notes: 'Rooftop bar closes at midnight; ask for a room away from the terrace.' },
     { id: 'demotrain001', kind: 'transport', title: 'Rossio to Sintra', provider: 'CP', when: 'Sat, Oct 3 - 9:11 AM', date: '2026-10-03',
       notes: 'No booking needed - tap in with a Viva Viagem card.' },
   ],
@@ -120,4 +121,18 @@ const DEMO_WATCHES = [
   },
 ];
 
-module.exports = { DEMO_ID, DEMO_TRIP, DEMO_MESSAGES, DEMO_WATCHES };
+// The example trip's Packing and Budget tabs. Read-only, like the rest of it.
+const DEMO_PACKING = [
+  ['Passports', 'Documents', true], ['Boarding passes on phone', 'Documents', true], ['Travel adapter (type F)', 'Tech', true],
+  ['Walking shoes - the hills are steep', 'Clothes', true], ['Light jacket for Sintra, it is cooler up there', 'Clothes', false],
+  ['Sunglasses', 'Clothes', false], ['Viva Viagem card (or buy on arrival)', 'Documents', false], ['Phone charger + power bank', 'Tech', false],
+].map(([text, group, checked], i) => ({ id: 'demopack' + i, text, group, checked, order: i }));
+const DEMO_BUDGET = {
+  target: 3500,
+  lines: [
+    ['Food', 'Meals out', 600, 180, 'Two people, about 60 euros a day'], ['Activities', 'Sintra: Pena Palace + Quinta da Regaleira', 70, 0, 'Two tickets each'],
+    ['Transport', 'Metro, trams, train to Sintra', 60, 22, 'Viva Viagem top-ups'], ['Food', 'Pasteis, coffee, snacks', 80, 31, ''],
+  ].map(([category, label, planned, spent, note], i) => ({ id: 'demoline' + i, category, label, planned, spent, note, order: i })),
+};
+
+module.exports = { DEMO_ID, DEMO_TRIP, DEMO_MESSAGES, DEMO_WATCHES, DEMO_PACKING, DEMO_BUDGET };

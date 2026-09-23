@@ -109,6 +109,7 @@
   .row-title { font-size: 17px; font-weight: 500; line-height: 1.3; }
   .row-sub { font-size: 14px; color: var(--label-2); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row-chevron { width: 8px; height: 14px; color: var(--label-3); flex: 0 0 auto; }
+  .row-icon { width: 22px; height: 22px; color: var(--tint); flex: 0 0 auto; }
   .row .badge { margin-left: auto; }
   /* The "start another trip" tile. Dashed so it reads as an empty slot rather
      than as a trip you have forgotten the name of. */
@@ -299,8 +300,81 @@
   .ov-notes { white-space: pre-wrap; font-size: 15px; line-height: 1.45; -webkit-user-select: text; user-select: text; }
   .ov-empty { color: var(--label-2); font-size: 14px; line-height: 1.45; }
 
+  /* ---------- tab bar: More on a phone, everything in the sidebar ---------- */
+  .tab.in-more { display: none; }
+  .tab.is-more.is-active { color: var(--tint); }
+  @media (min-width: 900px) {
+    body.dk .dk-tabbar .tab.in-more { display: flex; }
+    body.dk .dk-tabbar .tab.is-more { display: none; }
+  }
+
+  /* ---------- Overview tiles ---------- */
+  .ov-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .ov-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left; border: none; font: inherit; color: inherit;
+             background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 12px 14px; min-height: 76px; cursor: pointer; }
+  .ov-tile:active { transform: scale(.98); }
+  .t-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--label-2); }
+  .t-value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .t-sub { font-size: 12.5px; color: var(--label-2); }
+  .t-bar { align-self: stretch; height: 5px; border-radius: 3px; background: var(--fill); overflow: hidden; margin-top: 4px; }
+  .t-bar i { display: block; height: 100%; background: var(--green); width: 0; transition: width .3s; }
+
+  /* ---------- Packing (the vacation app's checklist) ---------- */
+  .pk-summary { display: flex; flex-direction: column; gap: 8px; }
+  .pk-summary .top { display: flex; justify-content: space-between; align-items: baseline; }
+  .pk-summary b { font-size: 17px; }
+  .progress-track { height: 6px; border-radius: 999px; background: var(--fill); overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--green); border-radius: 999px; transition: width .35s ease-out; }
+  .progress-label { font-size: 13px; color: var(--label-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pk-groups { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  .pk-card { background: var(--card); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; }
+  .pk-head { padding: 12px 16px 8px; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .pk-head h3 { margin: 0; font-size: 16px; font-weight: 600; }
+  .checklist { list-style: none; margin: 0; padding: 0; }
+  .cl-row { position: relative; display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; min-height: 48px; font-size: 15px; cursor: pointer; -webkit-user-select: none; user-select: none; }
+  .cl-row:not(:last-child)::after { content: ""; position: absolute; left: 52px; right: 0; bottom: 0; height: 1px; background: var(--sep); transform: scaleY(.5); }
+  .cl-row:active { background: var(--fill); }
+  .cl-check { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--label-3); flex: 0 0 auto; display: flex; align-items: center; justify-content: center; transition: background .15s, border-color .15s; }
+  .cl-check svg { width: 13px; height: 13px; color: #fff; opacity: 0; }
+  .cl-row.checked .cl-check { background: var(--green); border-color: var(--green); }
+  .cl-row.checked .cl-check svg { opacity: 1; }
+  .cl-label { flex: 1 1 auto; line-height: 1.4; }
+  .cl-row.checked .cl-label { color: var(--label-2); text-decoration: line-through; }
+  .cl-del { flex: 0 0 auto; width: 36px; height: 36px; border: none; background: none; color: var(--label-3); display: flex; align-items: center; justify-content: center; border-radius: 50%; }
+  .cl-del svg { width: 12px; height: 12px; }
+  .pk-add { padding: 10px; }
+  .pk-add-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pk-add-row input, .pk-add-row select { flex: 1 1 140px; min-width: 0; min-height: 40px; border-radius: 10px; border: 1px solid var(--sep); background: var(--fill); color: var(--label); padding: 0 12px; font: inherit; font-size: 15px; }
+  .pk-add-row #pkGroup, .pk-add-row #bgPlanned { flex: 0 1 120px; }
+  .pk-add-row #bgCat { flex: 0 1 130px; }
+  .pk-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .sg-card { background: var(--card); border: 1.5px solid var(--tint); border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .sg-row { display: flex; gap: 10px; align-items: flex-start; font-size: 14.5px; line-height: 1.4; cursor: pointer; }
+  .sg-row input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--tint); flex: 0 0 auto; }
+  .sg-group { font-size: 12px; color: var(--label-2); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; margin-top: 6px; }
+
+  /* ---------- Budget (the vacation app's bar and rows) ---------- */
+  .bg-summary { display: flex; flex-direction: column; gap: 8px; }
+  .bg-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .bg-big { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .bg-bar { position: relative; height: 10px; border-radius: 5px; background: var(--fill); overflow: hidden; }
+  .bg-bar i { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 5px; }
+  .bg-bar .booked { background: var(--tint); } .bg-bar .spent { background: var(--green); } .bg-bar .over { background: var(--red); }
+  .bg-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--label-2); }
+  .bg-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 0; }
+  .bg-target { background: none; border: none; color: var(--tint); font: inherit; font-size: 14px; font-weight: 600; padding: 0; cursor: pointer; }
+  .bg-cat { background: var(--card); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; margin-bottom: 12px; }
+  .bg-row { position: relative; display: flex; align-items: center; gap: 10px; padding: 10px 8px 10px 16px; min-height: 52px; }
+  .bg-row:not(:last-child)::after { content: ""; position: absolute; left: 16px; right: 0; bottom: 0; height: 1px; background: var(--sep); transform: scaleY(.5); }
+  .bg-row .lbl { flex: 1 1 auto; min-width: 0; }
+  .bg-row .lbl b { display: block; font-size: 15px; font-weight: 500; }
+  .bg-row .lbl span { font-size: 12.5px; color: var(--label-2); }
+  .bg-spent { width: 88px; flex: 0 0 auto; min-height: 36px; border-radius: 9px; border: 1px solid var(--sep); background: var(--fill); color: var(--label); text-align: right; padding: 0 10px; font: inherit; font-size: 15px; font-variant-numeric: tabular-nums; }
+  .g-amt { font-weight: 600; font-variant-numeric: tabular-nums; }
+
   @media (min-width: 700px) {
     .ov-hero { grid-template-columns: 3fr 2fr; }
+    .pk-groups { grid-template-columns: 1fr 1fr; align-items: start; }
     .ov-bookings { grid-template-columns: 1fr 1fr; }
   }
 
@@ -450,6 +524,9 @@
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
     <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/></symbol>
+    <symbol id="i-bag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7.5" width="16" height="13" rx="2.5"/><path d="M9 7.5V6a3 3 0 0 1 6 0v1.5"/><path d="M4 12.5h16"/></symbol>
+    <symbol id="i-dollar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M14.8 9.2c-.5-1-1.6-1.6-2.8-1.6-1.6 0-2.8.9-2.8 2.2 0 3 5.6 1.6 5.6 4.5 0 1.3-1.2 2.2-2.8 2.2-1.3 0-2.4-.6-2.9-1.7M12 6v1.6M12 16.5V18"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="8" cy="12" r=".9" fill="currentColor"/><circle cx="12" cy="12" r=".9" fill="currentColor"/><circle cx="16" cy="12" r=".9" fill="currentColor"/></symbol>
     <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8.5 8.5 0 0 1-12.6 7.4L3.5 20.5l1.2-4.4A8.5 8.5 0 1 1 21 12z"/></symbol>
     <symbol id="i-cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
     <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
@@ -523,6 +600,11 @@
         <section class="ov-countdown" id="ovCountdown" hidden aria-label="Countdown"></section>
       </div>
 
+      <div class="ov-tiles">
+        <button type="button" class="ov-tile" id="ovPackTile"><span class="t-label">Packing</span><span class="t-value" id="ovPackVal">&ndash;</span><span class="t-bar"><i id="ovPackBar"></i></span></button>
+        <button type="button" class="ov-tile" id="ovBudgetTile"><span class="t-label">Budget</span><span class="t-value" id="ovBudgetVal">&ndash;</span><span class="t-sub" id="ovBudgetSub"></span></button>
+      </div>
+
       <div class="ov-group" id="ovNextGroup" hidden>
         <div class="section-header" id="ovNextTitle">Up next</div>
         <div class="ov-card" id="ovNext"></div>
@@ -570,6 +652,52 @@
       <div class="stack" id="dayList"></div>
     </div>
 
+    <!-- Packing: one shared list, ticked from any phone. -->
+    <div id="tab-packing" class="tabpanel" role="tabpanel" hidden>
+      <div class="pk-summary ov-card" id="pkSummary"></div>
+      <div id="pkGroups" class="pk-groups"></div>
+      <div class="ov-card pk-add" id="pkAddCard">
+        <div class="pk-add-row">
+          <input id="pkText" placeholder="Add something to pack" autocomplete="off" enterkeyhint="done" maxlength="140">
+          <input id="pkGroup" placeholder="Group" list="pkGroupList" autocomplete="off" maxlength="40">
+          <datalist id="pkGroupList"></datalist>
+          <button type="button" class="btn btn-primary btn-sm" id="pkAddBtn">Add</button>
+        </div>
+      </div>
+      <div class="pk-actions">
+        <button type="button" class="btn btn-secondary" id="pkSuggestBtn">Suggest what to pack</button>
+        <button type="button" class="link-btn" id="pkResetBtn">Untick everything</button>
+      </div>
+      <div class="status" id="pkStatus"></div>
+      <div id="pkSuggest" hidden></div>
+    </div>
+
+    <!-- Budget: a target, what the bookings cost, and spending by line. -->
+    <div id="tab-budget" class="tabpanel" role="tabpanel" hidden>
+      <div class="ov-card bg-summary" id="bgSummary"></div>
+      <div class="ov-group" id="bgBookedGroup" hidden>
+        <div class="section-header">Booked</div>
+        <div class="ov-card" style="padding:0"><div class="glist" id="bgBooked"></div></div>
+      </div>
+      <div class="ov-group">
+        <div class="section-header">Spending</div>
+        <div id="bgLines"></div>
+      </div>
+      <div class="ov-card pk-add">
+        <div class="pk-add-row">
+          <select id="bgCat"></select>
+          <input id="bgLabel" placeholder="What for" autocomplete="off" maxlength="80">
+          <input id="bgPlanned" placeholder="$ planned" inputmode="decimal" autocomplete="off">
+          <button type="button" class="btn btn-primary btn-sm" id="bgAddBtn">Add</button>
+        </div>
+      </div>
+      <div class="pk-actions">
+        <button type="button" class="btn btn-secondary" id="bgSuggestBtn">Estimate with Claude</button>
+      </div>
+      <div class="status" id="bgStatus"></div>
+      <div id="bgSuggest" hidden></div>
+    </div>
+
     <div id="tab-watches" class="tabpanel" role="tabpanel" hidden>
       <button type="button" class="btn btn-primary" id="wOpenBtn"><svg><use href="#i-plus"/></svg>Watch a price</button>
       <div id="watchesEmpty" class="empty" hidden>
@@ -609,8 +737,13 @@
     <button type="button" role="tab" class="tab" id="tab-btn-overview" aria-selected="true" aria-controls="tab-overview"><svg><use href="#i-home"/></svg>Overview</button>
     <button type="button" role="tab" class="tab" id="tab-btn-itinerary" aria-selected="false" aria-controls="tab-itinerary"><svg><use href="#i-cal"/></svg>Itinerary</button>
     <button type="button" role="tab" class="tab" id="tab-btn-chat" aria-selected="false" aria-controls="tab-chat"><svg><use href="#i-chat"/></svg>Chat</button>
-    <button type="button" role="tab" class="tab" id="tab-btn-watches" aria-selected="false" aria-controls="tab-watches"><svg><use href="#i-eye"/></svg>Watches</button>
-    <button type="button" role="tab" class="tab" id="tab-btn-details" aria-selected="false" aria-controls="tab-details"><svg><use href="#i-info"/></svg>Details</button>
+    <button type="button" role="tab" class="tab" id="tab-btn-packing" aria-selected="false" aria-controls="tab-packing"><svg><use href="#i-bag"/></svg>Packing</button>
+    <!-- On a phone these three live under More, the way the vacation app
+         keeps five items in its bar; the desktop sidebar shows all of them. -->
+    <button type="button" role="tab" class="tab in-more" id="tab-btn-budget" aria-selected="false" aria-controls="tab-budget"><svg><use href="#i-dollar"/></svg>Budget</button>
+    <button type="button" role="tab" class="tab in-more" id="tab-btn-watches" aria-selected="false" aria-controls="tab-watches"><svg><use href="#i-eye"/></svg>Watches</button>
+    <button type="button" role="tab" class="tab in-more" id="tab-btn-details" aria-selected="false" aria-controls="tab-details"><svg><use href="#i-info"/></svg>Details</button>
+    <button type="button" class="tab is-more" id="tab-btn-more" aria-haspopup="dialog"><svg><use href="#i-more"/></svg>More</button>
   </div>
 </nav>
 
@@ -1557,7 +1690,8 @@
   }
 
   /* ---------- Trip detail: tabs ---------- */
-  var tripTabs = ["overview", "chat", "itinerary", "watches", "details"];
+  var tripTabs = ["overview", "chat", "itinerary", "packing", "budget", "watches", "details"];
+  var MORE_TABS = ["budget", "watches", "details"];
   var currentTab = "overview";
   function selectTripTab(name) {
     currentTab = name;
@@ -1567,6 +1701,7 @@
       $("tab-" + t).hidden = t !== name;
       $("tab-btn-" + t).setAttribute("aria-selected", String(t === name));
     });
+    $("tab-btn-more").classList.toggle("is-active", MORE_TABS.indexOf(name) >= 0);
     var showComposer = name === "chat";
     composer.hidden = !showComposer;
     document.body.classList.toggle("has-composer", showComposer);
@@ -1579,6 +1714,20 @@
       selectTripTab(t);
     });
   });
+  // More: the vacation app's pattern for a phone - the bar keeps five items
+  // and the rest open from a sheet. The desktop sidebar shows everything.
+  $("tab-btn-more").addEventListener("click", function () {
+    var list = document.createElement("div"); list.className = "list";
+    [["budget", "Budget", "i-dollar", "Target, bookings and spending"], ["watches", "Watches", "i-eye", "Prices being checked"], ["details", "Details", "i-info", "Name, dates, notes, lock in"]]
+      .forEach(function (r) {
+        var b = document.createElement("button"); b.type = "button"; b.className = "row";
+        b.innerHTML = svgUse(r[2], "row-icon") + '<div class="row-main"><div class="row-title">' + r[1] + '</div><div class="row-sub">' + r[3] + '</div></div>' + svgUse("i-chev-r", "row-chevron");
+        b.addEventListener("click", function () { closeSheet(); selectTripTab(r[0]); });
+        list.appendChild(b);
+      });
+    openSheet({ title: "More", body: list });
+  });
+
   $("itineraryAskBtn").addEventListener("click", function () { selectTripTab("chat"); $("chatText").value = "Plan the days for this trip."; autoGrowChatText(); $("chatText").focus(); });
 
   async function loadTrip(id) {
@@ -1587,6 +1736,9 @@
     $("tripName").textContent = "Loading…"; $("tripDest").textContent = ""; navTitle.textContent = "";
     $("tripBadge").className = "badge"; $("tripBadge").textContent = "";
     clearOverview();
+    packItems = []; budgetData = { target: null, lines: [], booked: [] };
+    ["pkSuggest", "bgSuggest"].forEach(function (id) { $(id).hidden = true; $(id).innerHTML = ""; });
+    renderTiles();
     selectTripTab("overview");
     try {
       var res = await fetch("/api/trips/" + id);
@@ -1614,6 +1766,8 @@
     renderItinerary(itineraryDays);
     renderOverview();
     loadWeather(id);
+    loadPacking(id);
+    loadBudget(id);
     refreshChat();
     refreshWatches();
   }
@@ -1797,6 +1951,7 @@
       if (!res.ok) throw new Error();
       currentTrip.bookings = data.bookings || [];
       renderBookings();
+      loadBudget(currentTripId);
       toast("Removed");
     } catch (err) { toast("Couldn’t remove that"); }
   });
@@ -1980,6 +2135,7 @@
       doc.bookingsState = "applied";
       currentTrip.bookings = saved.bookings || [];
       renderChat(); renderBookings();
+      loadBudget(currentTripId);
       setStatus(chatStatus, "");
       toast("Bookings saved");
     } catch (e) { setStatus(chatStatus, "Couldn't save that. Try again.", "error"); }
@@ -1993,6 +2149,278 @@
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ which: "bookings" })
     }).catch(function () {});
   }
+
+  /* ---------- Packing ---------- */
+  var packItems = [], budgetData = { target: null, lines: [], booked: [] };
+  function isDemo() { return !!(currentTrip && currentTrip.demo); }
+  function tripApi(path) { return "/api/trips/" + (isDemo() ? "demo" : currentTripId) + path; }
+
+  async function loadPacking(id) {
+    try {
+      var res = await fetch(tripApi("/packing"));
+      if (!res.ok || currentTripId !== id) return;
+      packItems = (await res.json()).items || [];
+      renderPacking();
+    } catch (e) {}
+  }
+
+  function packGroups() {
+    var order = [], by = {};
+    packItems.forEach(function (i) { var g = i.group || "Other"; if (!by[g]) { by[g] = []; order.push(g); } by[g].push(i); });
+    return order.map(function (g) { return [g, by[g]]; });
+  }
+
+  function renderPacking() {
+    var demoTrip = isDemo();
+    var done = packItems.filter(function (i) { return i.checked; }).length, total = packItems.length;
+    var pct = total ? Math.round((done / total) * 100) : 0;
+    $("pkSummary").innerHTML = total
+      ? '<div class="top"><b>' + (done === total ? "All packed" : done + " of " + total + " packed") + '</b><span class="progress-label">' + pct + '%</span></div>' +
+        '<div class="progress-track"><div class="progress-fill" style="width:' + pct + '%"></div></div>'
+      : '<div class="ov-cta"><p>Nothing on the list yet. Add things below, or let Claude suggest a list for this trip — the weather, what you’re doing, who’s going. It’s shared: tick something on one phone and it’s ticked on the other.</p></div>';
+    $("pkGroups").innerHTML = packGroups().map(function (g) {
+      var n = g[1].filter(function (i) { return i.checked; }).length;
+      return '<section class="pk-card"><div class="pk-head"><h3>' + escapeHtml(g[0]) + '</h3><span class="progress-label">' + n + ' / ' + g[1].length + '</span></div>' +
+        '<ul class="checklist">' + g[1].map(function (i) {
+          return '<li class="cl-row' + (i.checked ? ' checked' : '') + '" data-id="' + escapeHtml(i.id) + '" role="checkbox" aria-checked="' + !!i.checked + '" tabindex="0">' +
+            '<span class="cl-check">' + svgUse("i-check") + '</span><span class="cl-label">' + escapeHtml(i.text) + '</span>' +
+            (demoTrip ? '' : '<button type="button" class="cl-del" data-del="' + escapeHtml(i.id) + '" aria-label="Remove">' + svgUse("i-x") + '</button>') + '</li>';
+        }).join("") + '</ul></section>';
+    }).join("");
+    $("pkGroupList").innerHTML = packGroups().map(function (g) { return '<option value="' + escapeHtml(g[0]) + '">'; }).join("");
+    ["pkAddCard"].forEach(function (id) { $(id).hidden = demoTrip; });
+    $("pkSuggestBtn").hidden = demoTrip; $("pkResetBtn").hidden = demoTrip || !done;
+    renderTiles();
+  }
+
+  $("pkGroups").addEventListener("click", async function (e) {
+    if (isDemo()) return;
+    var del = e.target.closest("[data-del]");
+    if (del) {
+      var id = del.getAttribute("data-del");
+      var before = packItems;
+      packItems = packItems.filter(function (i) { return i.id !== id; }); renderPacking();
+      var res = await fetch(tripApi("/packing/" + encodeURIComponent(id)), { method: "DELETE" }).catch(function () {});
+      if (!res || !res.ok) { packItems = before; renderPacking(); toast("Couldn’t remove that"); }
+      return;
+    }
+    var row = e.target.closest(".cl-row");
+    if (!row) return;
+    var item = packItems.filter(function (i) { return i.id === row.getAttribute("data-id"); })[0];
+    if (!item) return;
+    // Ticked on screen at once; put back if the server says no.
+    item.checked = !item.checked; renderPacking();
+    var r = await fetch(tripApi("/packing/" + encodeURIComponent(item.id)), {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ checked: item.checked })
+    }).catch(function () {});
+    if (!r || !r.ok) { item.checked = !item.checked; renderPacking(); toast("Couldn’t save that tick"); }
+  });
+  $("pkGroups").addEventListener("keydown", function (e) {
+    if ((e.key === " " || e.key === "Enter") && e.target.classList.contains("cl-row")) { e.preventDefault(); e.target.click(); }
+  });
+
+  async function addPacking(items) {
+    var res = await fetch(tripApi("/packing"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: items }) });
+    var data = await res.json().catch(function () { return {}; });
+    if (!res.ok) throw new Error(data.error || "Couldn’t add that.");
+    packItems = data.items || []; renderPacking();
+  }
+  $("pkAddBtn").addEventListener("click", async function () {
+    var text = $("pkText").value.trim(); if (!text) { $("pkText").focus(); return; }
+    try { await addPacking([{ text: text, group: $("pkGroup").value.trim() }]); $("pkText").value = ""; $("pkText").focus(); }
+    catch (e) { setStatus($("pkStatus"), e.message, "error"); }
+  });
+  $("pkText").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); $("pkAddBtn").click(); } });
+
+  $("pkResetBtn").addEventListener("click", async function () {
+    if (!window.confirm("Untick everything? Handy for packing to come home.")) return;
+    var res = await fetch(tripApi("/packing/reset"), { method: "POST" }).catch(function () {});
+    if (res && res.ok) { packItems = (await res.json()).items || []; renderPacking(); }
+  });
+
+  /** Claude suggests; nothing is added until it is ticked here and Add is
+   *  tapped. Same rule as the itinerary and the bookings. */
+  $("pkSuggestBtn").addEventListener("click", async function () {
+    var btn = this, status = $("pkStatus"), id = currentTripId;
+    btn.disabled = true; setStatus(status, "Thinking about this trip… about a minute.");
+    try {
+      var res = await fetch(tripApi("/packing/suggest"), { method: "POST" });
+      if (res.status === 401) { showAuthRequired(status); return; }
+      if (res.status === 402 || res.status === 503) { await showSpendBlocked(status, res); return; }
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok || data.error) throw new Error(data.error || "Couldn’t suggest a list right now.");
+      if (currentTripId !== id) return;
+      setStatus(status, "");
+      showSuggestions($("pkSuggest"), (data.items || []).map(function (i) { return { group: i.group, text: i.text, value: i }; }),
+        "Suggested for this trip", "Nothing to add — your list already covers it.",
+        async function (chosen) { await addPacking(chosen); toast(chosen.length + " added"); });
+    } catch (e) { setStatus(status, e.message, "error"); }
+    finally { btn.disabled = false; }
+  });
+
+  /** A suggestion list with a tick box per row, all ticked, and one button
+   *  that adds the ticked ones. Shared by packing and budget. */
+  function showSuggestions(box, rows, title, emptyText, onAdd) {
+    box.hidden = false;
+    if (!rows.length) { box.innerHTML = '<div class="sg-card"><div class="muted">' + escapeHtml(emptyText) + '</div></div>'; return; }
+    var lastGroup = null;
+    box.innerHTML = '<div class="sg-card"><div class="pc-label">' + escapeHtml(title) + '</div>' + rows.map(function (r, i) {
+      var head = r.group !== lastGroup ? '<div class="sg-group">' + escapeHtml(r.group || "") + '</div>' : '';
+      lastGroup = r.group;
+      return head + '<label class="sg-row"><input type="checkbox" checked data-i="' + i + '"><span>' + escapeHtml(r.text) + (r.sub ? ' <span class="muted">· ' + escapeHtml(r.sub) + '</span>' : '') + '</span></label>';
+    }).join("") + '<div class="pc-actions"><button type="button" class="btn btn-primary sg-add">Add ' + rows.length + '</button><button type="button" class="btn btn-secondary sg-close">Discard</button></div></div>';
+    var addBtn = box.querySelector(".sg-add");
+    // It appears under the list, usually below the fold; bring it into view.
+    requestAnimationFrame(function () { box.scrollIntoView({ behavior: "smooth", block: "start" }); });
+    box.addEventListener("change", function () {
+      var n = box.querySelectorAll("input[data-i]:checked").length;
+      addBtn.textContent = "Add " + n; addBtn.disabled = !n;
+    });
+    box.querySelector(".sg-close").addEventListener("click", function () { box.hidden = true; box.innerHTML = ""; });
+    addBtn.addEventListener("click", async function () {
+      var chosen = Array.prototype.map.call(box.querySelectorAll("input[data-i]:checked"), function (c) { return rows[Number(c.getAttribute("data-i"))].value; });
+      addBtn.disabled = true;
+      try { await onAdd(chosen); box.hidden = true; box.innerHTML = ""; }
+      catch (e) { addBtn.disabled = false; toast(e.message || "Couldn’t add those"); }
+    });
+  }
+
+  /* ---------- Budget ---------- */
+  var BUDGET_CATS = ["Lodging", "Transport", "Food", "Activities", "Shopping", "Other"];
+  $("bgCat").innerHTML = BUDGET_CATS.map(function (c) { return '<option>' + c + '</option>'; }).join("");
+  function money(n) {
+    if (n == null || isNaN(n)) return "";
+    return Number(n).toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: Number(n) % 1 ? 2 : 0 });
+  }
+
+  async function loadBudget(id) {
+    try {
+      var res = await fetch(tripApi("/budget"));
+      if (!res.ok || currentTripId !== id) return;
+      budgetData = await res.json();
+      renderBudget();
+    } catch (e) {}
+  }
+
+  function budgetTotals() {
+    var booked = (budgetData.booked || []).reduce(function (a, b) { return a + (b.total || 0); }, 0);
+    var planned = 0, spent = 0;
+    (budgetData.lines || []).forEach(function (l) { planned += l.planned || 0; spent += l.spent || 0; });
+    return { booked: booked, planned: planned, spent: spent, expected: booked + planned, sofar: booked + spent, target: budgetData.target };
+  }
+
+  function renderBudget() {
+    var t = budgetTotals(), demoTrip = isDemo();
+    var ceiling = t.target || t.expected || 0;
+    var pct = function (n) { return ceiling ? Math.min(100, (n / ceiling) * 100) : 0; };
+    var over = t.target && t.sofar > t.target;
+    $("bgSummary").innerHTML =
+      '<div class="bg-top"><div><div class="t-label">Booked + spent</div><div class="bg-big">' + money(t.sofar) + '</div></div>' +
+        '<div style="text-align:right"><div class="t-label">Target</div>' +
+        (demoTrip ? '<div class="g-amt">' + (t.target ? money(t.target) : "None") + '</div>'
+                  : '<button type="button" class="bg-target" id="bgTargetBtn">' + (t.target ? money(t.target) : "Set a target") + '</button>') + '</div></div>' +
+      '<div class="bg-bar"><i class="booked" style="width:' + pct(t.sofar) + '%"></i><i class="spent" style="left:' + pct(t.booked) + '%;width:' + Math.max(0, pct(t.sofar) - pct(t.booked)) + '%"></i>' +
+        (over ? '<i class="over" style="width:100%;opacity:.25"></i>' : '') + '</div>' +
+      '<div class="bg-legend"><span><i style="background:var(--tint)"></i>Booked ' + money(t.booked) + '</span><span><i style="background:var(--green)"></i>Spent ' + money(t.spent) + '</span>' +
+        '<span>Planned ' + money(t.planned) + ' more</span>' + (t.target ? '<span>' + (over ? "Over by " + money(t.sofar - t.target) : money(Math.max(0, t.target - t.expected)) + " left after plans") + '</span>' : '') + '</div>';
+    var tb = $("bgTargetBtn");
+    if (tb) tb.addEventListener("click", async function () {
+      var v = window.prompt("Budget target for this trip, in dollars", t.target || "");
+      if (v === null) return;
+      var res = await fetch(tripApi("/budget/target"), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target: v }) });
+      if (res.ok) { budgetData.target = (await res.json()).target; renderBudget(); }
+    });
+
+    var booked = budgetData.booked || [];
+    $("bgBookedGroup").hidden = !booked.length;
+    $("bgBooked").innerHTML = booked.map(function (b) {
+      return '<div class="grow"><span class="g-label">' + (BOOKING_ICON[b.kind] || "") + ' ' + escapeHtml(b.title) + '</span><span class="g-value g-amt">' + money(b.total) + '</span></div>';
+    }).join("");
+
+    var lines = budgetData.lines || [];
+    if (!lines.length) {
+      $("bgLines").innerHTML = '<div class="ov-card ov-cta"><p>' + (demoTrip ? "No spending lines on the example." :
+        "Nothing planned yet. Add lines below — groceries, dinners out, the boat tour — or let Claude estimate them. Bookings with a price are counted above already.") + '</p></div>';
+    } else {
+      var cats = [];
+      lines.forEach(function (l) { if (cats.indexOf(l.category) < 0) cats.push(l.category); });
+      $("bgLines").innerHTML = cats.map(function (c) {
+        var ls = lines.filter(function (l) { return l.category === c; });
+        return '<div class="section-header" style="margin-top:4px">' + escapeHtml(c) + '</div><div class="bg-cat">' + ls.map(function (l) {
+          return '<div class="bg-row" data-id="' + escapeHtml(l.id) + '"><div class="lbl"><b>' + escapeHtml(l.label) + '</b><span>' +
+            (l.planned != null ? money(l.planned) + " planned" : "No plan") + (l.note ? " · " + escapeHtml(l.note) : "") + '</span></div>' +
+            (demoTrip ? '<span class="g-amt">' + (l.spent != null ? money(l.spent) : "–") + '</span>'
+              : '<input class="bg-spent" inputmode="decimal" placeholder="Spent" aria-label="Spent on ' + escapeHtml(l.label) + '" value="' + (l.spent != null ? l.spent : "") + '" data-spent="' + escapeHtml(l.id) + '">' +
+                '<button type="button" class="cl-del" data-bgdel="' + escapeHtml(l.id) + '" aria-label="Remove">' + svgUse("i-x") + '</button>') +
+            '</div>';
+        }).join("") + '</div>';
+      }).join("");
+    }
+    document.querySelectorAll("#tab-budget .pk-add, #bgSuggestBtn").forEach(function (el) { el.hidden = demoTrip; });
+    renderTiles();
+  }
+
+  // Spent: saved when the field is left, the way the vacation app's actuals are.
+  $("bgLines").addEventListener("change", async function (e) {
+    var input = e.target.closest("[data-spent]"); if (!input) return;
+    var id = input.getAttribute("data-spent");
+    var res = await fetch(tripApi("/budget/lines/" + encodeURIComponent(id)), {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spent: input.value })
+    }).catch(function () {});
+    if (!res || !res.ok) { toast("Couldn’t save that"); return; }
+    var line = (await res.json()).line;
+    budgetData.lines = budgetData.lines.map(function (l) { return l.id === id ? line : l; });
+    renderBudget();
+  });
+  $("bgLines").addEventListener("click", async function (e) {
+    var del = e.target.closest("[data-bgdel]"); if (!del) return;
+    var id = del.getAttribute("data-bgdel");
+    var res = await fetch(tripApi("/budget/lines/" + encodeURIComponent(id)), { method: "DELETE" }).catch(function () {});
+    if (res && res.ok) { budgetData.lines = budgetData.lines.filter(function (l) { return l.id !== id; }); renderBudget(); }
+  });
+
+  async function addBudgetLines(lines) {
+    var res = await fetch(tripApi("/budget/lines"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lines: lines }) });
+    var data = await res.json().catch(function () { return {}; });
+    if (!res.ok) throw new Error(data.error || "Couldn’t add that.");
+    budgetData = data; renderBudget();
+  }
+  $("bgAddBtn").addEventListener("click", async function () {
+    var label = $("bgLabel").value.trim(); if (!label) { $("bgLabel").focus(); return; }
+    try {
+      await addBudgetLines([{ category: $("bgCat").value, label: label, planned: $("bgPlanned").value }]);
+      $("bgLabel").value = ""; $("bgPlanned").value = "";
+    } catch (e) { setStatus($("bgStatus"), e.message, "error"); }
+  });
+  $("bgSuggestBtn").addEventListener("click", async function () {
+    var btn = this, status = $("bgStatus"), id = currentTripId;
+    btn.disabled = true; setStatus(status, "Looking up prices there… a minute or two.");
+    try {
+      var res = await fetch(tripApi("/budget/suggest"), { method: "POST" });
+      if (res.status === 401) { showAuthRequired(status); return; }
+      if (res.status === 402 || res.status === 503) { await showSpendBlocked(status, res); return; }
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok || data.error) throw new Error(data.error || "Couldn’t estimate right now.");
+      if (currentTripId !== id) return;
+      setStatus(status, "");
+      showSuggestions($("bgSuggest"), (data.lines || []).map(function (l) {
+        return { group: l.category, text: l.label + " — " + money(l.planned), sub: l.note, value: l };
+      }), "Estimated for this trip", "Nothing to add.", async function (chosen) { await addBudgetLines(chosen); toast(chosen.length + " added"); });
+    } catch (e) { setStatus(status, e.message, "error"); }
+    finally { btn.disabled = false; }
+  });
+
+  // ---- the two Overview tiles ----
+  function renderTiles() {
+    var done = packItems.filter(function (i) { return i.checked; }).length, total = packItems.length;
+    $("ovPackVal").textContent = total ? done + " / " + total : "Start a list";
+    $("ovPackBar").style.width = total ? Math.round((done / total) * 100) + "%" : "0";
+    var t = budgetTotals();
+    $("ovBudgetVal").textContent = (t.sofar || t.target) ? money(t.sofar) : "Plan it";
+    $("ovBudgetSub").textContent = t.target ? "of " + money(t.target) + " target" : (t.sofar ? "booked + spent" : "");
+  }
+  $("ovPackTile").addEventListener("click", function () { selectTripTab("packing"); });
+  $("ovBudgetTile").addEventListener("click", function () { selectTripTab("budget"); });
 
   /* ---------- Itinerary ---------- */
   var dayList = $("dayList"), itineraryEmpty = $("itineraryEmpty");
