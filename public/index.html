@@ -121,7 +121,6 @@
   .sheet-lede { font-size: 15px; line-height: 1.5; color: var(--label); margin: 0 0 14px; }
   .row-add { color: var(--tint); }
   .row-add .row-title { font-weight: 600; }
-  .row-add::before { display: none; }
 
   /* The trips list on a desktop.
    *
@@ -1390,10 +1389,15 @@
       }
       var groups = [["Planning", trips.filter(function (t) { return t.status !== "locked"; })], ["Locked in", trips.filter(function (t) { return t.status === "locked"; })]];
       list.innerHTML = "";
-      groups.forEach(function (g) {
-        if (!g[1].length) return;
+      var planningList = null;
+      groups.forEach(function (g, gi) {
+        // Planning is drawn even when empty, because "Start another trip"
+        // lives in it: a new trip starts as a plan, so that is where the
+        // invitation belongs - not under "Locked in".
+        if (!g[1].length && gi !== 0) return;
         var hdr = document.createElement("div"); hdr.className = "section-header"; hdr.textContent = g[0]; list.appendChild(hdr);
         var ul = document.createElement("div"); ul.className = "list";
+        if (gi === 0) planningList = ul;
         g[1].forEach(function (t) {
           var btn = document.createElement("button"); btn.type = "button"; btn.className = "row";
           var sub = [t.destination, t.dateRange].filter(Boolean).join(" · ") || "No details yet";
@@ -1408,14 +1412,18 @@
       // The last tile is the next thing to do. On a phone it reads as one
       // more row; on a desktop it fills the gap the grid leaves rather than
       // ending the page with white space and no invitation.
-      var starter = document.createElement("div"); starter.className = "list";
+      //
+      // It goes INSIDE the Planning list, which is the only way it can do
+      // either. It used to be a second .list of its own directly under the
+      // first, with nothing between them: on a phone two rounded cards sat
+      // flush against each other, and on a desktop it started a new grid
+      // below the trips instead of taking the next slot beside them.
       var add = document.createElement("button");
       add.type = "button"; add.className = "row row-add";
       add.innerHTML = '<div class="row-main"><div class="row-title">Start another trip</div>' +
         '<div class="row-sub">A name and a rough idea of where and when</div></div>';
       add.addEventListener("click", function () { newTripBtn.click(); });
-      starter.appendChild(add);
-      list.appendChild(starter);
+      planningList.appendChild(add);
     } catch (e) {
       list.innerHTML = '<div class="empty"><b>Couldn’t load trips</b><span>Check your connection and pull down to try again.</span></div>';
     }
