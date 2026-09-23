@@ -351,6 +351,18 @@ cannot be created by API (Google offers none for standard web clients); it is
 a Cloud Console step for Erik, shared with `santa-rosa-beach-trip`: one Google
 app, two redirect URIs, testing mode.
 
+**Switched on 2026-09-23.** Erik created the client in Cloud Console ("Google
+Auth Platform" — the 2025 rename of "OAuth consent screen"; External, since the
+project has no Workspace organisation, left in Testing). Its ID and secret are
+`google-oauth-client-id` / `google-oauth-client-secret` in Secret Manager,
+bound to `trip-planner-run@` and `vacation-run@`, mounted as `GOOGLE_CLIENT_ID`
+/ `GOOGLE_CLIENT_SECRET`. Google accepted the vacation app's `*.run.app`
+redirect URI on the same client, so no custom domain was needed there.
+
+Only addresses added under **Audience → Test users** can connect. Anyone else
+gets Google's "access blocked" page, which is the testing-mode ceiling doing
+its job, not a bug.
+
 `gmail.js` is now `eriks-projects/shared/gmail.js`, synced here and into the
 vacation app, because `TRAVEL_SENDERS` is a consent-screen promise and two
 copies would be two promises that drift.
