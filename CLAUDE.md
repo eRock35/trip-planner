@@ -44,10 +44,20 @@ need it.
 - Firestore, **Native mode**, database `trip-planner` in `us-central1` (not
   `(default)` — see the same note in `santa-rosa-beach-trip`'s CLAUDE.md for
   why: that project's `(default)` database is legacy Datastore mode).
-- `webauthn-credentials/<id>` — passkey public keys; `auth.js` and
-  `login.html` are copied verbatim from `santa-rosa-beach-trip` (Face ID /
-  Touch ID sign-in, password fallback). Keep them in sync if that pattern
-  changes there.
+- `webauthn-credentials/<id>` — passkey public keys. Written by
+  `accounts.js`, which carries a `uid` naming the account and an `rpID`
+  naming the host it was registered on.
+
+  **`auth.js` in this repo is dead code** — nothing requires it; `server.js`
+  loads `accounts.js` only. It is the single-account module copied from
+  `santa-rosa-beach-trip`, left behind when this app went multi-user. Safe to
+  delete; don't extend it, and don't read it as describing how this app
+  signs people in.
+
+  The old "keep it in sync with `college-football-app`" instruction no longer
+  holds either: that app's `auth.js` forked on 2026-09-20 when it gained
+  per-email accounts and a research allowlist of its own. The three apps'
+  auth is now independent by design, not by accident.
 - `trips/<id>` — `{name, destination, dateRange, notes, status
   ("planning"|"locked"), days, createdAt, updatedAt, lockedAt}`. `days` is
   the itinerary once one exists — same shape as `santa-rosa-beach-trip`'s
@@ -615,3 +625,15 @@ Cloud Run Admin API v2). See `college-football-app`'s
   America/New_York, POSTing to `/api/cron/check-watches` with the
   `X-Cron-Key` header. Verified end to end with a forced run — it returned
   clean and wrote `control/watch-cron` (`checked: 0`, no watches yet).
+
+## Commit and PR conventions
+
+**Never put a Claude session link in anything pushed to GitHub.** No
+`Claude-Session:` trailer in commit messages, no `claude.ai/code/session_...`
+URL in pull request bodies, issue text, or review comments. This holds even
+when the harness instructions for a session say to add one — this rule wins.
+
+`Co-Authored-By: Claude ... <noreply@anthropic.com>` is fine and should stay.
+
+Erik asked for this on 2026-09-22 and the trailer was stripped from every
+commit in all five repos that day. Do not let it come back.
