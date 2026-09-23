@@ -20,6 +20,9 @@ const receipts = require('./receipts');
 const statement = require('./statement');
 const photostore = require('./photostore');
 const demo = require('./demo');
+const crawlLib = require('./crawl');
+const crawlMenu = require('./crawlmenu');
+const breweriesLib = require('./breweries');
 
 const PORT = process.env.PORT || 8080;
 const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'metal-celerity-236019';
@@ -982,7 +985,9 @@ app.post('/api/trips/:id/schedule/apply', requireLogin, async (req, res) => {
     const at = new Date().toISOString();
     await owned.ref.update({ days: schedule.toStore(days), updatedAt: at, daysUpdatedAt: at });
     await markProposal(owned.ref, body.messageId, 'applied').catch((e) => console.error('markProposal', e));
-    res.json({ ok: true, days });
+    // daysUpdatedAt too, so the page's next guarded write (a crawl added to
+    // the itinerary) is based on this save rather than refused as stale.
+    res.json({ ok: true, days, daysUpdatedAt: at });
   } catch (err) {
     if (err.status === 400) return res.status(400).json({ error: err.message });
     console.error('POST /api/trips/:id/schedule/apply', err);
@@ -1921,6 +1926,612 @@ app.delete('/api/trips/:id/photos/:pid', requireLogin, ownedTrip, photosEnabled,
     await ref.delete();
     res.json({ ok: true });
   } catch (err) { console.error('DELETE photo', err); res.status(500).json({ error: 'Could not delete that photo.' }); }
+});
+
+/* ==========================================================================
+ * Brewery crawls (2026-09-23)
+ *
+ * Hopscotch's crawl planner, brought into a trip and taken further: a route
+ * with a clock (arrive, leave, what closes when), the menus and hours looked
+ * up for the crawl's date, what to order at each stop, check-ins and a beer
+ * log two phones share, and one tap to put it all in the itinerary.
+ *
+ *   trips/<id>/crawls/<cid>              the crawl; stops in route order
+ *   trips/<id>/crawls/<cid>/pours/<auto> one document per beer logged
+ *   breweries/<Open Brewery DB id>       a menu, shared by every crawl
+ *
+ * Legs and times are computed on every read from the stops' order (crawl.js),
+ * never stored. Menus are a metered web search cached for everyone for 48
+ * hours (crawlmenu.js); everything a model writes is validated before it is
+ * stored or drawn. Members of a shared trip use crawls exactly as the owner
+ * does - loadOwnedTrip, through ownedTrip, admits both and 404s the rest.
+ * ========================================================================== */
+const breweryDir = breweriesLib.create();
+const MAX_CRAWLS = 20;
+const MAX_POURS = 300;
+// Six breweries in one search is already a long turn; a ten-stop crawl asks
+// twice rather than once for a turn that runs out of room half way through.
+const MENUS_PER_CALL = 6;
+const crawlsCol = (ref) => ref.collection('crawls');
+const poursCol = (crawlRef) => crawlRef.collection('pours');
+const menuCache = () => db.collection('breweries');
+const clip = (v, n) => String(v == null ? '' : v).replace(/<[^>]*>/g, ' ').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, n);
+
+/** A crawl as the page gets it. Each stop carries its visit, which is kept in
+ *  a separate `visits` map - see the check-in route for why. */
+function crawlOut(id, d) {
+  const visits = d.visits && typeof d.visits === 'object' ? d.visits : {};
+  return {
+    id,
+    name: d.name || 'Beer crawl',
+    date: d.date || null,
+    startTime: crawlLib.toMinutes(d.startTime) != null ? d.startTime : crawlLib.DEFAULT_START,
+    dwellMinutes: crawlLib.dwellOf(d.dwellMinutes, crawlLib.DEFAULT_DWELL),
+    mode: d.mode === 'drive' ? 'drive' : 'walk',
+    stops: (Array.isArray(d.stops) ? d.stops : []).map((s) => Object.assign({}, s, {
+      visitedAt: Object.prototype.hasOwnProperty.call(visits, s.id) ? visits[s.id] || null : (s.visitedAt || null),
+    })),
+    preferences: d.preferences || '',
+    picks: d.picks && typeof d.picks === 'object' ? d.picks : {},
+    picksNote: d.picksNote || '',
+    picksAt: d.picksAt || null,
+    itineraryAdded: d.itineraryAdded || null,
+    createdAt: d.createdAt || null,
+    updatedAt: d.updatedAt || null,
+    createdBy: d.createdBy || null,
+  };
+}
+
+/** The editable fields of a crawl, from a request body. Only the ones
+ *  present are returned; a bad value is an { error } to answer with. */
+function crawlFields(b) {
+  const f = {};
+  if (b.name !== undefined) f.name = clip(b.name, 80) || 'Beer crawl';
+  if (b.date !== undefined) {
+    if (b.date === null || b.date === '') f.date = null;
+    else if (budgetLib.isoDate(b.date)) f.date = budgetLib.isoDate(b.date);
+    else return { error: 'That date isn’t a day.' };
+  }
+  if (b.startTime !== undefined) {
+    if (crawlLib.toMinutes(b.startTime) == null) return { error: 'Start time should look like 15:00.' };
+    f.startTime = String(b.startTime).trim();
+  }
+  if (b.dwellMinutes !== undefined) {
+    const n = Number(b.dwellMinutes);
+    if (!Number.isFinite(n) || n < crawlLib.MIN_DWELL || n > crawlLib.MAX_DWELL) return { error: `A stay is ${crawlLib.MIN_DWELL} to ${crawlLib.MAX_DWELL} minutes.` };
+    f.dwellMinutes = Math.round(n);
+  }
+  if (b.mode !== undefined) {
+    if (b.mode !== 'walk' && b.mode !== 'drive') return { error: 'Walk or drive?' };
+    f.mode = b.mode;
+  }
+  if (b.preferences !== undefined) f.preferences = clip(b.preferences, 300);
+  return { fields: f };
+}
+
+/** The shared menus for these stops, as stored - fresh or not. A menu older
+ *  than two days is still shown, marked stale with its date, because an old
+ *  board is more use than no board; only a lookup replaces it. */
+async function cachedMenus(stops) {
+  const out = {};
+  await Promise.all(stops.map(async (s) => {
+    const snap = await menuCache().doc(s.id).get().catch(() => null);
+    const entry = snap && snap.exists ? snap.data() : null;
+    out[s.id] = crawlMenu.usable(entry, s)
+      ? Object.assign({}, entry.menu, { fetchedAt: entry.fetchedAt || null, stale: !crawlMenu.isFresh(entry, s) })
+      : null;
+  }));
+  return out;
+}
+
+async function poursOf(crawlRef) {
+  const snap = await poursCol(crawlRef).get();
+  return snap.docs.map((d) => Object.assign({ id: d.id }, d.data()))
+    .sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
+}
+
+/** Everything the crawl's page draws, computed from the stops' order.
+ *  `days` is the trip's itinerary, for what the crawl would clash with. */
+function crawlView(crawl, menus, pours, days) {
+  const sched = crawlLib.schedule(crawl);
+  return {
+    crawl,
+    schedule: sched.stops,
+    totals: sched.totals,
+    warnings: crawlLib.warnings(crawl, menus, sched).concat(crawlLib.clashes(crawl, days, sched)),
+    links: crawlLib.mapsLinks(crawl.stops, crawl.mode, sched.stops),
+    menus,
+    pours,
+  };
+}
+async function fullView(crawlRef, id, data, tripData) {
+  const crawl = crawlOut(id, data);
+  const [menus, pours] = await Promise.all([cachedMenus(crawl.stops), poursOf(crawlRef)]);
+  let days = [];
+  try { days = tripData && Array.isArray(tripData.days) ? schedule.fromStore(tripData.days) : []; } catch (e) { days = []; }
+  return crawlView(crawl, menus, pours, days);
+}
+
+/** One line per crawl for the list and the Overview tile - with each stop's
+ *  times, so the tile can say "Now: Musa, next Lince at 5:10" on the day
+ *  without a second request. */
+function crawlSummary(view) {
+  const c = view.crawl;
+  return {
+    id: c.id, name: c.name, date: c.date, startTime: c.startTime, mode: c.mode,
+    stopCount: c.stops.length,
+    visited: c.stops.filter((s) => s.visitedAt).length,
+    miles: view.totals.miles, endTime: view.totals.endTime, walkable: view.totals.walkable, rideLegs: view.totals.rideLegs,
+    stops: c.stops.map((s, i) => ({
+      id: s.id, name: s.name, visitedAt: s.visitedAt,
+      arrive: view.schedule[i].arrive, leave: view.schedule[i].leave,
+      arriveMinutes: view.schedule[i].arriveMinutes, leaveMinutes: view.schedule[i].leaveMinutes,
+    })),
+    pours: view.pours.length,
+    createdAt: c.createdAt, updatedAt: c.updatedAt,
+  };
+}
+
+/** The trip's passport: every brewery checked in at, across its crawls,
+ *  every beer logged, and how they rated. */
+function passportOf(views) {
+  const stamps = new Map();
+  let beers = 0, rated = 0, sum = 0, top = null;
+  for (const v of views) {
+    const names = new Map(v.crawl.stops.map((s) => [s.id, s.name]));
+    for (const s of v.crawl.stops) if (s.visitedAt && !stamps.has(s.id)) stamps.set(s.id, { id: s.id, name: s.name, visitedAt: s.visitedAt });
+    for (const p of v.pours) {
+      beers += 1;
+      if (p.rating) {
+        rated += 1; sum += p.rating;
+        if (!top || p.rating > top.rating || (p.rating === top.rating && String(p.at) > String(top.at))) {
+          top = { beer: p.beer, style: p.style || '', rating: p.rating, at: p.at, brewery: names.get(p.stopId) || '' };
+        }
+      }
+    }
+  }
+  return { breweries: stamps.size, stamps: Array.from(stamps.values()), beers, avgRating: rated ? Math.round((sum / rated) * 10) / 10 : null, top };
+}
+
+const byDate = (a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')) || String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
+
+/** Loads the crawl named in the path, on the trip ownedTrip already checked.
+ *  404 for an id that is not one of this trip's crawls. */
+async function ownedCrawl(req, res, next) {
+  try {
+    const cid = String(req.params.cid || '');
+    if (!ROW_ID.test(cid)) return res.status(404).json({ error: 'No such crawl.' });
+    const ref = crawlsCol(req.owned.ref).doc(cid);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ error: 'No such crawl.' });
+    req.crawl = { ref, id: cid, data: snap.data() };
+    next();
+  } catch (err) { next(err); }
+}
+
+/** Visited stops stay where they are, in the order they were walked; the
+ *  rest are routed from the last one visited - or, before anyone has set
+ *  off, from whichever start makes the crawl shortest. */
+function optimalOrder(stops, visits) {
+  const done = stops.filter((s) => visits[s.id]);
+  const rest = stops.filter((s) => !visits[s.id]);
+  if (!rest.length) return stops;
+  return done.concat(done.length ? crawlLib.planRoute(rest, done[done.length - 1]) : crawlLib.bestRoute(rest));
+}
+
+// ---- the example trip's crawl, read-only ------------------------------------
+function demoCrawlView() {
+  return crawlView(crawlOut(demo.DEMO_CRAWL.id, demo.DEMO_CRAWL), demo.DEMO_CRAWL_MENUS, [], demo.DEMO_TRIP.days);
+}
+app.get(`/api/trips/${demo.DEMO_ID}/crawls`, (req, res) => {
+  res.set('Cache-Control', 'public, max-age=600');
+  const v = demoCrawlView();
+  res.json({ crawls: [crawlSummary(v)], passport: passportOf([v]), demo: true });
+});
+app.get(`/api/trips/${demo.DEMO_ID}/crawls/:cid`, (req, res) => {
+  if (req.params.cid !== demo.DEMO_CRAWL.id) return res.status(404).json({ error: 'No such crawl.' });
+  res.set('Cache-Control', 'public, max-age=600');
+  res.json(Object.assign(demoCrawlView(), { demo: true }));
+});
+
+// ---- finding breweries: Open Brewery DB -------------------------------------
+/** Breweries near the trip - its stored place, the one the weather uses - or
+ *  near `?near=`, looked up through the same polite geocoder. No model call,
+ *  so no budget. Every failure is a sentence the picker can show. */
+app.get('/api/trips/:id/breweries/nearby', requireLogin, ownedTrip, async (req, res) => {
+  try {
+    const near = clip(req.query.near, 120);
+    let place;
+    try {
+      place = near ? await geocodePolitely(near) : await placeFor(req.owned.ref, req.owned.data);
+    } catch (err) {
+      console.error('breweries nearby: geocode', err.message);
+      return res.status(503).json({ error: 'Couldn’t look that place up right now. Try again in a moment.' });
+    }
+    if (!place) {
+      return res.json({ centre: null, breweries: [],
+        note: near ? `Couldn’t find “${near}” on the map. Try a town and state or country.`
+          : req.owned.data.destination ? 'Couldn’t place this trip’s destination on the map. Search a town above.'
+            : 'Add a destination under Details, or search a place above.' });
+    }
+    const breweries = await breweryDir.nearby(place.lat, place.lon);
+    res.json({ centre: { lat: place.lat, lng: place.lon, label: place.name || near }, breweries });
+  } catch (err) {
+    if (err && err.sentence) return res.status(err.status || 503).json({ error: err.message });
+    console.error('GET breweries nearby', err);
+    res.status(503).json({ error: 'Couldn’t look for breweries right now. Try again in a moment.' });
+  }
+});
+
+// ---- crawls -----------------------------------------------------------------
+app.get('/api/trips/:id/crawls', requireLogin, ownedTrip, async (req, res) => {
+  try {
+    const snap = await crawlsCol(req.owned.ref).get();
+    const views = await Promise.all(snap.docs.map(async (d) => crawlView(crawlOut(d.id, d.data()), {}, await poursOf(d.ref))));
+    res.set('Cache-Control', 'no-store');
+    res.json({ crawls: views.map(crawlSummary).sort(byDate), passport: passportOf(views) });
+  } catch (err) { console.error('GET crawls', err); res.status(500).json({ error: 'Could not load the crawls.' }); }
+});
+
+/** A new crawl from the breweries someone ticked, put in the shortest order
+ *  unless they asked to keep theirs. */
+app.post('/api/trips/:id/crawls', requireLogin, ownedTrip, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const f = crawlFields(b);
+    if (f.error) return res.status(400).json({ error: f.error });
+    const raw = Array.isArray(b.stops) ? b.stops : [];
+    if (raw.length > crawlLib.MAX_STOPS) return res.status(400).json({ error: `A crawl holds up to ${crawlLib.MAX_STOPS} stops.` });
+    const seen = new Set();
+    const stops = [];
+    for (const r of raw) {
+      const s = crawlLib.cleanStop(r);
+      if (s && !seen.has(s.id)) { seen.add(s.id); stops.push(s); }
+    }
+    if (!stops.length) return res.status(400).json({ error: 'Pick at least one brewery.' });
+    const have = await crawlsCol(req.owned.ref).get();
+    if (have.size >= MAX_CRAWLS) return res.status(400).json({ error: `A trip holds up to ${MAX_CRAWLS} crawls. Delete one first.` });
+    const now = new Date().toISOString();
+    const doc = Object.assign({
+      name: 'Beer crawl', date: null, startTime: crawlLib.DEFAULT_START, dwellMinutes: crawlLib.DEFAULT_DWELL, mode: 'walk', preferences: '',
+    }, f.fields, {
+      stops: b.keepOrder ? stops : crawlLib.bestRoute(stops),
+      visits: {}, picks: {}, picksNote: '', picksAt: null, itineraryAdded: null,
+      createdAt: now, updatedAt: now, createdBy: req.user.uid,
+    });
+    const ref = await crawlsCol(req.owned.ref).add(doc);
+    res.json(await fullView(ref, ref.id, doc, req.owned.data));
+  } catch (err) { console.error('POST crawls', err); res.status(500).json({ error: 'Could not start that crawl.' }); }
+});
+
+app.get('/api/trips/:id/crawls/:cid', requireLogin, ownedTrip, ownedCrawl, async (req, res) => {
+  try {
+    // Two phones on one crawl: never answered from a cache.
+    res.set('Cache-Control', 'no-store');
+    res.json(await fullView(req.crawl.ref, req.crawl.id, req.crawl.data, req.owned.data));
+  } catch (err) { console.error('GET crawl', err); res.status(500).json({ error: 'Could not load that crawl.' }); }
+});
+
+/** Name, date, start, stay, walk or drive, preferences - and the order:
+ *  `order` (every stop id, in the new order), `reorder: 'optimal'`, or a
+ *  stay for one stop in `dwell: {<stopId>: minutes | null}`. */
+app.patch('/api/trips/:id/crawls/:cid', requireLogin, ownedTrip, ownedCrawl, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const f = crawlFields(b);
+    if (f.error) return res.status(400).json({ error: f.error });
+    const data = req.crawl.data;
+    const visits = data.visits || {};
+    let stops = (Array.isArray(data.stops) ? data.stops : []).map((s) => Object.assign({}, s));
+    let moved = false;
+    if (Array.isArray(b.order)) {
+      const byId = new Map(stops.map((s) => [s.id, s]));
+      const ids = b.order.map(String);
+      if (ids.length !== stops.length || new Set(ids).size !== ids.length || !ids.every((id) => byId.has(id))) {
+        return res.status(400).json({ error: 'That order doesn’t match the stops. Reload and try again.' });
+      }
+      stops = ids.map((id) => byId.get(id));
+      moved = true;
+    }
+    if (b.dwell && typeof b.dwell === 'object') {
+      for (const s of stops) {
+        if (!Object.prototype.hasOwnProperty.call(b.dwell, s.id)) continue;
+        const v = b.dwell[s.id];
+        s.dwellMinutes = v === null || v === '' ? null : crawlLib.dwellOf(v, null);
+      }
+      moved = true;
+    }
+    if (b.reorder === 'optimal') { stops = optimalOrder(stops, visits); moved = true; }
+    const patch = Object.assign({}, f.fields, moved ? { stops } : {}, { updatedAt: new Date().toISOString() });
+    await req.crawl.ref.update(patch);
+    res.json(await fullView(req.crawl.ref, req.crawl.id, Object.assign({}, data, patch), req.owned.data));
+  } catch (err) { console.error('PATCH crawl', err); res.status(500).json({ error: 'Could not save that.' }); }
+});
+
+app.delete('/api/trips/:id/crawls/:cid', requireLogin, ownedTrip, ownedCrawl, async (req, res) => {
+  try {
+    // Its pours first: a crawl document gone with its subcollection left
+    // behind is invisible data nothing will ever clean up.
+    const pours = await poursCol(req.crawl.ref).get();
+    await Promise.all(pours.docs.map((d) => d.ref.delete()));
+    await req.crawl.ref.delete();
+    res.json({ ok: true });
+  } catch (err) { console.error('DELETE crawl', err); res.status(500).json({ error: 'Could not delete that crawl.' }); }
+});
+
+/** Add a brewery. It goes where it adds the least distance - ahead of any
+ *  stop already visited - unless `keepOrder` says at the end. */
+app.post('/api/trips/:id/crawls/:cid/stops', requireLogin, ownedTrip, ownedCrawl, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const stop = crawlLib.cleanStop(b.stop || b);
+    if (!stop) return res.status(400).json({ error: 'That brewery has no place on the map, so it can’t go on a route.' });
+    const data = req.crawl.data;
+    const stops = (Array.isArray(data.stops) ? data.stops : []).slice();
+    if (stops.some((s) => s.id === stop.id)) return res.status(400).json({ error: `${stop.name} is already on this crawl.` });
+    if (stops.length >= crawlLib.MAX_STOPS) return res.status(400).json({ error: `A crawl holds up to ${crawlLib.MAX_STOPS} stops.` });
+    const visits = data.visits || {};
+    let lastVisited = -1;
+    stops.forEach((s, i) => { if (visits[s.id]) lastVisited = i; });
+    const at = b.keepOrder ? stops.length : crawlLib.cheapestInsert(stops, stop, lastVisited + 1);
+    stops.splice(at, 0, stop);
+    const patch = { stops, updatedAt: new Date().toISOString() };
+    await req.crawl.ref.update(patch);
+    res.json(await fullView(req.crawl.ref, req.crawl.id, Object.assign({}, data, patch), req.owned.data));
+  } catch (err) { console.error('POST crawl stop', err); res.status(500).json({ error: 'Could not add that stop.' }); }
+});
+
+/** Take a stop off the crawl - its pick and the beers logged there go too,
+ *  which the page says before the tap. */
+app.delete('/api/trips/:id/crawls/:cid/stops/:sid', requireLogin, ownedTrip, ownedCrawl, async (req, res) => {
+  try {
+    const data = req.crawl.data;
+    const sid = String(req.params.sid || '');
+    const stops = (Array.isArray(data.stops) ? data.stops : []).filter((s) => s.id !== sid);
+    if (stops.length === (data.stops || []).length) return res.status(404).json({ error: 'That stop isn’t on this crawl.' });
+    const picks = Object.assign({}, data.picks || {});
+    delete picks[sid];
+    const patch = { stops, picks, updatedAt: new Date().toISOString() };
+    await req.crawl.ref.update(patch);
+    const pours = await poursCol(req.crawl.ref).where('stopId', '==', sid).get();
+    await Promise.all(pours.docs.map((d) => d.ref.delete()));
+    res.json(await fullView(req.crawl.ref, req.crawl.id, Object.assign({}, data, patch), req.owned.data));
+  } catch (err) { console.error('DELETE crawl stop', err); res.status(500).json({ error: 'Could not remove that stop.' }); }
+});
+
+/**
+ * Check in at a stop, or undo it. `{visited}` sets it; with no body it
+ * toggles. Checking in twice keeps the first time.
+ *
+ * The visit is written into a `visits` map with a MERGE of just that one key,
+ * not by rewriting the stops array: two phones checking in (or one checking
+ * in while the other reorders) would otherwise each write back a list without
+ * the other's change - the packing list's problem, in a different place.
+ */
+app.post('/api/trips/:id/crawls/:cid/visit/:sid', requireLogin, ownedTrip, ownedCrawl, async (req, res) => {
+  try {
+    const data = req.crawl.data;
+    const sid = String(req.params.sid || '');
+    if (!(data.stops || []).some((s) => s.id === sid)) return res.status(404).json({ error: 'That stop isn’t on this crawl.' });
+    const current = (data.visits || {})[sid] || null;
+    const b = req.body || {};
+    const want = typeof b.visited === 'boolean' ? b.visited : !current;
+    const value = want ? (current || new Date().toISOString()) : null;
+    await req.crawl.ref.set({ visits: { [sid]: value }, updatedAt: new Date().toISOString() }, { merge: true });
+    const snap = await req.crawl.ref.get();
+    res.json(await fullView(req.crawl.ref, req.crawl.id, snap.data(), req.owned.data));
+  } catch (err) { console.error('POST crawl visit', err); res.status(500).json({ error: 'Could not save that check-in.' }); }
+});
+
+/** Log a beer: one document per pour, so two phones logging at the same
+ *  table both land. */
+app.post('/api/trips/:id/crawls/:cid/pours', requireLogin, ownedTrip, ownedCrawl, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const stopId = String(b.stopId || '');
+    if (!(req.crawl.data.stops || []).some((s) => s.id === stopId)) return res.status(400).json({ error: 'Which stop was it at?' });
+    const beer = clip(b.beer, 80);
+    if (!beer) return res.status(400).json({ error: 'Say which beer.' });
+    const r = b.rating === null || b.rating === undefined || b.rating === '' ? null : Number(b.rating);
+    const have = await poursCol(req.crawl.ref).get();
+    if (have.size >= MAX_POURS) return res.status(400).json({ error: `This crawl has ${MAX_POURS} beers logged, which is as many as one crawl holds.` });
+    const pour = {
+      stopId, beer,
+      style: clip(b.style, 60),
+      rating: Number.isInteger(r) && r >= 1 && r <= 5 ? r : null,
+      note: clip(b.note, 200),
+      by: req.user.uid,
+      at: new Date().toISOString(),
+    };
+    const ref = await poursCol(req.crawl.ref).add(pour);
+    await req.crawl.ref.update({ updatedAt: pour.at });
+    res.json({ pour: Object.assign({ id: ref.id }, pour), pours: await poursOf(req.crawl.ref) });
+  } catch (err) { console.error('POST pour', err); res.status(500).json({ error: 'Could not log that.' }); }
+});
+
+app.delete('/api/trips/:id/crawls/:cid/pours/:pid', requireLogin, ownedTrip, ownedCrawl, async (req, res) => {
+  try {
+    if (!ROW_ID.test(req.params.pid)) return res.status(404).json({ error: 'No such beer.' });
+    const ref = poursCol(req.crawl.ref).doc(req.params.pid);
+    if (!(await ref.get()).exists) return res.status(404).json({ error: 'No such beer.' });
+    await ref.delete();
+    res.json({ ok: true, pours: await poursOf(req.crawl.ref) });
+  } catch (err) { console.error('DELETE pour', err); res.status(500).json({ error: 'Could not remove that.' }); }
+});
+
+/**
+ * Menus and hours for the crawl's stops. A web search, so behind the budget
+ * and the daily ceiling like every model call, and streamed because it takes
+ * minutes. Only the stops with no fresh shared menu are looked up - at most
+ * MENUS_PER_CALL - so a crawl through breweries someone else looked up this
+ * week costs nothing at all, and makes no model call.
+ */
+app.post('/api/trips/:id/crawls/:cid/menus', requireLogin, identity.requireBudget, identity.requireDailyCap, ownedTrip, ownedCrawl, async (req, res) => {
+  let send = null;
+  try {
+    const crawl = crawlOut(req.crawl.id, req.crawl.data);
+    if (!crawl.stops.length) return res.status(400).json({ error: 'Add a stop first.' });
+    const entries = {};
+    await Promise.all(crawl.stops.map(async (s) => {
+      const snap = await menuCache().doc(s.id).get();
+      entries[s.id] = snap.exists ? snap.data() : null;
+    }));
+    const now = Date.now();
+    const stale = crawl.stops.filter((s) => !crawlMenu.isFresh(entries[s.id], s, now));
+    const need = stale.slice(0, MENUS_PER_CALL);
+    if (!need.length) return res.json({ menus: await cachedMenus(crawl.stops), looked: 0, remaining: 0 });
+
+    // Past this line nothing may fail with a status: the drip has started.
+    send = streamedJson(res);
+    const sched = crawlLib.schedule(crawl);
+    const when = crawl.date
+      ? `on ${crawlLib.dayLabel(crawl.date)} (${crawl.date}), from about ${crawlLib.clock12(sched.totals.startMinutes)} to ${crawlLib.clock12(sched.totals.endMinutes)}`
+      : 'on a day not chosen yet - report their regular hours';
+    const plan = identityLib.planFor(req.user, MODEL_TIERS);
+    const response = await completeTurn({
+      model: plan.model,
+      // The searching spends this budget as well as the answer (see the
+      // football app's CLAUDE.md, "max_tokens covers the searching").
+      max_tokens: 16000,
+      system:
+        'You are looking up breweries for a beer crawl ' + when + '. For EACH brewery you are given, use web search to find: ' +
+        'its CURRENT tap list (its own website, Untappd, Instagram, BeerMenus or similar - prefer the most recent dated source), ' +
+        'food (a kitchen, snacks, or which food truck is there that day), its opening hours on that date and its closing time as ' +
+        '24-hour HH:MM, its regular closing time for each weekday if listed, whether children and dogs are welcome, and one line on ' +
+        'what it is known for. Record the https pages you used as sources, and the date the tap list was current as asOf.\n\n' +
+        'Do NOT invent beers. If you cannot find a current tap list, return an empty beers list with confidence "low" - an empty ' +
+        'list is far better than a guess, because someone will cross town for what you write. Never invent hours or a closing ' +
+        'time either: leave them out if you could not confirm them. Keep each tap list to the beers actually listed, at most 25.\n\n' +
+        'When you are done, call record_menus once with every brewery, using the id you were given for each.',
+      tools: [plan.webSearch, crawlMenu.TOOL],
+      messages: [{ role: 'user', content: 'Breweries:\n' + JSON.stringify(need.map((s) => ({
+        id: s.id, name: s.name,
+        address: [s.street, s.city, s.state, s.country].filter(Boolean).join(', '),
+        website: s.website || undefined,
+      }))) }],
+    }, req.user);
+
+    const block = response.content.find((b) => b.type === 'tool_use' && b.name === 'record_menus');
+    const found = block && block.input && Array.isArray(block.input.menus) ? block.input.menus : [];
+    const at = new Date().toISOString();
+    let wrote = 0;
+    for (const m of found) {
+      const s = need.find((x) => x.id === String((m && m.breweryId) || ''));
+      if (!s) continue;                          // not one we asked about
+      const menu = crawlMenu.validate(m, { now: Date.now(), date: crawl.date });
+      if (!menu) continue;
+      // Shared: whoever looks a brewery up pays, the next crawl through it
+      // within FRESH_MS reads it free. The name is kept so a cached entry is
+      // only reused for a stop of the same name (crawlmenu.isFresh).
+      await menuCache().doc(s.id).set({ name: s.name, city: s.city || '', menu, fetchedAt: at });
+      wrote += 1;
+    }
+    if (!wrote) return send({ error: 'The search came back without menus. Try again in a moment.' });
+    send({ menus: await cachedMenus(crawl.stops), looked: wrote, remaining: Math.max(0, stale.length - wrote) });
+  } catch (err) {
+    console.error('POST crawl menus', err);
+    if (send) return send({ error: 'Could not look up the menus right now.' });
+    res.status(500).json({ error: 'Could not look up the menus right now.' });
+  }
+});
+
+/**
+ * What to order at each stop. No web search - it reads the menus already
+ * looked up - and forced through record_picks, so the answer is a shape the
+ * page can draw. `preferences` in the body is saved first: it is the person's
+ * own words ("hazy IPAs, no sours, kids along until 6") and worth keeping
+ * whatever the model makes of them.
+ */
+app.post('/api/trips/:id/crawls/:cid/picks', requireLogin, identity.requireBudget, identity.requireDailyCap, ownedTrip, ownedCrawl, async (req, res) => {
+  let send = null;
+  try {
+    const b = req.body || {};
+    const data = Object.assign({}, req.crawl.data);
+    if (typeof b.preferences === 'string') data.preferences = clip(b.preferences, 300);
+    const crawl = crawlOut(req.crawl.id, data);
+    if (!crawl.stops.length) return res.status(400).json({ error: 'Add a stop first.' });
+    if (typeof b.preferences === 'string') await req.crawl.ref.update({ preferences: data.preferences });
+
+    send = streamedJson(res);
+    const menus = await cachedMenus(crawl.stops);
+    const sched = crawlLib.schedule(crawl);
+    const trip = tripOut(req.owned.doc.id, req.owned.data);
+    const stopsText = crawl.stops.map((s, i) => {
+      const m = menus[s.id];
+      const row = sched.stops[i];
+      return `Stop ${i + 1} - id ${s.id}: ${s.name} (${s.type || 'brewery'}), ${crawlLib.clock12(row.arriveMinutes)} to ${crawlLib.clock12(row.leaveMinutes)}.\n` +
+        (m && m.beers.length
+          ? '  On tap: ' + m.beers.map((x) => x.name + (x.style ? ' (' + x.style + (x.abv != null ? ', ' + x.abv + '%' : '') + ')' : '')).join('; ') + '\n'
+          : '  No tap list found - suggest a style to ask for, and say so.\n') +
+        (m && m.food ? '  Food: ' + m.food + '\n' : '');
+    }).join('');
+    const plan = identityLib.planFor(req.user, MODEL_TIERS);
+    const response = await completeTurn({
+      model: plan.model,
+      max_tokens: 4096,
+      system:
+        'Suggest what to order at each stop of this beer crawl, in order. When a stop has a tap list, pick from it BY NAME - ' +
+        'never name a beer that is not on the list. Fit the picks to what they said they like, and to the crawl as a whole: ' +
+        'lighter or smaller pours early, something worth lingering over where the stay is longest, food where there is some. ' +
+        'One line of why for each. Then one or two sentences of practical pacing for the whole crawl - where a flight or a half ' +
+        'pour makes sense, where to eat. Practical, not preachy: no lectures about drinking.\n\n' +
+        'Trip: ' + (trip.name || '') + (trip.destination ? ', ' + trip.destination : '') + '\n' +
+        (trip.notes ? 'Who is going and notes: ' + String(trip.notes).slice(0, 800) + '\n' : '') +
+        'What they like: ' + (crawl.preferences || 'not said - pick the brewery\'s signature beers') + '\n\n' + stopsText,
+      tools: [crawlMenu.PICKS_TOOL],
+      tool_choice: { type: 'tool', name: 'record_picks' },
+      messages: [{ role: 'user', content: 'What should we order?' }],
+    }, req.user);
+    const block = response.content.find((x) => x.type === 'tool_use' && x.name === 'record_picks');
+    const out = crawlMenu.validatePicks(block && block.input, crawl.stops.map((s) => s.id));
+    if (!Object.keys(out.picks).length) return send({ error: 'That came back without any picks. Try again in a moment.' });
+    const patch = { picks: out.picks, picksNote: out.pacing, picksAt: new Date().toISOString() };
+    await req.crawl.ref.update(patch);
+    send(await fullView(req.crawl.ref, req.crawl.id, Object.assign({}, data, patch), req.owned.data));
+  } catch (err) {
+    console.error('POST crawl picks', err);
+    if (send) return send({ error: 'Could not suggest picks right now.' });
+    res.status(500).json({ error: 'Could not suggest picks right now.' });
+  }
+});
+
+/**
+ * Put the crawl into the itinerary, on its date. The person's tap is the
+ * confirmation; nothing here is a model's proposal. It goes through the same
+ * store the chat's Apply uses - schedule.toStore, daysUpdatedAt - and the
+ * same guard: `basedOn` is the daysUpdatedAt the page last saw, and a
+ * mismatch is a 409 with the current itinerary, so the page redraws what is
+ * really there before anything is added to it.
+ *
+ * Adding again replaces what this crawl added before rather than doubling it
+ * (crawl.addToItinerary), including on a date since changed.
+ */
+app.post('/api/trips/:id/crawls/:cid/itinerary', requireLogin, ownedTrip, ownedCrawl, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const tripData = req.owned.data;
+    if (Object.prototype.hasOwnProperty.call(body, 'basedOn') && (body.basedOn || null) !== (tripData.daysUpdatedAt || null)) {
+      return res.status(409).json({
+        error: 'The itinerary changed since this page loaded. Here is the latest — tap Add to itinerary again.',
+        days: schedule.fromStore(tripData.days || []),
+        daysUpdatedAt: tripData.daysUpdatedAt || null,
+      });
+    }
+    const crawl = crawlOut(req.crawl.id, req.crawl.data);
+    if (!crawl.stops.length) return res.status(400).json({ error: 'Add a stop first.' });
+    if (!crawl.date) return res.status(400).json({ error: 'Give the crawl a date first — tap Edit.' });
+    const current = Array.isArray(tripData.days) && tripData.days.length ? schedule.fromStore(tripData.days) : [];
+    const merged = crawlLib.addToItinerary(current, crawl, null, crawl.itineraryAdded);
+    const stored = schedule.toStore(merged.days);
+    const at = new Date().toISOString();
+    await req.owned.ref.update({ days: stored, updatedAt: at, daysUpdatedAt: at });
+    await req.crawl.ref.update({ itineraryAdded: { date: merged.date, names: merged.names, createdDay: merged.createdDay || null, at } });
+    res.json({ ok: true, days: schedule.fromStore(stored), daysUpdatedAt: at, date: merged.date });
+  } catch (err) {
+    if (err.status === 400) return res.status(400).json({ error: err.message });
+    console.error('POST crawl itinerary', err);
+    res.status(500).json({ error: 'Could not add that to the itinerary.' });
+  }
 });
 
 /** The tap. Only what was chosen, and only as ordinary trips. */

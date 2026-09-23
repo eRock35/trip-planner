@@ -135,4 +135,54 @@ const DEMO_BUDGET = {
   ].map(([category, label, planned, spent, note], i) => ({ id: 'demoline' + i, category, label, planned, spent, note, order: i })),
 };
 
-module.exports = { DEMO_ID, DEMO_TRIP, DEMO_MESSAGES, DEMO_WATCHES, DEMO_PACKING, DEMO_BUDGET };
+// The example trip's brewery crawl. The breweries are real Lisbon craft
+// breweries at APPROXIMATE coordinates (good enough to draw a route, not to
+// navigate by); the menus and picks are plainly examples - generic "House
+// IPA" rows and a line saying so - because the example must not make claims
+// about what a real business pours or when it shuts. On a real trip these
+// come from a web lookup made for the crawl's date.
+const DEMO_CRAWL = {
+  id: 'demo-marvila',
+  name: 'Marvila beer crawl',
+  date: '2026-10-02',
+  startTime: '15:30',
+  dwellMinutes: 50,
+  mode: 'walk',
+  preferences: 'Two of us. Hazy IPAs and anything tart; one of us drinks lighter.',
+  stops: [
+    { id: 'demo-oitava-colina', name: 'Oitava Colina', type: 'micro', street: 'Graça', city: 'Lisboa', state: 'Lisboa', lat: 38.7196, lng: -9.1308, phone: '', website: '' },
+    { id: 'demo-musa', name: 'Musa', type: 'brewpub', street: 'Marvila', city: 'Lisboa', state: 'Lisboa', lat: 38.7447, lng: -9.1011, phone: '', website: '' },
+    { id: 'demo-lince', name: 'Lince', type: 'micro', street: 'Marvila', city: 'Lisboa', state: 'Lisboa', lat: 38.7462, lng: -9.1022, phone: '', website: '' },
+    { id: 'demo-dois-corvos', name: 'Dois Corvos Cervejeira', type: 'micro', street: 'Marvila', city: 'Lisboa', state: 'Lisboa', lat: 38.7478, lng: -9.1036, phone: '', website: '' },
+  ].map((s) => Object.assign({ postalCode: '', country: 'Portugal', dwellMinutes: null, visitedAt: null }, s)),
+  picks: {
+    'demo-oitava-colina': { order: 'Example: a half pour of the house pale', why: 'An easy first one — on a real crawl this names a beer from the board.' },
+    'demo-musa': { order: 'Example: a flight of four', why: 'Four small pours is the way to meet a brewery known for range.' },
+    'demo-lince': { order: 'Example: the tart seasonal', why: 'For the one who likes it sour; the lighter drinker takes a half.' },
+    'demo-dois-corvos': { order: 'Example: the house IPA, and food', why: 'Last stop and the longest stay — eat here.' },
+  },
+  picksNote: 'Example: half pours at the first two, and eat at the last stop.',
+  createdAt: '2026-09-12T10:00:00.000Z',
+  updatedAt: '2026-09-18T21:40:03.000Z',
+  createdBy: 'demo',
+};
+
+/** An example menu, labelled as one wherever it is drawn. */
+function exampleMenu(beers) {
+  return {
+    beers: beers.map(([name, style, abv]) => ({ name, style, abv, note: '' })),
+    food: 'Example — on a real crawl: the kitchen, snacks or the food truck that day.',
+    hours: 'Example — on a real crawl: the hours for your date.',
+    closesAt: null, closesOn: null, weekly: null,
+    highlights: 'An example menu. For your own crawl, "Get menus & hours" looks up the current board.',
+    kidFriendly: null, dogFriendly: null, sources: [], confidence: 'low', asOf: '2026-09-18',
+  };
+}
+const DEMO_CRAWL_MENUS = {
+  'demo-oitava-colina': exampleMenu([['House pale ale', 'Pale ale', 5.2], ['House IPA', 'IPA', 6.5], ['Stout', 'Stout', 6]]),
+  'demo-dois-corvos': exampleMenu([['House IPA', 'IPA', 6.5], ['Session IPA', 'Session IPA', 4.5], ['Seasonal sour', 'Sour', 5], ['Porter', 'Porter', 6.2]]),
+  'demo-lince': exampleMenu([['Lager', 'Lager', 4.8], ['Tart seasonal', 'Sour', 4.5], ['Double IPA', 'DIPA', 8]]),
+  'demo-musa': exampleMenu([['House IPA', 'IPA', 6.2], ['Pilsner', 'Pilsner', 5], ['Red ale', 'Red ale', 5.5]]),
+};
+
+module.exports = { DEMO_ID, DEMO_TRIP, DEMO_MESSAGES, DEMO_WATCHES, DEMO_PACKING, DEMO_BUDGET, DEMO_CRAWL, DEMO_CRAWL_MENUS };

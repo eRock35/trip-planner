@@ -378,9 +378,9 @@ Tests: `tripdates.js`, `weather.js`, `bookings.js`, `trip-bookings.js`,
 ## Packing and Budget (2026-09-23)
 
 The vacation app's other two tabs, for every trip. On a phone the bar keeps
-five items — Overview, Itinerary, Chat, Packing, **More** (Budget, Watches,
-Details) — the vacation app's own pattern; the desktop sidebar shows all
-seven. The Overview has a tile for each.
+five items — Overview, Itinerary, Chat, Packing, **More** (Budget, Memories,
+Crawls, Watches, Details) — the vacation app's own pattern; the desktop
+sidebar shows all of them. The Overview has a tile for each.
 
 - **Stored one document per row** — `trips/<id>/packing/<item>` and
   `trips/<id>/budget/<line>` — not as an array on the trip. These are the
@@ -493,6 +493,162 @@ on Memories. The token comes from the metadata server; no key.
 
 Tests: `test/trip-receipts.js`, `test/trip-photos.js` (Cloud Storage faked at
 `global.fetch`). Rendered at 390px and 1280px before shipping.
+
+## Brewery crawls (2026-09-23)
+
+Erik loves the crawl planner in Hopscotch (`eRock35/beer-app`) and asked for
+it "really improved" and brought into trips: "dig into the breweries, the
+menus, the routes and any other cool features". A **Crawls** tab (under More
+on a phone, in the sidebar on a desktop) and an Overview tile.
+
+**What came from Hopscotch**, ported to CommonJS in `crawl.js`: `haversineKm`,
+`planRoute` (nearest-neighbour then 2-opt, optional fixed start) and
+`describeRoute`, and the Open Brewery DB normalising. **What is new:**
+
+- **A clock.** Hopscotch said "12 min walk". A crawl here has a start time and
+  a stay per stop (crawl default, overridable per stop, 20–180 min), so every
+  stop has arrive/leave times, and the page can say "Leave by 5:10 for Musa".
+- **Legs along streets.** Haversine is the straight line; each leg is that
+  times `STREET_FACTOR` (1.25 — city grids run 1.2–1.4×). Walking at 4.5 km/h.
+- **A ride for one leg.** In walk mode a leg over 1.6 km (~20 min) is a *ride*
+  with a drive estimate (30 km/h + 5 min pickup) and an Uber link for that leg
+  alone, instead of Hopscotch's all-or-nothing "you will want a car". Drive
+  mode makes every leg a drive estimate.
+- **The best start.** `bestRoute` tries every stop as the start; nearest-
+  neighbour from the first-ticked stop is rarely shortest. Checked against brute
+  force in `test/crawl.js`. Mid-crawl, "Shortest order" keeps visited stops
+  where they were walked and routes the rest from the last one; an added stop
+  goes where it adds the least distance, ahead of anything visited.
+- **Warnings**, in words: a stop closed or closing before you would leave it,
+  a crawl running past midnight, a leg that needs a ride, and something already
+  in the itinerary during the crawl ("Dinner at 7:30 PM").
+
+**Route legs are computed on every read, never stored.** Reorder, remove a
+stop, change the start: nothing stale to forget to update.
+
+### Data
+
+- `trips/<id>/crawls/<cid>` — `{name, date, startTime, dwellMinutes, mode,
+  stops: [{id (Open Brewery DB), name, type, street, city, state, lat, lng,
+  phone, website, dwellMinutes}], visits: {<stopId>: ISO|null}, preferences,
+  picks: {<stopId>: {order, why}}, picksNote, itineraryAdded, createdBy, …}`.
+  Max 10 stops, 20 crawls a trip. Each stop is read back with `visitedAt` from
+  `visits` — **check-ins are a merge-write of one key**, not a rewrite of the
+  stops array, so two phones checking in at once (or one checking in while the
+  other reorders) both stick. The packing list's lesson, applied again.
+- `trips/<id>/crawls/<cid>/pours/<auto>` — `{stopId, beer, style, rating
+  (1–5|null), note, by, at}`. **One document per pour**, same reason. 300 a crawl.
+  Removing a stop removes its pours (the page says so first); deleting a crawl
+  removes all of them.
+- `breweries/<Open Brewery DB id>` — the **shared menu cache**: `{name, city,
+  menu, fetchedAt}`.
+
+### Finding breweries: Open Brewery DB
+
+`breweries.js`, `GET /api/trips/:id/breweries/nearby[?near=]`. Free, no key,
+community-run; it knows names, types, addresses, coordinates, phones and
+websites — **not hours, menus or food**. Centred on the trip's stored `geo`
+(the same geocode-once helper the weather uses) or `near` through the same
+one-a-second Nominatim path. Identifying User-Agent, results cached in memory
+for an hour, types with no taproom (planning, closed, contract, proprietor) and
+rows without coordinates skipped. No model call, so no budget. Every failure
+is a sentence (503), never a 500. The sandbox cannot reach it — tests fake it.
+
+### Menus: a metered lookup, shared for 48 hours
+
+`POST /crawls/:cid/menus` — `requireLogin, requireBudget, requireDailyCap`,
+`streamedJson`. The stops with no fresh shared menu (max 6 a call) go to one
+model call with the plan's web search and a `record_menus` tool: current tap
+list, food, hours on the crawl's date, `closesAt`, weekly closing times,
+kid/dog friendliness, a highlight, sources, confidence, asOf. The prompt says
+plainly not to invent beers — **an empty list with confidence "low" beats a
+guess**, because someone will cross town for it.
+
+Cached for everyone at `breweries/<id>` for 48 hours, like the football app's
+`fan/<team>`: whoever's crawl first needs a brewery pays, the next crawl
+through it reads free and makes **no model call**. An older menu is still
+shown, marked "may be out of date". The cache key is an id the browser sends,
+so an entry is only reused for a stop **of the same name** — one crawl cannot
+file a menu under a real brewery's id and serve it to everyone else.
+
+`crawlmenu.validate()` runs on everything before it is stored or drawn: tags
+stripped, lengths bounded, 40 beers max, ABV 0–20 or null, https-only sources,
+`closesAt` HH:MM or nothing, a future asOf becomes today, no beers can't be
+"high" confidence. A `closesAt` answers only for the date it was looked up for
+(`closesOn`); weekly hours answer for any date — the cache is shared across
+crawls on different days.
+
+**Picks** — `POST /crawls/:cid/picks`, same gates, streamed, no web search
+(reads the cached menus), forced through `record_picks`. What to order at each
+stop, from its menu by name, plus a short practical pacing note ("not a
+lecture"). The person's `preferences` are saved first. Picks for stop ids that
+are not the crawl's are dropped.
+
+### Into the itinerary
+
+`POST /crawls/:cid/itinerary {basedOn}` puts one `🍺 <Brewery> — <pick>` block
+per stop into the day with the crawl's date (a new day, in date order, if
+none), sorted by time among the day's blocks, and saves through the chat's own
+path — `schedule.toStore`, `daysUpdatedAt`, and the **409 stale guard** when
+`basedOn` no longer matches (the page redraws the itinerary it gets back and
+asks for the tap again). A person's tap is the confirmation; nothing here is a
+model proposal. Adding again **replaces** the crawl's blocks (matched by the
+tag plus one of its stop names, current or previously added — so a second crawl
+on the same day, or a beer emoji someone typed, is left alone); a changed date
+moves them, and a day the crawl created and left empty goes. `schedule/apply`
+now returns `daysUpdatedAt` so the page's next guarded write is not refused.
+
+### Map and links
+
+**Leaflet 1.9.4 is vendored** in `public/vendor/leaflet/` (BSD-2-Clause, with
+its LICENSE), not loaded from a CDN, and only fetched the first time the Crawls
+tab opens. Tiles are OpenStreetMap's own (`tile.openstreetmap.org`), as in
+Hopscotch, with the © OpenStreetMap attribution always visible — the OSM tile
+policy asks for light use, attribution, an app that does not prefetch or bulk
+download; this map loads what is on screen and nothing more. If usage ever
+grows past "light", move to a tile provider with terms for it. The map is
+fitted when the stops change, not on every refresh, and isolated
+(`isolation: isolate`) so Leaflet's z-indexes stay under the nav bar and sheets.
+
+**Links rather than a routing API**: one Google Maps directions link for the
+whole route (stops as waypoints — Google's mobile app honours only three, the
+web nine), per-stop Apple Maps directions walking or driving as the leg is, and
+an Uber universal link on ride legs. No key, no cost, and the phone's own maps
+app does turn-by-turn better than anything drawn here.
+
+### On the day
+
+- **Live mode** on the crawl's date: a sticky card with the current stop (the
+  first not checked in whose window has started — "behind the plan" when its
+  leave time has passed), "Leave by 5:10 for Musa — 12 min walk", Check in,
+  Directions, and Ride on a ride leg. The Overview tile says "Now: X, next Y at
+  5:10 PM". The time is the phone's, which is where the crawl is.
+- **Check-ins** stamp the stop and the trip's **passport** strip (breweries
+  checked in across its crawls, beers logged, average rating, best beer).
+  **Log a beer** — chips from the stop's menu, 1–5 stars, a note, and on a
+  shared trip whose it was (`whoAsked`). **Photo** uploads through the Memories
+  route, captioned "<Brewery> · <beer>".
+- **Recap** once every stop is checked in or the date has passed, and **Play the
+  crawl**: the Memories photos taken during it (its date, start to end), each
+  brewery a title card — by caption, else by the stop they were taken during.
+- The open crawl is re-asked on foreground and every 60 s while on screen, and
+  redrawn only when it changed: two phones on one crawl.
+
+**Members** of a shared trip do everything the owner does with crawls —
+create, edit, check in, log, delete (a crawl is the trip's, not one person's).
+Whoever presses an AI button pays. Strangers get the usual 404 on every route.
+
+**The example trip** has one read-only crawl in `demo.js` — real Lisbon craft
+breweries (Oitava Colina, Musa, Lince, Dois Corvos in Marvila) at
+**approximate** coordinates, with a ride leg across town, and menus and picks
+that say they are examples (generic "House IPA" rows, no claims about what a
+real business pours or when it shuts). Writes are refused like every demo write.
+
+Tests: `test/crawl.js` (pure: geometry, the clock, warnings, links, directory
+rows, the itinerary merge, menu and pick validation) and `test/trip-crawls.js`
+(the routes, with Open Brewery DB, Nominatim and the model faked). Rendered at
+390px and 1280px — picker, map, menus, picks, live mode, check-in and pour,
+recap and picture show, Overview tile, the demo crawl — before shipping.
 
 ## Sharing a trip (2026-09-23)
 

@@ -481,6 +481,179 @@
   .mv-actions .btn { min-height: 46px; font-size: 16px; }
   .sheet .mv-actions .btn-danger, .sheet .mv-actions .btn-secondary { background: var(--card); }
 
+  /* ---------- Crawls ----------
+   * Hopscotch's crawl, grown up: a map, a timeline with the clock on it,
+   * menus, picks, check-ins and a beer log. Built from the page's own parts
+   * - the summary card, the grouped rows, the tinted suggestion card - so it
+   * reads as another tab of this app rather than a second app inside it. */
+  .cr-passport { padding: 12px 8px 10px; }
+  .cr-pp-grid { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .cr-pp-cell { position: relative; display: flex; flex-direction: column; align-items: center; gap: 1px; text-align: center; padding: 0 4px; }
+  .cr-pp-cell + .cr-pp-cell::before { content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 1px; background: var(--sep); }
+  .cr-pp-cell .n { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .cr-pp-cell .u { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--label-2); }
+  .cr-pp-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--label-2); margin: 0 8px 8px; }
+  .cr-stamps { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 10px 8px 2px; }
+  .cr-stamp { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--green);
+              border: 1.5px solid currentColor; border-radius: 7px; padding: 2px 7px; transform: rotate(-3deg); white-space: nowrap; }
+  .cr-stamp:nth-child(even) { transform: rotate(2deg); }
+  .cr-stamp svg { width: 10px; height: 10px; }
+  .cr-pp-top { font-size: 13px; color: var(--label-2); margin: 8px 8px 0; line-height: 1.4; }
+  .cr-list .row-title { display: flex; align-items: center; gap: 8px; }
+  .badge.today { background: var(--orange); color: #3a2200; }
+  .badge.done { background: var(--green); color: #04280f; }
+
+  .cr-back { padding: 0 2px; min-height: 32px; align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; }
+  .cr-back svg { width: 9px; height: 15px; }
+  .cr-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .cr-head h2 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2; overflow-wrap: anywhere; }
+  .cr-head .meta { font-size: 14px; color: var(--label-2); margin-top: 3px; }
+  .cr-head .btn { flex: 0 0 auto; }
+
+  .cr-split { display: flex; flex-direction: column; gap: 14px; }
+  .cr-mapcol, .cr-listcol { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  /* Leaflet stacks its panes at z-index 400-1000. Isolated, they stay inside
+     the map instead of sliding over the nav bar and the sheets. */
+  .cr-map { position: relative; z-index: 0; isolation: isolate; height: 260px; border-radius: 18px; overflow: hidden; box-shadow: var(--shadow); background: var(--fill); }
+  .cr-map .leaflet-container { font: inherit; background: var(--fill); }
+  .cr-map .leaflet-control-attribution { font-size: 10.5px; }
+  .cr-map-fail { display: flex; align-items: center; justify-content: center; height: 100%; padding: 20px; text-align: center; color: var(--label-2); font-size: 14px; }
+  .cr-pin-wrap { background: none; border: 0; }
+  .cr-pin { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: var(--tint); color: #fff;
+            font-weight: 700; font-size: 13px; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35); font-variant-numeric: tabular-nums; }
+  .cr-pin.done { background: var(--green); }
+  .cr-pin.now { background: var(--orange); box-shadow: 0 0 0 5px rgba(255,149,0,.35), 0 2px 6px rgba(0,0,0,.35); }
+
+  .cr-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .cr-stat { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .cr-stat b { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cr-stat span { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--label-2); }
+  .cr-verdict { margin-top: 10px; font-size: 14.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .cr-verdict.good { color: var(--green); } .cr-verdict.ride { color: var(--orange); }
+  .cr-warns { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .cr-warns li { font-size: 13.5px; line-height: 1.4; background: rgba(255,149,0,.14); border-radius: 10px; padding: 7px 10px; }
+  .cr-summary .btn { margin-top: 12px; }
+  .cr-pacing { font-size: 14px; line-height: 1.45; }
+  .cr-pacing b { color: var(--tint); }
+
+  .cr-ai { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .cr-ai .btn { font-size: 15px; min-height: 48px; padding: 10px 12px; line-height: 1.2; }
+  .cr-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cr-tools .btn { width: auto; flex: 1 1 auto; }
+  #crStatus:empty { display: none; }
+
+  .cr-stops { display: flex; flex-direction: column; }
+  .cr-leg { display: flex; align-items: center; gap: 8px; margin: 0 0 0 30px; padding: 8px 0 8px 18px; border-left: 2px dashed var(--sep); font-size: 13.5px; color: var(--label-2); }
+  .cr-leg.ride { border-left-color: var(--orange); color: var(--label); }
+  .cr-leg a { font-weight: 600; text-decoration: none; }
+  .cr-stop { background: var(--card); border-radius: 18px; box-shadow: var(--shadow); padding: 14px 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+  .cr-stop.now { box-shadow: 0 0 0 2px var(--orange), var(--shadow); }
+  .cr-stop-head { display: flex; align-items: flex-start; gap: 12px; }
+  .cr-num { flex: 0 0 auto; width: 32px; height: 32px; border-radius: 50%; background: var(--tint); color: #fff; font-weight: 700; font-size: 15px;
+            display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }
+  .cr-num svg { width: 15px; height: 15px; }
+  .cr-stop.visited .cr-num { background: var(--green); }
+  .cr-stop-main { flex: 1 1 auto; min-width: 0; }
+  .cr-stop-name { font-size: 17px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+  .cr-stop-time { font-size: 13.5px; color: var(--label-2); margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .cr-stop-time b { color: var(--label); font-weight: 600; }
+  .cr-edit { display: flex; gap: 4px; flex: 0 0 auto; }
+  .cr-edit button { width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--fill); color: var(--tint); display: flex; align-items: center; justify-content: center; font-size: 15px; }
+  .cr-edit button:disabled { opacity: .3; }
+  .cr-edit button.x { color: var(--red); }
+  .cr-edit button svg { width: 12px; height: 12px; }
+  .cr-dwell { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--label-2); }
+  .cr-dwell select { font: inherit; font-size: 16px; min-height: 34px; border-radius: 9px; border: 1px solid var(--sep); background-color: var(--fill); color: var(--label); padding: 0 28px 0 10px; -webkit-appearance: none; appearance: none; }
+  .cr-visit { align-self: flex-start; margin-left: 44px; }
+  .cr-info { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 14px; margin-left: 44px; }
+  .cr-info a { text-decoration: none; }
+  .cr-pick { margin-left: 44px; background: var(--tint-soft); border-radius: 12px; padding: 9px 12px; font-size: 14px; line-height: 1.4; }
+  .cr-pick b { color: var(--tint); }
+  .cr-pick span { display: block; color: var(--label-2); font-size: 13px; margin-top: 2px; }
+  .cr-menu { margin-left: 44px; border-top: 1px solid var(--sep); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+  .cr-menu-h { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--label-2); }
+  .cr-beers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+  .cr-beers li { display: flex; justify-content: space-between; gap: 10px; line-height: 1.35; }
+  .cr-beers li span { color: var(--label-2); font-size: 13px; text-align: right; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+  .cr-menu details summary { color: var(--tint); font-weight: 600; font-size: 13.5px; cursor: pointer; list-style: none; padding: 2px 0; }
+  .cr-menu details summary::-webkit-details-marker { display: none; }
+  .cr-menu details[open] summary { display: none; }
+  .cr-menu-line { line-height: 1.4; }
+  .cr-menu-line em { font-style: normal; color: var(--label-2); }
+  .cr-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cr-chip { font-size: 12px; font-weight: 600; background: var(--fill); border-radius: 999px; padding: 3px 9px; }
+  .cr-src { font-size: 12.5px; color: var(--label-2); line-height: 1.4; }
+  .cr-src a { text-decoration: none; }
+  .cr-caveat { font-size: 12.5px; color: var(--orange); }
+  .cr-nomenu { margin-left: 44px; font-size: 13.5px; color: var(--label-2); }
+  .cr-pours { margin-left: 44px; display: flex; flex-direction: column; gap: 4px; }
+  .cr-pour { display: flex; align-items: center; gap: 8px; font-size: 14px; background: var(--fill); border-radius: 10px; padding: 6px 4px 6px 10px; }
+  .cr-pour .what { flex: 1 1 auto; min-width: 0; line-height: 1.35; overflow-wrap: anywhere; }
+  .cr-pour .what span { color: var(--label-2); font-size: 12.5px; }
+  .cr-stars { color: var(--orange); letter-spacing: 1px; white-space: nowrap; font-size: 13px; }
+  .cr-pour .cl-del { width: 30px; height: 30px; }
+  .cr-stop-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-left: 44px; }
+  .cr-stop-actions .btn { width: 100%; padding: 6px 8px; font-size: 14px; }
+  .cr-stop-actions .btn svg { width: 16px; height: 16px; }
+  .cr-stamped { display: inline-flex; align-self: flex-start; margin-left: 44px; }
+
+  /* The live card sits under the nav bar as you scroll: the one thing you
+     need standing at a bar is where next and when to leave. */
+  .cr-live { position: sticky; top: calc(var(--sat) + var(--nav-h) + 8px); z-index: 5; background: #1C1C1E; color: #fff; border-radius: 18px; padding: 14px 16px;
+             box-shadow: 0 8px 24px rgba(0,0,0,.25); display: flex; flex-direction: column; gap: 4px; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .cr-live { background: #2C2C2E; } }
+  :root[data-theme="dark"] .cr-live { background: #2C2C2E; }
+  .cr-live-top { display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: rgba(255,255,255,.65); }
+  .cr-live-dot { width: 8px; height: 8px; border-radius: 50%; background: #FF9F0A; box-shadow: 0 0 0 3px rgba(255,159,10,.3); }
+  .cr-live-name { font-size: 20px; font-weight: 700; line-height: 1.2; }
+  .cr-live-next { font-size: 14.5px; color: rgba(255,255,255,.85); line-height: 1.4; }
+  .cr-live-next.late { color: #FFB340; }
+  .cr-live-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .cr-live-actions .btn { width: auto; flex: 1 1 0; min-height: 40px; font-size: 15px; padding: 8px 12px; white-space: nowrap; }
+  .cr-live-actions .btn-secondary { background: rgba(255,255,255,.14); color: #fff; }
+  .cr-live-actions a.btn { text-decoration: none; }
+
+  .cr-recap { display: flex; flex-direction: column; gap: 10px; }
+  .cr-recap-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .cr-recap h3 { margin: 0; font-size: 18px; font-weight: 700; }
+  .cr-recap .cr-stats b { font-size: 22px; }
+  .cr-recap-best { font-size: 14.5px; line-height: 1.4; }
+  .cr-recap-note { font-size: 13px; color: var(--label-2); }
+
+  /* The picker and the other crawl sheets. */
+  .cr-near { display: flex; gap: 8px; margin-bottom: 8px; }
+  .cr-near input { flex: 1 1 auto; min-width: 0; min-height: 44px; border-radius: 12px; border: 1px solid var(--sep); background: var(--card); color: var(--label); padding: 0 14px; font: inherit; font-size: 16px; }
+  .cr-near .btn { width: auto; min-height: 44px; }
+  .cr-near-note { font-size: 13px; color: var(--label-2); margin: 0 2px 10px; line-height: 1.4; }
+  .cr-type { display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; background: var(--fill-2); border-radius: 999px; padding: 1px 7px; }
+  .st-row.cr-full { opacity: .45; }
+  .seg { display: flex; background: var(--fill); border-radius: 10px; padding: 2px; gap: 2px; }
+  .seg button { flex: 1 1 0; border: 0; background: none; min-height: 38px; border-radius: 8px; font-weight: 600; font-size: 15px; color: var(--label); }
+  .seg button[aria-pressed="true"] { background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.14); }
+  .cr-form-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .cr-beerchips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .cr-beerchips button { border: 0; background: var(--card); box-shadow: var(--shadow); border-radius: 999px; padding: 7px 12px; font-size: 14px; color: var(--tint); font-weight: 500; }
+  .cr-rate { display: flex; gap: 4px; }
+  .cr-rate button { border: 0; background: none; font-size: 28px; line-height: 1; padding: 2px 3px; color: var(--label-3); }
+  .cr-rate button.on { color: var(--orange); }
+  .cr-prefs { width: 100%; min-height: 84px; border-radius: 12px; border: 1px solid var(--sep); background: var(--card); color: var(--label); padding: 10px 12px; font: inherit; font-size: 16px; resize: vertical; }
+  .ov-crawl { grid-column: 1 / -1; }
+  /* The list's second lines carry progress; cut off with an ellipsis they said nothing. */
+  .cr-list .row-sub { white-space: normal; }
+  .ov-crawl .t-value { font-size: 18px; }
+
+  @media (min-width: 1100px) {
+    /* The map beside the stops, following the page as it scrolls. */
+    body.dk .cr-split { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(340px, 1fr); gap: 20px; align-items: start; }
+    body.dk .cr-mapcol { order: 2; position: sticky; top: 24px; }
+    body.dk .cr-map { height: min(460px, calc(100vh - 300px)); min-height: 320px; }
+  }
+  @media (min-width: 900px) {
+    /* The shared layer caps a .list at 820px; here it sits over a full-width button. */
+    body.dk .cr-list { max-width: none; }
+    body.dk .cr-live-actions .btn { flex: 0 1 220px; }
+  }
+
   @media (min-width: 700px) {
     .ov-hero { grid-template-columns: 3fr 2fr; }
     .pk-groups { grid-template-columns: 1fr 1fr; align-items: start; }
@@ -671,6 +844,8 @@
     <symbol id="i-receipt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h12v17l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4-2 1.4z"/><path d="M9 8.5h6M9 12h6M9 15.5h3.5"/></symbol>
     <symbol id="i-card" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M3 10h18M7 15h3.5"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.2v13.6a1 1 0 0 0 1.5.86l10.6-6.8a1 1 0 0 0 0-1.72L9.5 4.34A1 1 0 0 0 8 5.2z"/></symbol>
+    <symbol id="i-beer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 8h10v11a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2z"/><path d="M15.5 10.5h1.8a2.2 2.2 0 0 1 2.2 2.2v2.1a2.2 2.2 0 0 1-2.2 2.2h-1.8"/><path d="M5.2 8.2a2.6 2.6 0 0 1 2.4-4 3.2 3.2 0 0 1 5.6.3 2.4 2.4 0 0 1 2.5 3.6"/><path d="M9 12v5.5M12 12v5.5"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5 3.5 6.5v13l5.5-2 6 2 5.5-2v-13l-5.5 2z"/><path d="M9 4.5v13M15 6.5v13"/></symbol>
     <symbol id="i-lock"viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></symbol>
   </defs>
 </svg>
@@ -738,6 +913,7 @@
       <div class="ov-tiles">
         <button type="button" class="ov-tile" id="ovPackTile"><span class="t-label">Packing</span><span class="t-value" id="ovPackVal">&ndash;</span><span class="t-bar"><i id="ovPackBar"></i></span></button>
         <button type="button" class="ov-tile" id="ovBudgetTile"><span class="t-label">Budget</span><span class="t-value" id="ovBudgetVal">&ndash;</span><span class="t-sub" id="ovBudgetSub"></span></button>
+        <button type="button" class="ov-tile ov-crawl" id="ovCrawlTile" hidden><span class="t-label" id="ovCrawlLabel">Beer crawl</span><span class="t-value" id="ovCrawlVal"></span><span class="t-sub" id="ovCrawlSub"></span></button>
         <section class="ov-tile ov-mem" id="ovMemTile" hidden aria-label="Memories">
           <button type="button" class="mem-open" id="ovMemOpen"><span class="t-label">Memories</span><span class="t-value" id="ovMemVal">&ndash;</span><span class="t-sub" id="ovMemSub"></span><span class="mem-strip" id="ovMemStrip"></span></button>
           <button type="button" class="btn btn-secondary btn-sm mem-tile-play" id="ovMemPlay" hidden><svg class="i-play" aria-hidden="true"><use href="#i-play"/></svg>Play</button>
@@ -869,6 +1045,41 @@
       <div class="stack" id="memGroups"></div>
     </div>
 
+    <!-- Crawls: brewery crawls on this trip - a route with a clock, menus,
+         what to order, check-ins and a beer log, shared by everyone on it. -->
+    <div id="tab-crawls" class="tabpanel" role="tabpanel" hidden>
+      <div id="crListView" class="stack">
+        <div class="ov-card cr-passport" id="crPassport" hidden></div>
+        <div id="crCrawls"></div>
+        <button type="button" class="btn btn-primary" id="crNewBtn"><svg><use href="#i-plus"/></svg>Plan a crawl</button>
+        <div class="status" id="crListStatus"></div>
+      </div>
+      <div id="crDetail" class="stack" hidden>
+        <button type="button" class="link-btn cr-back" id="crBack"><svg aria-hidden="true"><use href="#i-chev-l"/></svg>All crawls</button>
+        <div class="ov-card cr-head" id="crHead"></div>
+        <div id="crLive" hidden></div>
+        <div id="crRecap" hidden></div>
+        <div class="cr-split">
+          <div class="cr-mapcol">
+            <div class="cr-map" id="crMap" role="region" aria-label="Map of the crawl"></div>
+            <div class="ov-card cr-summary" id="crSummary"></div>
+          </div>
+          <div class="cr-listcol">
+            <div class="cr-ai" id="crAi">
+              <button type="button" class="btn btn-primary" id="crMenusBtn">Get menus &amp; hours</button>
+              <button type="button" class="btn btn-secondary" id="crPicksBtn">What should we order?</button>
+            </div>
+            <div class="status" id="crStatus"></div>
+            <div id="crTopUpRow" style="text-align:center;margin-top:-10px" hidden><button type="button" class="link-btn" id="crTopUpBtn">Top up AI credit</button></div>
+            <div class="ov-card cr-pacing" id="crPacing" hidden></div>
+            <div class="cr-tools" id="crTools"></div>
+            <div class="cr-stops" id="crStops"></div>
+            <button type="button" class="btn btn-danger" id="crDeleteBtn">Delete crawl</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="tab-watches" class="tabpanel" role="tabpanel" hidden>
       <button type="button" class="btn btn-primary" id="wOpenBtn"><svg><use href="#i-plus"/></svg>Watch a price</button>
       <div id="watchesEmpty" class="empty" hidden>
@@ -913,6 +1124,7 @@
          five items in its bar; the desktop sidebar shows all of them. -->
     <button type="button" role="tab" class="tab in-more" id="tab-btn-budget" aria-selected="false" aria-controls="tab-budget"><svg><use href="#i-dollar"/></svg>Budget</button>
     <button type="button" role="tab" class="tab in-more" id="tab-btn-memories" aria-selected="false" aria-controls="tab-memories"><svg><use href="#i-photo"/></svg>Memories</button>
+    <button type="button" role="tab" class="tab in-more" id="tab-btn-crawls" aria-selected="false" aria-controls="tab-crawls"><svg><use href="#i-beer"/></svg>Crawls</button>
     <button type="button" role="tab" class="tab in-more" id="tab-btn-watches" aria-selected="false" aria-controls="tab-watches"><svg><use href="#i-eye"/></svg>Watches</button>
     <button type="button" role="tab" class="tab in-more" id="tab-btn-details" aria-selected="false" aria-controls="tab-details"><svg><use href="#i-info"/></svg>Details</button>
     <button type="button" class="tab is-more" id="tab-btn-more" aria-haspopup="dialog"><svg><use href="#i-more"/></svg>More</button>
@@ -1990,8 +2202,8 @@
   }
 
   /* ---------- Trip detail: tabs ---------- */
-  var tripTabs = ["overview", "chat", "itinerary", "packing", "budget", "memories", "watches", "details"];
-  var MORE_TABS = ["budget", "memories", "watches", "details"];
+  var tripTabs = ["overview", "chat", "itinerary", "packing", "budget", "memories", "crawls", "watches", "details"];
+  var MORE_TABS = ["budget", "memories", "crawls", "watches", "details"];
   var currentTab = "overview";
   function selectTripTab(name) {
     currentTab = name;
@@ -1999,6 +2211,8 @@
     if (name === "overview") startCountdown(); else stopCountdown();
     // Someone else on the trip may have added photos since this was drawn.
     if (name === "memories" && currentTripId && currentTrip) loadPhotos(currentTripId);
+    // The same for crawls - and the map library loads the first time only.
+    if (name === "crawls" && currentTripId && currentTrip) crawlsTabOpened();
     tripTabs.forEach(function (t) {
       $("tab-" + t).hidden = t !== name;
       $("tab-btn-" + t).setAttribute("aria-selected", String(t === name));
@@ -2021,6 +2235,7 @@
   $("tab-btn-more").addEventListener("click", function () {
     var list = document.createElement("div"); list.className = "list";
     [["budget", "Budget", "i-dollar", "Target, bookings and spending"], ["memories", "Memories", "i-photo", "Trip photos and a picture show"],
+     ["crawls", "Crawls", "i-beer", "Brewery crawls: route, menus, check-ins"],
      ["watches", "Watches", "i-eye", "Prices being checked"], ["details", "Details", "i-info", "Name, dates, notes, lock in"]]
       .forEach(function (r) {
         var b = document.createElement("button"); b.type = "button"; b.className = "row";
@@ -2044,6 +2259,7 @@
     ["pkSuggest", "bgSuggest", "bgReceipt"].forEach(function (id) { $(id).hidden = true; $(id).innerHTML = ""; });
     setStatus($("bgImportStatus"), ""); $("bgTopUpRow").hidden = true;
     resetMemories();
+    resetCrawls();
     renderTiles();
     selectTripTab("overview");
     try {
@@ -2076,6 +2292,7 @@
     loadPacking(id);
     loadBudget(id);
     loadPhotos(id);
+    loadCrawls(id);
     refreshChat();
     refreshWatches();
   }
@@ -2966,6 +3183,8 @@
       photosDemo = !!data.demo;
       photos = Array.isArray(data.photos) ? data.photos : [];
       renderMemories(); renderMemTile();
+      // A crawl's recap plays the photos taken on it.
+      renderCrawlRecap();
     } catch (e) {}
   }
   // Two phones add to one trip. Coming back to the app, look again.
@@ -3192,6 +3411,927 @@
     if (currentTripId === trip) loadPhotos(trip);
   }
 
+  /* ---------- Crawls ----------
+   * A brewery crawl on this trip (see "Brewery crawls" in server.js). The
+   * server works out the route's clock, legs, warnings and links on every
+   * read, so the page draws what it is given. The one sum done here is
+   * "which stop is it now", because only the phone knows what time it is
+   * where the crawl is happening. Two phones on one crawl: the open crawl is
+   * asked for again on every return to the app and once a minute while it is
+   * on screen, and redrawn only when something changed. */
+  var crawls = [], crawlPassport = null, crawlOpen = null, crawlView = null, crawlSig = "", crawlListSig = "";
+  var crawlTimer = null, crawlEditing = false, crawlBusy = false;
+  var crawlMap = null, crawlLayer = null, crawlFit = "", leafletPromise = null;
+  var CR_TYPE = { micro: "Micro", nano: "Nano", regional: "Regional", brewpub: "Brewpub", large: "Large", bar: "Bar", taproom: "Taproom", location: "Location" };
+  var CR_STAYS = [30, 45, 60, 75, 90, 120, 150];
+
+  function crawlApi(cid, path) { return tripApi("/crawls/" + encodeURIComponent(cid) + (path || "")); }
+  /** Minutes from midnight as "3:40 PM" - past midnight wraps round. */
+  function hm(min) {
+    var m = ((Math.round(min) % 1440) + 1440) % 1440, h = Math.floor(m / 60);
+    return (h % 12 === 0 ? 12 : h % 12) + ":" + String(m % 60).padStart(2, "0") + (h < 12 ? " AM" : " PM");
+  }
+  /** "3:00–4:00 PM", or "11:30 AM–12:30 PM" when the halves differ. */
+  function hmSpan(a, b) { var x = hm(a), y = hm(b); if (x.slice(-2) === y.slice(-2)) x = x.slice(0, -3); return x + "–" + y; }
+  function nowMinutes() { var d = new Date(); return d.getHours() * 60 + d.getMinutes(); }
+  function stars(n) { n = Math.max(0, Math.min(5, Number(n) || 0)); return n ? new Array(n + 1).join("★") + new Array(6 - n).join("☆") : ""; }
+  function hostOf(url) { try { return new URL(url).hostname.replace(/^www\./, ""); } catch (e) { return ""; } }
+  function addDay(iso) { var p = iso.split("-"); var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + 1)); return d.toISOString().slice(0, 10); }
+  function clockOf(iso) { var d = new Date(iso); return isNaN(d) ? "" : d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); }
+  /** "12 min walk", "Ride · 9 min", "Drive · 9 min" - or, `inline`, the
+   *  way it reads in a sentence: "12 min walk", "a 9 min ride". */
+  function legText(row, mode, inline) {
+    if (!row || row.legMinutes == null) return "";
+    var mi = row.legMiles != null ? row.legMiles.toFixed(1) + " mi" : "";
+    if (row.legMode === "walk") return inline ? row.legMinutes + " min walk" : row.legMinutes + " min walk · " + mi;
+    var word = mode === "drive" ? "drive" : "ride";
+    return inline ? "a " + row.legMinutes + " min " + word : (mode === "drive" ? "Drive" : "Ride") + " · " + row.legMinutes + " min · " + mi;
+  }
+  /** The directory stores US numbers as bare digits: "8285550101" reads as (828) 555-0101. */
+  function phoneText(p) { var d = String(p || "").replace(/\D/g, ""); if (d.length === 11 && d.charAt(0) === "1") d = d.slice(1); return d.length === 10 && !/^\+/.test(p) ? "(" + d.slice(0, 3) + ") " + d.slice(3, 6) + "-" + d.slice(6) : String(p || ""); }
+  function linksById(v) { var out = {}; ((v.links && v.links.stops) || []).forEach(function (l) { out[l.id] = l; }); return out; }
+  /** The stops with their times, the shape liveFrom() reads - the same as
+   *  the list gives for the Overview tile. */
+  function timedStops(v) {
+    return v.crawl.stops.map(function (s, i) { var r = v.schedule[i] || {}; return { id: s.id, name: s.name, visitedAt: s.visitedAt, arriveMinutes: r.arriveMinutes, leaveMinutes: r.leaveMinutes }; });
+  }
+
+  /** Where the crawl is, today: the first stop not checked in whose window
+   *  has started is "now" (behind the plan if its leave time has passed);
+   *  before that, the next one. null on any other day. */
+  function liveFrom(date, stops) {
+    if (!date || date !== todayIso() || !stops || !stops.length) return null;
+    var now = nowMinutes(), open = [], i;
+    for (i = 0; i < stops.length; i++) if (!stops[i].visitedAt) open.push(i);
+    if (!open.length) return { done: true };
+    for (i = 0; i < open.length; i++) {
+      var s = stops[open[i]];
+      if (s.arriveMinutes <= now) return { now: open[i], next: open[i] + 1 < stops.length ? open[i] + 1 : -1, late: now > s.leaveMinutes };
+    }
+    return { upcoming: open[0], from: open[0] > 0 ? open[0] - 1 : -1 };
+  }
+
+  function resetCrawls() {
+    crawls = []; crawlPassport = null; crawlOpen = null; crawlView = null; crawlSig = ""; crawlListSig = ""; crawlEditing = false; crawlFit = "";
+    stopCrawlPoll();
+    $("crCrawls").innerHTML = ""; $("crPassport").hidden = true;
+    $("crListView").hidden = false; $("crDetail").hidden = true;
+    $("ovCrawlTile").hidden = true;
+    setStatus($("crListStatus"), ""); setStatus($("crStatus"), ""); $("crTopUpRow").hidden = true;
+  }
+
+  async function loadCrawls(id) {
+    if (!id) return;
+    try {
+      // By id rather than tripApi(): this runs while the trip is still loading,
+      // and the example trip's id is its route.
+      var res = await fetch("/api/trips/" + encodeURIComponent(id) + "/crawls", { cache: "no-store" });
+      if (!res.ok || currentTripId !== id) return;
+      var text = await res.text();
+      if (text !== crawlListSig) {
+        crawlListSig = text;
+        var data = JSON.parse(text);
+        crawls = Array.isArray(data.crawls) ? data.crawls : [];
+        crawlPassport = data.passport || null;
+        renderCrawlList();
+      }
+      // The tile says "Now: ..." on the day, so it is redrawn for the clock
+      // even when nothing on the server moved.
+      renderCrawlTile();
+    } catch (e) {}
+  }
+
+  function crawlsTabOpened() {
+    // The map library is fetched the first time anyone opens this tab, not
+    // with every page: most visits to a trip never look at a crawl.
+    loadLeaflet().catch(function () {});
+    if (crawlOpen) { fetchCrawl(crawlOpen, true); startCrawlPoll(); }
+    else loadCrawls(currentTripId);
+  }
+
+  function renderPassport() {
+    var p = crawlPassport, box = $("crPassport");
+    if (!p || !crawls.length) { box.hidden = true; return; }
+    box.hidden = false;
+    var cell = function (n, u) { return '<div class="cr-pp-cell"><span class="n">' + escapeHtml(String(n)) + '</span><span class="u">' + escapeHtml(u) + '</span></div>'; };
+    box.innerHTML = '<div class="cr-pp-title">Trip passport</div><div class="cr-pp-grid">' +
+      cell(p.breweries, p.breweries === 1 ? "Brewery" : "Breweries") + cell(p.beers, p.beers === 1 ? "Beer logged" : "Beers logged") +
+      cell(p.avgRating != null ? "★ " + p.avgRating : "–", "Avg rating") + '</div>' +
+      (p.stamps && p.stamps.length
+        ? '<div class="cr-stamps">' + p.stamps.map(function (s) { return '<span class="cr-stamp">' + svgUse("i-check") + escapeHtml(s.name) + '</span>'; }).join("") + '</div>'
+        : '<div class="cr-pp-top">Check in at a stop and it’s stamped here.</div>') +
+      (p.top ? '<div class="cr-pp-top">Best so far: <b>' + escapeHtml(p.top.beer) + '</b>' + (p.top.brewery ? ' at ' + escapeHtml(p.top.brewery) : '') +
+        ' <span class="cr-stars">' + stars(p.top.rating) + '</span></div>' : '');
+  }
+
+  function renderCrawlList() {
+    var demoTrip = isDemo();
+    $("crNewBtn").hidden = demoTrip;
+    renderPassport();
+    var box = $("crCrawls");
+    if (!crawls.length) {
+      box.innerHTML = '<div class="empty" style="padding:24px 16px 4px">' + svgUse("i-beer") + '<b>Plan a brewery crawl</b><span>Pick breweries near ' +
+        escapeHtml(currentTrip && currentTrip.destination ? currentTrip.destination : "the trip") +
+        ' and they’re put in walking order with a time for each stop. Then look up what’s on tap, get picks for what to order, and check in as you go — on every phone on the trip.</span></div>';
+      return;
+    }
+    var today = todayIso();
+    box.innerHTML = '<div class="list cr-list">' + crawls.map(function (c) {
+      var first = c.stops[0], last = c.stops[c.stops.length - 1];
+      var sub = [c.date ? niceDay(c.date, true) : "No date yet", plural(c.stopCount, "stop", "stops"), c.miles + " mi",
+        first ? hmSpan(first.arriveMinutes, last.leaveMinutes) : ""].filter(Boolean).join(" · ");
+      var badge = c.stopCount && c.visited === c.stopCount ? '<span class="badge done">Done</span>' : c.date === today ? '<span class="badge today">Today</span>' : '';
+      var progress = c.visited || c.pours ? [c.visited ? c.visited + " of " + c.stopCount + " checked in" : "", c.pours ? plural(c.pours, "beer", "beers") + " logged" : ""].filter(Boolean).join(" · ") : "";
+      return '<button type="button" class="row" data-crawl="' + escapeHtml(c.id) + '">' + svgUse("i-beer", "row-icon") +
+        '<div class="row-main"><div class="row-title">' + escapeHtml(c.name) + '</div><div class="row-sub">' + escapeHtml(sub) + '</div>' +
+        (progress ? '<div class="row-sub" style="color:var(--green)">' + escapeHtml(progress) + '</div>' : '') + '</div>' + badge + svgUse("i-chev-r", "row-chevron") + '</button>';
+    }).join("") + '</div>';
+  }
+  $("crCrawls").addEventListener("click", function (e) { var r = e.target.closest("[data-crawl]"); if (r) openCrawl(r.getAttribute("data-crawl")); });
+
+  // ---- the Overview tile ----
+  function renderCrawlTile() {
+    var tile = $("ovCrawlTile");
+    if (!crawls.length) { tile.hidden = true; return; }
+    var today = todayIso();
+    var c = crawls.filter(function (x) { return x.date === today; })[0] || crawls.filter(function (x) { return x.date && x.date > today; })[0] ||
+      crawls.filter(function (x) { return !x.date; })[0] || crawls[crawls.length - 1];
+    tile.hidden = false;
+    tile.setAttribute("data-crawl", c.id);
+    var live = liveFrom(c.date, c.stops), sub;
+    if (live && live.done) sub = "Every stop checked in — tap for the recap";
+    else if (live && live.now != null) {
+      var n = live.next >= 0 ? c.stops[live.next] : null;
+      sub = "Now: " + c.stops[live.now].name + (n ? ", next " + n.name + " at " + hm(n.arriveMinutes) : " — the last stop");
+    } else if (live) sub = (live.from >= 0 ? "Next: " : "Starts with ") + c.stops[live.upcoming].name + " at " + hm(c.stops[live.upcoming].arriveMinutes);
+    else sub = [c.date ? dayStart(c.date).toLocaleDateString(undefined, { weekday: "short" }) : "", plural(c.stopCount, "stop", "stops"), c.miles + " mi"].filter(Boolean).join(" · ");
+    $("ovCrawlLabel").textContent = live && !live.done ? "Beer crawl · today" : crawls.length > 1 ? "Beer crawls · " + crawls.length : "Beer crawl";
+    $("ovCrawlVal").textContent = c.name;
+    $("ovCrawlSub").textContent = sub;
+  }
+  $("ovCrawlTile").addEventListener("click", function () { var id = this.getAttribute("data-crawl"); if (id) openCrawl(id); });
+
+  // ---- one crawl ----
+  function openCrawl(cid) {
+    crawlOpen = cid; crawlView = null; crawlSig = ""; crawlEditing = false;
+    $("crListView").hidden = true; $("crDetail").hidden = false;
+    $("crHead").innerHTML = '<div class="skeleton" style="flex:1;height:44px"></div>';
+    ["crLive", "crRecap", "crPacing"].forEach(function (id) { $(id).hidden = true; });
+    $("crStops").innerHTML = ""; $("crSummary").innerHTML = ""; $("crTools").innerHTML = "";
+    setStatus($("crStatus"), ""); $("crTopUpRow").hidden = true;
+    if (currentTab !== "crawls") selectTripTab("crawls");       // fetches it, see crawlsTabOpened
+    else { window.scrollTo(0, 0); fetchCrawl(cid, false); startCrawlPoll(); }
+  }
+  function closeCrawl() {
+    crawlOpen = null; crawlView = null; crawlSig = ""; stopCrawlPoll();
+    $("crDetail").hidden = true; $("crListView").hidden = false;
+    window.scrollTo(0, 0);
+    loadCrawls(currentTripId);
+  }
+  $("crBack").addEventListener("click", closeCrawl);
+
+  async function fetchCrawl(cid, quiet) {
+    var id = currentTripId;
+    try {
+      var res = await fetch(crawlApi(cid), { cache: "no-store" });
+      if (currentTripId !== id || crawlOpen !== cid) return;
+      if (res.status === 404) { toast("That crawl isn’t here any more"); closeCrawl(); return; }
+      if (!res.ok) { if (!quiet) setStatus($("crStatus"), "Couldn’t load that crawl. Try again.", "error"); return; }
+      var text = await res.text();
+      // Unchanged since the last look: leave the page alone - but the clock
+      // moved, so the live card is redrawn.
+      if (text === crawlSig && crawlView) { renderLive(); renderCrawlTile(); return; }
+      crawlSig = text;
+      crawlView = JSON.parse(text);
+      renderCrawl();
+    } catch (e) { if (!quiet) setStatus($("crStatus"), "Couldn’t load that crawl. Check your connection.", "error"); }
+  }
+  /** A fresh view from a write: drawn, and remembered as what the server
+   *  last said, so the next poll does not redraw it for nothing. */
+  function setCrawlView(v) { crawlView = v; crawlSig = JSON.stringify(v); renderCrawl(); }
+
+  function startCrawlPoll() {
+    stopCrawlPoll();
+    crawlTimer = setInterval(function () {
+      if (crawlOpen && currentTab === "crawls" && document.visibilityState === "visible" && !crawlBusy) fetchCrawl(crawlOpen, true);
+    }, 60000);
+  }
+  function stopCrawlPoll() { if (crawlTimer) { clearInterval(crawlTimer); crawlTimer = null; } }
+  function crawlsForeground() {
+    if (!currentTripId || !currentTrip) return;
+    if (crawlOpen && currentTab === "crawls") fetchCrawl(crawlOpen, true); else loadCrawls(currentTripId);
+  }
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") crawlsForeground(); });
+  window.addEventListener("pageshow", crawlsForeground);
+
+  function crawlIsDemo() { return isDemo() || !!(crawlView && crawlView.demo); }
+
+  function renderCrawl() {
+    var v = crawlView; if (!v) return;
+    var c = v.crawl, demoTrip = crawlIsDemo();
+    var meta = [c.date ? niceDay(c.date, true) : "No date yet", "from " + hm(v.totals.startMinutes), c.mode === "drive" ? "Driving" : "Walking"].join(" · ");
+    $("crHead").innerHTML = '<div style="min-width:0"><h2>' + escapeHtml(c.name) + '</h2><div class="meta">' + escapeHtml(meta) + '</div></div>' +
+      (demoTrip ? '' : '<button type="button" class="btn btn-secondary btn-sm" id="crEditBtn">Edit</button>');
+    if (!demoTrip) $("crEditBtn").addEventListener("click", openCrawlEdit);
+    navTitle.textContent = c.name;
+    $("crAi").hidden = demoTrip || !c.stops.length;
+    $("crDeleteBtn").hidden = demoTrip;
+    renderLive(); renderCrawlRecap(); renderCrawlSummary(); renderCrawlTools(); renderPacing(); renderStops();
+    drawMap();
+  }
+
+  function renderCrawlSummary() {
+    var v = crawlView, t = v.totals, c = v.crawl;
+    var stat = function (b, s) { return '<div class="cr-stat"><b>' + escapeHtml(String(b)) + '</b><span>' + escapeHtml(s) + '</span></div>'; };
+    var verdict = c.mode === "drive"
+      ? (t.walkable && c.stops.length > 1 ? ["good", "By car — though every leg is walkable"] : ["", "By car — " + t.rideMinutes + " min of driving"])
+      : (t.rideLegs ? ["ride", "A ride for " + plural(t.rideLegs, "leg", "legs") + " — the rest on foot"] : ["good", "Walkable"]);
+    var warns = v.warnings || [];
+    $("crSummary").innerHTML = '<div class="cr-stats">' + stat(c.stops.length, c.stops.length === 1 ? "Stop" : "Stops") + stat(t.miles, "Miles") +
+      stat(c.mode === "drive" ? t.rideMinutes + "m" : t.walkMinutes + "m", c.mode === "drive" ? "Driving" : "On foot") + stat(hm(t.endMinutes).replace(/:00 /, " "), "Ends") + '</div>' +
+      (c.stops.length > 1 ? '<div class="cr-verdict ' + verdict[0] + '">' + escapeHtml(verdict[1]) + '</div>' : '') +
+      (warns.length ? '<ul class="cr-warns">' + warns.map(function (w) { return '<li>' + escapeHtml(w.text) + '</li>'; }).join("") + '</ul>' : '') +
+      (v.links && v.links.route ? '<a class="btn btn-secondary" style="text-decoration:none" href="' + escapeHtml(v.links.route) + '" target="_blank" rel="noopener">' + svgUse("i-map") + 'Open in Google Maps</a>' : '');
+  }
+
+  function renderPacing() {
+    var c = crawlView.crawl, box = $("crPacing");
+    box.hidden = !c.picksNote;
+    box.innerHTML = c.picksNote ? '<b>Pacing</b> · ' + escapeHtml(c.picksNote) : '';
+  }
+
+  function renderCrawlTools() {
+    var box = $("crTools"), c = crawlView.crawl;
+    if (crawlIsDemo()) { box.hidden = true; box.innerHTML = ""; return; }
+    box.hidden = false;
+    var full = c.stops.length >= 10;
+    box.innerHTML =
+      '<button type="button" class="btn btn-secondary btn-sm" data-tool="itinerary">' + svgUse("i-cal") + 'Add to itinerary</button>' +
+      (c.stops.length > 2 ? '<button type="button" class="btn btn-secondary btn-sm" data-tool="optimal">Shortest order</button>' : '') +
+      (c.stops.length > 1 ? '<button type="button" class="btn btn-secondary btn-sm" data-tool="edit">' + (crawlEditing ? "Done" : "Edit stops") + '</button>' : '') +
+      (full ? '' : '<button type="button" class="btn btn-secondary btn-sm" data-tool="add">' + svgUse("i-plus") + 'Add a stop</button>');
+  }
+
+  function menuHtml(m, demoTrip) {
+    if (!m) return '<div class="cr-nomenu">No menu yet' + (demoTrip ? '' : ' — Get menus &amp; hours looks up what’s on tap') + '.</div>';
+    var beers = m.beers || [];
+    var line = function (b) {
+      var meta = [b.style, b.abv != null ? b.abv + "%" : ""].filter(Boolean).join(" · ");
+      return '<li>' + escapeHtml(b.name) + (meta ? '<span>' + escapeHtml(meta) + '</span>' : '') + '</li>';
+    };
+    var out = '<div class="cr-menu">';
+    if (beers.length) {
+      out += '<div class="cr-menu-h">On tap</div><ul class="cr-beers">' + beers.slice(0, 5).map(line).join("") + '</ul>';
+      if (beers.length > 5) out += '<details><summary>' + (beers.length - 5) + ' more on tap</summary><ul class="cr-beers">' + beers.slice(5).map(line).join("") + '</ul></details>';
+    } else out += '<div class="cr-menu-line"><em>No current tap list found online.</em></div>';
+    if (m.food) out += '<div class="cr-menu-line"><em>Food</em> · ' + escapeHtml(m.food) + '</div>';
+    if (m.hours) out += '<div class="cr-menu-line"><em>Hours</em> · ' + escapeHtml(m.hours) + '</div>';
+    if (m.highlights) out += '<div class="cr-menu-line">' + escapeHtml(m.highlights) + '</div>';
+    var chips = [];
+    if (m.kidFriendly === true) chips.push("Kids welcome"); else if (m.kidFriendly === false) chips.push("Adults only");
+    if (m.dogFriendly === true) chips.push("Dogs welcome"); else if (m.dogFriendly === false) chips.push("No dogs");
+    if (chips.length) out += '<div class="cr-chips">' + chips.map(function (x) { return '<span class="cr-chip">' + escapeHtml(x) + '</span>'; }).join("") + '</div>';
+    var src = (m.sources || []).map(function (s) { return '<a href="' + escapeHtml(s.url) + '" target="_blank" rel="noopener">' + escapeHtml(hostOf(s.url) || s.title) + '</a>'; });
+    var when = m.stale && m.fetchedAt ? "Looked up " + niceDay(m.fetchedAt.slice(0, 10)) + " — may be out of date" : m.asOf ? "As of " + niceDay(m.asOf) : "";
+    if (when || src.length) out += '<div class="cr-src">' + escapeHtml(when) + (src.length ? (when ? ' · ' : '') + 'from ' + src.join(", ") : '') + '</div>';
+    if (m.confidence !== "high") out += '<div class="cr-caveat">Tap lists change — check the board.</div>';
+    return out + '</div>';
+  }
+
+  function renderStops() {
+    var v = crawlView, c = v.crawl, demoTrip = crawlIsDemo(), links = linksById(v);
+    var live = liveFrom(c.date, timedStops(v)), nowIdx = live && live.now != null ? live.now : -1;
+    var canPhoto = photosAvailable !== false && !demoTrip;
+    $("crStops").innerHTML = c.stops.map(function (s, i) {
+      var row = v.schedule[i] || {}, l = links[s.id] || {}, pick = c.picks && c.picks[s.id];
+      var pours = (v.pours || []).filter(function (p) { return p.stopId === s.id; });
+      var html = '';
+      if (i > 0) {
+        var ride = row.legMode === "ride";
+        html += '<div class="cr-leg' + (ride ? ' ride' : '') + '"><span aria-hidden="true">' + (ride ? (c.mode === "drive" ? "🚗" : "🚕") : "🚶") + '</span>' +
+          escapeHtml(legText(row, c.mode)) + (ride && l.uber ? ' · <a href="' + escapeHtml(l.uber) + '" target="_blank" rel="noopener">Uber</a>' : '') + '</div>';
+      }
+      var bits = [s.type && CR_TYPE[s.type] ? CR_TYPE[s.type] : "", s.dwellMinutes ? s.dwellMinutes + " min stay" : ""].filter(Boolean);
+      html += '<section class="cr-stop' + (s.visitedAt ? ' visited' : '') + (i === nowIdx ? ' now' : '') + '" data-stop-card="' + escapeHtml(s.id) + '">' +
+        '<div class="cr-stop-head"><span class="cr-num">' + (s.visitedAt ? svgUse("i-check") : (i + 1)) + '</span>' +
+        '<div class="cr-stop-main"><div class="cr-stop-name">' + escapeHtml(s.name) + '</div>' +
+        '<div class="cr-stop-time"><b>' + escapeHtml(hmSpan(row.arriveMinutes, row.leaveMinutes)) + '</b>' + (bits.length ? ' · ' + escapeHtml(bits.join(" · ")) : '') + '</div></div>' +
+        (crawlEditing ? '<div class="cr-edit"><button type="button" data-move="-1" data-id="' + escapeHtml(s.id) + '" aria-label="Move up"' + (i === 0 ? ' disabled' : '') + '>↑</button>' +
+          '<button type="button" data-move="1" data-id="' + escapeHtml(s.id) + '" aria-label="Move down"' + (i === c.stops.length - 1 ? ' disabled' : '') + '>↓</button>' +
+          '<button type="button" class="x" data-remove="' + escapeHtml(s.id) + '" aria-label="Remove ' + escapeHtml(s.name) + '">' + svgUse("i-x") + '</button></div>' : '') +
+        '</div>';
+      if (crawlEditing) {
+        html += '<label class="cr-dwell" style="margin-left:44px">Stay <select data-dwell="' + escapeHtml(s.id) + '"><option value="">Default (' + c.dwellMinutes + ' min)</option>' +
+          CR_STAYS.map(function (m) { return '<option value="' + m + '"' + (s.dwellMinutes === m ? ' selected' : '') + '>' + m + ' min</option>'; }).join("") + '</select></label>';
+      }
+      if (s.visitedAt) html += '<span class="cr-stamp cr-stamped">' + svgUse("i-check") + 'Checked in ' + escapeHtml(clockOf(s.visitedAt)) + '</span>';
+      var info = [];
+      var addr = [s.street, s.city].filter(Boolean).join(", ");
+      if (l.apple) info.push('<a href="' + escapeHtml(l.apple) + '" target="_blank" rel="noopener">' + escapeHtml(addr || "Directions") + '</a>');
+      if (s.phone) info.push('<a href="tel:' + escapeHtml(s.phone.replace(/[^\d+]/g, "")) + '">' + escapeHtml(phoneText(s.phone)) + '</a>');
+      if (s.website) info.push('<a href="' + escapeHtml(s.website) + '" target="_blank" rel="noopener">' + escapeHtml(hostOf(s.website)) + '</a>');
+      if (info.length) html += '<div class="cr-info">' + info.join("") + '</div>';
+      if (pick) html += '<div class="cr-pick"><b>Order:</b> ' + escapeHtml(pick.order) + (pick.why ? '<span>' + escapeHtml(pick.why) + '</span>' : '') + '</div>';
+      html += menuHtml(v.menus && v.menus[s.id], demoTrip);
+      if (pours.length) {
+        html += '<div class="cr-pours">' + pours.map(function (p) {
+          var who = whoAsked(p.by), extra = [who, p.note].filter(Boolean).join(" · ");
+          return '<div class="cr-pour"><div class="what">🍺 <b>' + escapeHtml(p.beer) + '</b>' + (p.style ? ' <span>' + escapeHtml(p.style) + '</span>' : '') +
+            (p.rating ? ' <span class="cr-stars" aria-label="' + p.rating + ' of 5">' + stars(p.rating) + '</span>' : '') +
+            (extra ? '<br><span>' + escapeHtml(extra) + '</span>' : '') + '</div>' +
+            (demoTrip ? '' : '<button type="button" class="cl-del" data-pour-del="' + escapeHtml(p.id) + '" aria-label="Remove ' + escapeHtml(p.beer) + '">' + svgUse("i-x") + '</button>') + '</div>';
+        }).join("") + '</div>';
+      }
+      if (!demoTrip) {
+        html += '<div class="cr-stop-actions">' +
+          '<button type="button" class="btn ' + (s.visitedAt ? 'btn-secondary' : 'btn-primary') + ' btn-sm" data-visit="' + escapeHtml(s.id) + '">' + (s.visitedAt ? 'Undo' : 'Check in') + '</button>' +
+          '<button type="button" class="btn btn-secondary btn-sm" data-pour="' + escapeHtml(s.id) + '">Log a beer</button>' +
+          (canPhoto ? '<label class="btn btn-secondary btn-sm">' + svgUse("i-photo") + 'Photo<input type="file" accept="image/*" class="vh" data-photo-stop="' + escapeHtml(s.id) + '"></label>' : '') +
+          '</div>';
+      }
+      return html + '</section>';
+    }).join("");
+  }
+
+  // ---- live mode: the day of the crawl ----
+  function renderLive() {
+    var box = $("crLive"), v = crawlView;
+    var st = v && liveFrom(v.crawl.date, timedStops(v));
+    if (!st || st.done) { box.hidden = true; box.innerHTML = ""; return; }
+    var c = v.crawl, stops = c.stops, rows = v.schedule, links = linksById(v), demoTrip = crawlIsDemo();
+    var top = function (t) { return '<div class="cr-live-top"><span class="cr-live-dot"></span>' + escapeHtml(t) + '</div>'; };
+    var html = '', go = null, ride = null, checkIn = null;
+    if (st.now != null) {
+      var s = stops[st.now], row = rows[st.now], nx = st.next >= 0 ? stops[st.next] : null, nrow = nx ? rows[st.next] : null;
+      html = top("Live · stop " + (st.now + 1) + " of " + stops.length) + '<div class="cr-live-name">Now: ' + escapeHtml(s.name) + '</div>';
+      if (st.late) html += '<div class="cr-live-next late">Behind the plan — it had you leaving at ' + escapeHtml(hm(row.leaveMinutes)) + (nx ? ' for ' + escapeHtml(nx.name) + ', ' + escapeHtml(legText(nrow, c.mode, true)) : '') + '.</div>';
+      else if (nx) html += '<div class="cr-live-next">Leave by ' + escapeHtml(hm(row.leaveMinutes)) + ' for ' + escapeHtml(nx.name) + ' — ' + escapeHtml(legText(nrow, c.mode, true)) + '</div>';
+      else html += '<div class="cr-live-next">The last stop — until ' + escapeHtml(hm(row.leaveMinutes)) + '</div>';
+      checkIn = s; go = nx || s;
+      ride = nx && nrow.legMode === "ride" ? links[nx.id] : null;
+    } else {
+      var u = stops[st.upcoming], urow = rows[st.upcoming], from = st.from >= 0 ? stops[st.from] : null;
+      html = top(from ? "Live · next stop" : "Today") + '<div class="cr-live-name">' + (from ? "Next: " : "Starts at ") + escapeHtml(u.name) + ' at ' + escapeHtml(hm(urow.arriveMinutes)) + '</div>' +
+        '<div class="cr-live-next">' + (from ? 'Leave ' + escapeHtml(from.name) + ' by ' + escapeHtml(hm(rows[st.from].leaveMinutes)) + ' — ' + escapeHtml(legText(urow, c.mode, true))
+          : escapeHtml(plural(stops.length, "stop", "stops") + ", " + v.totals.miles + " mi, done around " + hm(v.totals.endMinutes))) + '</div>';
+      // Arriving ahead of the plan is normal; the check-in is offered anyway.
+      checkIn = u; go = u; ride = urow.legMode === "ride" ? links[u.id] : null;
+    }
+    var gl = go && links[go.id];
+    html += '<div class="cr-live-actions">' +
+      (checkIn && !demoTrip ? '<button type="button" class="btn btn-primary" data-visit="' + escapeHtml(checkIn.id) + '">Check in</button>' : '') +
+      (gl && gl.apple ? '<a class="btn btn-secondary" href="' + escapeHtml(gl.apple) + '" target="_blank" rel="noopener">Directions</a>' : '') +
+      (ride && ride.uber ? '<a class="btn btn-secondary" href="' + escapeHtml(ride.uber) + '" target="_blank" rel="noopener">Ride</a>' : '') + '</div>';
+    box.innerHTML = '<div class="cr-live">' + html + '</div>';
+    box.hidden = false;
+  }
+
+  // ---- the recap, and the crawl as a picture show ----
+  /** A photo's time, as minutes from midnight of the crawl's day. The
+   *  camera's own wall-clock time when there is one; otherwise when it was
+   *  added, on this phone's clock. */
+  function photoMinutesOn(p, date) {
+    var day, min;
+    if (p.takenAt) { day = p.takenAt.slice(0, 10); min = Number(p.takenAt.slice(11, 13)) * 60 + Number(p.takenAt.slice(14, 16)); }
+    else if (p.uploadedAt) {
+      var d = new Date(p.uploadedAt); if (isNaN(d)) return null;
+      day = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+      min = d.getHours() * 60 + d.getMinutes();
+    } else return null;
+    return daysBetween(date, day) * 1440 + min;
+  }
+  /** The trip's photos from the crawl - taken on its day between its start
+   *  and a little after its end - filed under the stop whose name the
+   *  caption carries, or else the stop they were taken during. */
+  function crawlSlides(v) {
+    var c = v.crawl;
+    if (!c.date || !photos.length || !c.stops.length) return { list: [], photos: 0 };
+    var start = v.totals.startMinutes - 30, end = v.totals.endMinutes + 90, count = 0, loose = [];
+    var groups = c.stops.map(function (s, i) { return { stop: s, row: v.schedule[i], photos: [] }; });
+    photos.forEach(function (p) {
+      var rel = photoMinutesOn(p, c.date);
+      if (rel == null || rel < start || rel > end) return;
+      count++;
+      var cap = String(p.caption || "").toLowerCase();
+      var g = groups.filter(function (x) { return cap && cap.indexOf(x.stop.name.toLowerCase()) >= 0; })[0] ||
+        groups.filter(function (x) { return rel >= x.row.arriveMinutes - 10 && rel <= x.row.leaveMinutes + 10; })[0];
+      (g ? g.photos : loose).push({ p: p, rel: rel });
+    });
+    if (!count) return { list: [], photos: 0 };
+    var byRel = function (a, b) { return a.rel - b.rel; };
+    var list = [{ type: "title", title: c.name, subtitle: niceDay(c.date, true) + " · " + plural(c.stops.length, "stop", "stops") + " · " + v.totals.miles + " mi" }];
+    groups.forEach(function (g, i) {
+      if (!g.photos.length) return;
+      list.push({ type: "title", title: g.stop.name, subtitle: "Stop " + (i + 1) + " · " + hm(g.row.arriveMinutes) });
+      g.photos.sort(byRel).forEach(function (x) { list.push({ type: "photo", src: photoUrl(x.p, "full"), caption: x.p.caption || "", sub: g.stop.name }); });
+    });
+    if (loose.length) {
+      list.push({ type: "title", title: "Along the way", subtitle: c.name });
+      loose.sort(byRel).forEach(function (x) { list.push({ type: "photo", src: photoUrl(x.p, "full"), caption: x.p.caption || "", sub: "" }); });
+    }
+    return { list: list, photos: count };
+  }
+
+  function renderCrawlRecap() {
+    var box = $("crRecap"), v = crawlView;
+    if (!box || !v) return;
+    var c = v.crawl, n = c.stops.length, visited = c.stops.filter(function (s) { return s.visitedAt; }).length;
+    if (!n || !(visited === n || (c.date && c.date < todayIso()))) { box.hidden = true; box.innerHTML = ""; return; }
+    var pours = v.pours || [], rated = pours.filter(function (p) { return p.rating; });
+    var best = rated.slice().sort(function (a, b) { return b.rating - a.rating || String(b.at).localeCompare(String(a.at)); })[0];
+    var avg = rated.length ? Math.round((rated.reduce(function (a, p) { return a + p.rating; }, 0) / rated.length) * 10) / 10 : null;
+    var bestAt = best ? c.stops.filter(function (s) { return s.id === best.stopId; })[0] : null;
+    var show = crawlSlides(v);
+    var stat = function (b, s) { return '<div class="cr-stat"><b>' + escapeHtml(String(b)) + '</b><span>' + escapeHtml(s) + '</span></div>'; };
+    box.innerHTML = '<div class="ov-card cr-recap"><div class="cr-recap-top"><h3>' + (visited === n ? "Crawl complete" : "How it went") + '</h3>' +
+      (show.photos ? '<button type="button" class="btn btn-primary btn-sm" id="crPlay"><svg class="i-play" aria-hidden="true"><use href="#i-play"/></svg>Play the crawl</button>' : '') + '</div>' +
+      '<div class="cr-stats">' + stat(visited + "/" + n, "Stops") + stat(v.totals.miles, "Miles") + stat(pours.length, pours.length === 1 ? "Beer" : "Beers") +
+        stat(avg != null ? "★" + avg : "–", "Avg rating") + '</div>' +
+      (best ? '<div class="cr-recap-best">Top-rated: <b>' + escapeHtml(best.beer) + '</b>' + (bestAt ? ' at ' + escapeHtml(bestAt.name) : '') + ' <span class="cr-stars">' + stars(best.rating) + '</span></div>' : '') +
+      '<div class="cr-recap-note">' + (show.photos ? plural(show.photos, "photo", "photos") + " from the crawl, each brewery a title card."
+        : "Photos added at a stop — or taken during the crawl and added to Memories — play back here as a picture show.") + '</div></div>';
+    box.hidden = false;
+    var play = $("crPlay");
+    if (play) play.addEventListener("click", function () { window.PhotoTools.slideshow(crawlSlides(crawlView).list); });
+  }
+
+  // ---- the map (Leaflet, vendored, loaded on first use) ----
+  function loadLeaflet() {
+    if (window.L && window.L.map) return Promise.resolve(window.L);
+    if (leafletPromise) return leafletPromise;
+    var css = new Promise(function (resolve) {
+      var link = document.createElement("link"); link.rel = "stylesheet"; link.href = "/vendor/leaflet/leaflet.css";
+      link.onload = resolve; link.onerror = resolve;       // a map with no CSS is still a map
+      document.head.appendChild(link);
+    });
+    var js = new Promise(function (resolve, reject) {
+      var s = document.createElement("script"); s.src = "/vendor/leaflet/leaflet.js"; s.async = true;
+      s.onload = function () { resolve(window.L); }; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+    leafletPromise = Promise.all([css, js]).then(function (r) { return r[1]; }, function (e) { leafletPromise = null; throw e; });
+    return leafletPromise;
+  }
+
+  function drawMap() {
+    var v = crawlView, box = $("crMap");
+    var pts = v ? v.crawl.stops.filter(function (s) { return isFinite(s.lat) && isFinite(s.lng) && s.lat !== null; }) : [];
+    if (!pts.length) { box.hidden = true; return; }
+    box.hidden = false;
+    loadLeaflet().then(function (L) {
+      if (crawlView !== v) return;                          // superseded while loading
+      if (!crawlMap) {
+        box.innerHTML = "";
+        crawlMap = L.map(box, { zoomControl: true, attributionControl: true, scrollWheelZoom: false });
+        // OpenStreetMap's own tiles, as Hopscotch uses: light use, the
+        // attribution always visible, nothing fetched ahead of need.
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 19,
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+        }).addTo(crawlMap);
+        crawlLayer = L.layerGroup().addTo(crawlMap);
+      }
+      crawlMap.invalidateSize();
+      crawlLayer.clearLayers();
+      var styles = getComputedStyle(document.documentElement);
+      var tint = styles.getPropertyValue("--tint").trim() || "#007AFF", orange = styles.getPropertyValue("--orange").trim() || "#FF9500";
+      var live = liveFrom(v.crawl.date, timedStops(v)), nowIdx = live && live.now != null ? live.now : -1;
+      var stops = v.crawl.stops;
+      for (var i = 1; i < stops.length; i++) {
+        var a = stops[i - 1], b = stops[i], ride = (v.schedule[i] || {}).legMode === "ride";
+        if (!isFinite(a.lat) || !isFinite(b.lat)) continue;
+        L.polyline([[a.lat, a.lng], [b.lat, b.lng]], { color: ride ? orange : tint, weight: 4, opacity: 0.85, dashArray: ride ? "2 9" : null, lineCap: "round" }).addTo(crawlLayer);
+      }
+      stops.forEach(function (s, i) {
+        if (!isFinite(s.lat) || !isFinite(s.lng)) return;
+        var icon = L.divIcon({ className: "cr-pin-wrap", iconSize: [26, 26], iconAnchor: [13, 13],
+          html: '<span class="cr-pin' + (s.visitedAt ? " done" : "") + (i === nowIdx ? " now" : "") + '">' + (i + 1) + '</span>' });
+        var m = L.marker([s.lat, s.lng], { icon: icon, title: s.name, keyboard: true }).addTo(crawlLayer);
+        // Leaflet puts a tooltip's string in as HTML: escaped here.
+        m.bindTooltip(escapeHtml((i + 1) + ". " + s.name), { direction: "top", offset: [0, -14] });
+        m.on("click", function () {
+          var card = document.querySelector('[data-stop-card="' + (window.CSS && CSS.escape ? CSS.escape(s.id) : s.id) + '"]');
+          if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+      });
+      // Fitted when the stops change, not on every poll - someone who has
+      // zoomed in on the next corner should not be thrown back out.
+      var fit = pts.map(function (s) { return s.id + "@" + s.lat + "," + s.lng; }).join("|");
+      if (fit !== crawlFit) {
+        crawlFit = fit;
+        if (pts.length === 1) crawlMap.setView([pts[0].lat, pts[0].lng], 16);
+        else crawlMap.fitBounds(pts.map(function (s) { return [s.lat, s.lng]; }), { padding: [34, 34], maxZoom: 17 });
+      }
+    }).catch(function () {
+      box.innerHTML = '<div class="cr-map-fail">The map couldn’t load. The stops and their directions below still work.</div>';
+    });
+  }
+
+  // ---- stop actions: check in, log a beer, a photo, edit ----
+  async function crawlWrite(method, path, body, okText) {
+    var cid = crawlOpen, id = currentTripId, status = $("crStatus");
+    try {
+      var res = await fetch(crawlApi(cid, path), { method: method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+      if (res.status === 401) { showAuthRequired(status); return null; }
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok) throw new Error(data.error || "Couldn’t save that.");
+      if (currentTripId !== id || crawlOpen !== cid) return null;
+      if (okText) toast(okText);
+      return data;
+    } catch (e) { setStatus(status, (e && e.message) || "Couldn’t save that.", "error"); return null; }
+  }
+
+  async function toggleVisit(sid) {
+    var s = crawlView.crawl.stops.filter(function (x) { return x.id === sid; })[0];
+    if (!s) return;
+    var data = await crawlWrite("POST", "/visit/" + encodeURIComponent(sid), { visited: !s.visitedAt }, s.visitedAt ? "Check-in undone" : "Checked in at " + s.name);
+    if (data) { setCrawlView(data); loadCrawls(currentTripId); }
+  }
+
+  function onCrawlClick(e) {
+    var t = e.target.closest("[data-visit],[data-pour],[data-pour-del],[data-move],[data-remove]");
+    if (!t || crawlIsDemo()) return;
+    if (t.hasAttribute("data-visit")) { toggleVisit(t.getAttribute("data-visit")); return; }
+    if (t.hasAttribute("data-pour")) { openPourSheet(t.getAttribute("data-pour")); return; }
+    if (t.hasAttribute("data-pour-del")) { deletePour(t.getAttribute("data-pour-del")); return; }
+    if (t.hasAttribute("data-move")) { moveStop(t.getAttribute("data-id"), Number(t.getAttribute("data-move"))); return; }
+    if (t.hasAttribute("data-remove")) removeStop(t.getAttribute("data-remove"));
+  }
+  $("crStops").addEventListener("click", onCrawlClick);
+  $("crLive").addEventListener("click", onCrawlClick);
+
+  async function deletePour(pid) {
+    var data = await crawlWrite("DELETE", "/pours/" + encodeURIComponent(pid), null, "Removed");
+    if (data) { crawlView.pours = data.pours || []; crawlSig = ""; renderCrawl(); }
+  }
+  async function moveStop(sid, by) {
+    var ids = crawlView.crawl.stops.map(function (s) { return s.id; }), i = ids.indexOf(sid), j = i + by;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    ids[i] = ids[j]; ids[j] = sid;
+    var data = await crawlWrite("PATCH", "", { order: ids });
+    if (data) setCrawlView(data);
+  }
+  async function removeStop(sid) {
+    var s = crawlView.crawl.stops.filter(function (x) { return x.id === sid; })[0];
+    if (!s) return;
+    var n = (crawlView.pours || []).filter(function (p) { return p.stopId === sid; }).length;
+    var ok = await confirmSheet({ title: "Take " + s.name + " off the crawl?", message: n ? " The " + plural(n, "beer", "beers") + " logged there go with it." : " You can add it back from Add a stop.", confirmLabel: "Remove stop", destructive: true });
+    if (!ok) return;
+    var data = await crawlWrite("DELETE", "/stops/" + encodeURIComponent(sid), null, "Removed " + s.name);
+    if (data) setCrawlView(data);
+  }
+  $("crStops").addEventListener("change", async function (e) {
+    var sel = e.target.closest("[data-dwell]");
+    if (sel) {
+      var d = {}; d[sel.getAttribute("data-dwell")] = sel.value ? Number(sel.value) : null;
+      var data = await crawlWrite("PATCH", "", { dwell: d });
+      if (data) setCrawlView(data);
+      return;
+    }
+    var input = e.target.closest("[data-photo-stop]");
+    if (input) crawlPhoto(input);
+  });
+
+  /** A photo from a stop goes into the trip's Memories through the same
+   *  route as any other, captioned with where it was - which is how the
+   *  crawl's picture show knows where to put it. */
+  async function crawlPhoto(input) {
+    var file = input.files && input.files[0], sid = input.getAttribute("data-photo-stop");
+    input.value = "";
+    if (!file || !crawlView) return;
+    var s = crawlView.crawl.stops.filter(function (x) { return x.id === sid; })[0];
+    if (!s) return;
+    var mine = (crawlView.pours || []).filter(function (p) { return p.stopId === sid; });
+    var beer = mine.length ? mine[mine.length - 1].beer : "";
+    var status = $("crStatus"), trip = currentTripId;
+    setStatus(status, "Adding the photo…");
+    try {
+      var prep = await window.PhotoTools.prepare(file);
+      var res = await fetch("/api/trips/" + encodeURIComponent(trip) + "/photos", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ full: prep.full.data, thumb: prep.thumb.data, takenAt: prep.takenAt, width: prep.full.width, height: prep.full.height,
+          caption: s.name + (beer ? " · " + beer : "") })
+      });
+      var data = await res.json().catch(function () { return {}; });
+      if (res.status === 401) { showAuthRequired(status); return; }
+      if (!res.ok || data.error) throw new Error(data.error || "Couldn’t add that photo.");
+      setStatus(status, "");
+      toast("Added to Memories");
+      if (currentTripId === trip) loadPhotos(trip);
+    } catch (e) { setStatus(status, (e && e.message) || "Couldn’t add that photo.", "error"); }
+  }
+
+  function openPourSheet(sid) {
+    var v = crawlView, s = v.crawl.stops.filter(function (x) { return x.id === sid; })[0];
+    if (!s) return;
+    var menu = v.menus && v.menus[sid], beers = (menu && menu.beers) || [], pick = v.crawl.picks && v.crawl.picks[sid];
+    var rating = 0;
+    var body = (beers.length ? '<div class="cr-beerchips">' + beers.slice(0, 12).map(function (b, i) { return '<button type="button" data-beer="' + i + '">' + escapeHtml(b.name) + '</button>'; }).join("") + '</div>' : '') +
+      '<div class="rc-grid">' +
+        '<label class="rc-field wide"><span>Beer</span><input id="pourBeer" maxlength="80" autocomplete="off" placeholder="' + escapeHtml(pick ? pick.order : "What you’re drinking") + '"></label>' +
+        '<label class="rc-field wide"><span>Style</span><input id="pourStyle" maxlength="60" autocomplete="off" placeholder="Optional"></label>' +
+        '<div class="rc-field wide"><span>Rating</span><div class="cr-rate" id="pourRate" role="group" aria-label="Rating">' +
+          [1, 2, 3, 4, 5].map(function (n) { return '<button type="button" data-r="' + n + '" aria-label="' + n + ' of 5">★</button>'; }).join("") + '</div></div>' +
+        '<label class="rc-field wide"><span>Note</span><input id="pourNote" maxlength="200" autocomplete="off" placeholder="Optional"></label>' +
+      '</div>' +
+      '<div class="cr-form-actions"><button type="button" class="btn btn-primary" id="pourSave">Log it</button></div><div class="status" id="pourStatus"></div>';
+    var sheet = openSheet({ title: "Log a beer · " + s.name, body: body, focus: beers.length ? null : "#pourBeer" });
+    var drawStars = function () { Array.prototype.forEach.call(sheet.querySelectorAll("[data-r]"), function (b) { var on = Number(b.getAttribute("data-r")) <= rating; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); }); };
+    sheet.addEventListener("click", function (e) {
+      var chip = e.target.closest("[data-beer]");
+      if (chip) { var b = beers[Number(chip.getAttribute("data-beer"))]; sheet.querySelector("#pourBeer").value = b.name; sheet.querySelector("#pourStyle").value = b.style || ""; return; }
+      var r = e.target.closest("[data-r]");
+      if (r) { var n = Number(r.getAttribute("data-r")); rating = rating === n ? 0 : n; drawStars(); }
+    });
+    sheet.querySelector("#pourSave").addEventListener("click", async function () {
+      var btn = this, beer = sheet.querySelector("#pourBeer").value.trim();
+      if (!beer) { setStatus(sheet.querySelector("#pourStatus"), "Which beer?", "error"); sheet.querySelector("#pourBeer").focus(); return; }
+      btn.disabled = true;
+      var data = await crawlWrite("POST", "/pours", { stopId: sid, beer: beer, style: sheet.querySelector("#pourStyle").value.trim(), rating: rating || null, note: sheet.querySelector("#pourNote").value.trim() });
+      btn.disabled = false;
+      if (!data) { setStatus(sheet.querySelector("#pourStatus"), $("crStatus").textContent || "Couldn’t log that.", "error"); setStatus($("crStatus"), ""); return; }
+      closeSheet();
+      toast("Logged " + beer);
+      crawlView.pours = data.pours || []; crawlSig = ""; renderCrawl();
+      loadCrawls(currentTripId);
+    });
+  }
+
+  // ---- the crawl's own buttons ----
+  $("crTools").addEventListener("click", async function (e) {
+    var t = e.target.closest("[data-tool]"); if (!t || !crawlView) return;
+    var tool = t.getAttribute("data-tool");
+    if (tool === "edit") { crawlEditing = !crawlEditing; renderCrawlTools(); renderStops(); return; }
+    if (tool === "add") { openCrawlPicker("add"); return; }
+    if (tool === "optimal") {
+      t.disabled = true;
+      var data = await crawlWrite("PATCH", "", { reorder: "optimal" });
+      if (data) { setCrawlView(data); toast(data.crawl.stops.some(function (s) { return s.visitedAt; }) ? "Shortest order from where you are" : "Shortest order"); }
+      else t.disabled = false;
+      return;
+    }
+    if (tool === "itinerary") addCrawlToItinerary(t);
+  });
+
+  /** Into the itinerary on the crawl's date. basedOn is the itinerary this
+   *  page last saw; if another phone changed it since, the server says so
+   *  with the current one, which is drawn before anything is added. */
+  async function addCrawlToItinerary(btn) {
+    var v = crawlView, status = $("crStatus");
+    if (!v.crawl.date) { setStatus(status, "Give the crawl a day first.", "error"); openCrawlEdit(); return; }
+    btn.disabled = true;
+    try {
+      var res = await fetch(crawlApi(crawlOpen, "/itinerary"), { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ basedOn: (currentTrip && currentTrip.daysUpdatedAt) || null }) });
+      if (res.status === 401) { showAuthRequired(status); return; }
+      var data = await res.json().catch(function () { return {}; });
+      if (Array.isArray(data.days)) {
+        renderItinerary(data.days);
+        currentTrip.days = itineraryDays; currentTrip.daysUpdatedAt = data.daysUpdatedAt || null;
+        renderNextUp();
+      }
+      if (res.status === 409) { setStatus(status, data.error || "The itinerary changed. Tap Add to itinerary again.", "error"); return; }
+      if (!res.ok || data.error) throw new Error(data.error || "Couldn’t add that.");
+      setStatus(status, "");
+      toast("In the itinerary for " + niceDay(data.date, true));
+      fetchCrawl(crawlOpen, true);
+    } catch (e) { setStatus(status, (e && e.message) || "Couldn’t add that.", "error"); }
+    finally { btn.disabled = false; }
+  }
+
+  $("crDeleteBtn").addEventListener("click", async function () {
+    var v = crawlView; if (!v) return;
+    var ok = await confirmSheet({ title: "Delete " + v.crawl.name + "?", message: " The route, check-ins and the beers logged on it go with it. Photos stay in Memories.", confirmLabel: "Delete crawl", destructive: true });
+    if (!ok) return;
+    var data = await crawlWrite("DELETE", "", null, "Crawl deleted");
+    if (data) closeCrawl();
+  });
+
+  // ---- AI: menus and picks. The same 402 handling as every Claude button. ----
+  function crawlAiBusy(on) { crawlBusy = on; $("crMenusBtn").disabled = on; $("crPicksBtn").disabled = on; }
+  async function crawlAi(path, body, working, done) {
+    var status = $("crStatus"), id = currentTripId, cid = crawlOpen;
+    $("crTopUpRow").hidden = true;
+    crawlAiBusy(true);
+    setStatus(status, working);
+    try {
+      var res = await fetch(crawlApi(cid, path), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+      if (res.status === 401) { showAuthRequired(status); return; }
+      if (res.status === 402 || res.status === 503) { await showSpendBlocked(status, res); $("crTopUpRow").hidden = res.status !== 402; return; }
+      var data = await res.json().catch(function () { return {}; });
+      // These drip whitespace while they work, so a failure is a 200 with { error }.
+      if (!res.ok || data.error) throw new Error(data.error || "failed");
+      if (currentTripId !== id || crawlOpen !== cid) return;
+      setStatus(status, "");
+      done(data);
+    } catch (e) {
+      setStatus(status, (e && e.message && e.message !== "failed") ? e.message : "Couldn’t do that right now. Try again.", "error");
+    } finally { crawlAiBusy(false); }
+  }
+  $("crTopUpBtn").addEventListener("click", function () { openCreditSheet(); });
+
+  $("crMenusBtn").addEventListener("click", function () {
+    crawlAi("/menus", {}, "Looking up what’s on tap and the hours… a minute or two.", function (data) {
+      if (data.remaining) setStatus($("crStatus"), "Looked up " + data.looked + ". Tap again for the other " + data.remaining + ".");
+      else if (!data.looked) setStatus($("crStatus"), "These were all looked up in the last two days — nothing new to fetch.", "ok");
+      crawlSig = "";
+      fetchCrawl(crawlOpen, true);    // the closing times may have changed the warnings
+    });
+  });
+
+  $("crPicksBtn").addEventListener("click", function () {
+    var v = crawlView; if (!v) return;
+    var anyMenu = v.crawl.stops.some(function (s) { return v.menus && v.menus[s.id] && v.menus[s.id].beers.length; });
+    var body = '<p class="sheet-lede">Claude reads each stop’s menu and picks something there for you, in an order that paces the afternoon. Say what you like and it steers.</p>' +
+      '<textarea class="cr-prefs" id="crPrefs" maxlength="300" placeholder="Loves hazy IPAs, no sours, kids along until 6"></textarea>' +
+      (anyMenu ? '' : '<p class="form-note" style="margin:8px 2px 0">No menus looked up yet, so picks will be styles to ask for. Get menus &amp; hours first for picks by name.</p>') +
+      '<div class="cr-form-actions"><button type="button" class="btn btn-primary" id="crPrefsGo">Suggest what to order</button></div>';
+    var sheet = openSheet({ title: "What should we order?", body: body, focus: "#crPrefs" });
+    sheet.querySelector("#crPrefs").value = v.crawl.preferences || "";
+    sheet.querySelector("#crPrefsGo").addEventListener("click", function () {
+      var prefs = sheet.querySelector("#crPrefs").value.trim();
+      closeSheet();
+      crawlAi("/picks", { preferences: prefs }, "Reading the menus… about a minute.", function (data) { setCrawlView(data); toast("Picks are in"); });
+    });
+  });
+
+  // ---- planning a crawl, and adding a stop ----
+  function crawlDayOptions(selected) {
+    var seen = {}, opts = [], today = todayIso();
+    var add = function (d, label) { if (!seen[d]) { seen[d] = 1; opts.push([d, label]); } };
+    (itineraryDays || []).forEach(function (d) { if (/^\d{4}-\d{2}-\d{2}$/.test(d.date)) add(d.date, niceDay(d.date, true) + (d.title ? " — " + d.title : "")); });
+    var dt = currentTrip && currentTrip.dates;
+    if (dt && dt.precision === "day") { for (var i = 0, d = dt.start; d <= dt.end && i < 31; i++, d = addDay(d)) add(d, niceDay(d, true)); }
+    add(today, "Today · " + niceDay(today, true));
+    if (selected) add(selected, niceDay(selected, true));
+    opts.sort(function (a, b) { return a[0] < b[0] ? -1 : 1; });
+    return '<option value="">No date yet</option>' + opts.map(function (o) {
+      return '<option value="' + escapeHtml(o[0]) + '"' + (o[0] === selected ? ' selected' : '') + '>' + escapeHtml(o[1]) + '</option>';
+    }).join("");
+  }
+  /** The crawl's details as a form: new (with Create) or an edit. */
+  function crawlFormHtml(c) {
+    var stayOpts = CR_STAYS.map(function (m) { return '<option value="' + m + '"' + (m === (c.dwellMinutes || 60) ? ' selected' : '') + '>' + m + ' min at each</option>'; }).join("");
+    return '<div class="rc-grid">' +
+      '<label class="rc-field wide"><span>Name</span><input id="cfName" maxlength="80" autocomplete="off" value="' + escapeHtml(c.name || "Beer crawl") + '"></label>' +
+      '<label class="rc-field wide"><span>Day</span><select id="cfDate">' + crawlDayOptions(c.date || "") + '</select></label>' +
+      '<label class="rc-field"><span>Start</span><input id="cfStart" type="time" value="' + escapeHtml(c.startTime || "15:00") + '"></label>' +
+      '<label class="rc-field"><span>Stay</span><select id="cfDwell">' + stayOpts + '</select></label>' +
+      '<div class="rc-field wide"><span>Getting around</span><div class="seg" role="group" aria-label="Getting around">' +
+        '<button type="button" data-mode="walk" aria-pressed="' + (c.mode !== "drive") + '">🚶 Walk</button><button type="button" data-mode="drive" aria-pressed="' + (c.mode === "drive") + '">🚗 Drive</button></div></div>' +
+      '</div>';
+  }
+  function readCrawlForm(root) {
+    var mode = root.querySelector('[data-mode][aria-pressed="true"]');
+    return { name: root.querySelector("#cfName").value.trim() || "Beer crawl", date: root.querySelector("#cfDate").value || null,
+      startTime: root.querySelector("#cfStart").value || "15:00", dwellMinutes: Number(root.querySelector("#cfDwell").value) || 60,
+      mode: mode ? mode.getAttribute("data-mode") : "walk" };
+  }
+  function wireSeg(root) {
+    root.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-mode]"); if (!b) return;
+      Array.prototype.forEach.call(root.querySelectorAll("[data-mode]"), function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+    });
+  }
+
+  function openCrawlEdit() {
+    var v = crawlView; if (!v) return;
+    var body = crawlFormHtml(v.crawl) + '<div class="cr-form-actions"><button type="button" class="btn btn-primary" id="cfSave">Save</button></div><div class="status" id="cfStatus"></div>';
+    var sheet = openSheet({ title: "Edit crawl", body: body });
+    wireSeg(sheet);
+    sheet.querySelector("#cfSave").addEventListener("click", async function () {
+      var btn = this; btn.disabled = true;
+      var data = await crawlWrite("PATCH", "", readCrawlForm(sheet), "Saved");
+      btn.disabled = false;
+      if (!data) { setStatus(sheet.querySelector("#cfStatus"), $("crStatus").textContent || "Couldn’t save that.", "error"); setStatus($("crStatus"), ""); return; }
+      closeSheet(); setCrawlView(data); loadCrawls(currentTripId);
+    });
+  }
+
+  $("crNewBtn").addEventListener("click", function () { if (!isSignedIn) { location.href = "/login"; return; } openCrawlPicker("new"); });
+
+  /** Breweries near the trip - or near somewhere typed in - to tick: up to
+   *  ten for a new crawl, one to add to an open one. */
+  function openCrawlPicker(mode, restore) {
+    var adding = mode === "add";
+    var have = adding && crawlView ? crawlView.crawl.stops.map(function (s) { return s.id; }) : [];
+    var room = 10 - have.length;
+    var list = [], picked = [];
+    var body = '<div class="cr-near"><input id="crNear" type="search" placeholder="Search near a place" autocomplete="off" enterkeyhint="search" aria-label="Search near a place">' +
+      '<button type="button" class="btn btn-secondary btn-sm" id="crNearGo">Search</button></div>' +
+      '<p class="cr-near-note" id="crNearNote">Looking for breweries…</p><div id="crPickList"></div>' +
+      '<div class="st-foot" id="crPickFoot" hidden><div class="st-total"><span id="crPickCount"></span></div><div class="status error" id="crPickStatus"></div>' +
+      '<div class="pc-actions"><button type="button" class="btn btn-primary" id="crPickNext" disabled></button><button type="button" class="btn btn-secondary" id="crPickCancel">Cancel</button></div></div>';
+    var sheet = openSheet({ title: adding ? "Add a stop" : "Plan a crawl", body: body });
+    var q = function (sel) { return sheet.querySelector(sel); };
+    q("#crPickCancel").addEventListener("click", closeSheet);
+
+    function update() {
+      var n = picked.length;
+      q("#crPickCount").textContent = adding ? (n ? "1 picked" : "Pick one to add") : n + " of " + Math.min(10, room) + " picked";
+      q("#crPickNext").textContent = adding ? "Add to the crawl" : n ? "Next — " + plural(n, "stop", "stops") : "Tick breweries to visit";
+      q("#crPickNext").disabled = !n;
+      Array.prototype.forEach.call(sheet.querySelectorAll(".st-row[data-i]"), function (row) {
+        var cb = row.querySelector("input"), on = cb.checked;
+        row.classList.toggle("off", !on && !cb.disabled);
+        row.classList.toggle("cr-full", !on && !cb.disabled && !adding && n >= room);
+      });
+    }
+    function draw() {
+      if (!list.length) { q("#crPickList").innerHTML = ""; q("#crPickFoot").hidden = true; return; }
+      q("#crPickFoot").hidden = false;
+      q("#crPickList").innerHTML = '<div class="st-list">' + list.map(function (b, i) {
+        var on = have.indexOf(b.id) >= 0;
+        var meta = [b.street, b.city].filter(Boolean).join(", ");
+        return '<label class="st-row' + (on ? '' : ' off') + '" data-i="' + i + '"><input type="checkbox" data-i="' + i + '"' + (on ? ' checked disabled' : picked.indexOf(b.id) >= 0 ? ' checked' : '') + ' aria-label="' + escapeHtml(b.name) + '">' +
+          '<span class="st-desc">' + escapeHtml(b.name) + '</span><span class="st-amt">' + (b.miles != null ? b.miles.toFixed(1) + ' mi' : '') + '</span>' +
+          '<span class="st-meta">' + (b.type && CR_TYPE[b.type] ? '<span class="cr-type">' + escapeHtml(CR_TYPE[b.type]) + '</span>' : '') + escapeHtml(on ? "On this crawl" : meta) + '</span></label>';
+      }).join("") + '</div>';
+      update();
+    }
+    sheet.addEventListener("change", function (e) {
+      var cb = e.target.closest("input[data-i]"); if (!cb) return;
+      var b = list[Number(cb.getAttribute("data-i"))];
+      if (cb.checked) {
+        if (adding) { picked = [b.id]; Array.prototype.forEach.call(sheet.querySelectorAll("input[data-i]:not([disabled])"), function (x) { if (x !== cb) x.checked = false; }); }
+        else if (picked.length >= room) { cb.checked = false; setStatus(q("#crPickStatus"), "Ten stops is the most a crawl holds.", "error"); return; }
+        else picked.push(b.id);
+      } else picked = picked.filter(function (id) { return id !== b.id; });
+      setStatus(q("#crPickStatus"), "");
+      update();
+    });
+    async function load(near) {
+      q("#crNearNote").textContent = "Looking for breweries" + (near ? " near " + near : "") + "…";
+      try {
+        var res = await fetch(tripApi("/breweries/nearby" + (near ? "?near=" + encodeURIComponent(near) : "")));
+        var data = await res.json().catch(function () { return {}; });
+        if (res.status === 401) { q("#crNearNote").textContent = "Sign in again to look for breweries."; return; }
+        if (!res.ok) throw new Error(data.error || "Couldn’t look for breweries right now.");
+        // Picks from an earlier search stay picked: search two neighbourhoods
+        // and tick from both.
+        var keep = list.filter(function (b) { return picked.indexOf(b.id) >= 0; });
+        var fresh = (data.breweries || []).filter(function (b) { return !keep.some(function (k) { return k.id === b.id; }); });
+        list = keep.concat(fresh);
+        q("#crNearNote").textContent = data.note ? data.note
+          : fresh.length ? plural(fresh.length, "brewery", "breweries") + " near " + ((data.centre && data.centre.label) || near || "the trip") + ", nearest first." +
+            (adding ? " It goes where it adds the least walking." : " Tick the ones to visit — they’re put in the shortest order.")
+            : "No breweries with a taproom found near " + ((data.centre && data.centre.label) || near || "there") + ". Try somewhere else above.";
+        draw();
+      } catch (e) { q("#crNearNote").textContent = (e && e.message) || "Couldn’t look for breweries right now."; draw(); }
+    }
+    q("#crNearGo").addEventListener("click", function () { load(q("#crNear").value.trim()); });
+    q("#crNear").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); load(q("#crNear").value.trim()); } });
+    q("#crPickNext").addEventListener("click", async function () {
+      var stops = list.filter(function (b) { return picked.indexOf(b.id) >= 0; });
+      if (!stops.length) return;
+      if (adding) {
+        this.disabled = true;
+        var data = await crawlWrite("POST", "/stops", { stop: stops[0] }, "Added " + stops[0].name);
+        this.disabled = false;
+        if (data) { closeSheet(); setCrawlView(data); loadCrawls(currentTripId); }
+        else { setStatus(q("#crPickStatus"), $("crStatus").textContent || "Couldn’t add that.", "error"); setStatus($("crStatus"), ""); }
+        return;
+      }
+      detailsStep(stops);
+    });
+
+    function detailsStep(stops) {
+      var today = todayIso(), dt = currentTrip && currentTrip.dates;
+      var during = dt && dt.precision === "day" && today >= dt.start && today <= dt.end;
+      var guess = { name: "Beer crawl", date: during ? today : "", startTime: "15:00", dwellMinutes: 60, mode: "walk" };
+      var inner = '<p class="sheet-lede">' + escapeHtml(plural(stops.length, "stop", "stops")) + ': ' + escapeHtml(stops.map(function (s) { return s.name; }).join(", ")) + '.</p>' +
+        crawlFormHtml(guess) + '<div class="cr-form-actions"><button type="button" class="btn btn-primary" id="cfCreate">Create crawl</button>' +
+        '<button type="button" class="btn btn-secondary" id="cfBack">Back</button></div><div class="status" id="cfStatus"></div>';
+      var s2 = openSheet({ title: "Plan a crawl", body: inner });
+      wireSeg(s2);
+      // Back keeps what was found and ticked, rather than searching again.
+      s2.querySelector("#cfBack").addEventListener("click", function () { openCrawlPicker(mode, { list: list, picked: picked }); });
+      s2.querySelector("#cfCreate").addEventListener("click", async function () {
+        var btn = this; btn.disabled = true;
+        setStatus(s2.querySelector("#cfStatus"), "Working out the route…");
+        try {
+          var res = await fetch(tripApi("/crawls"), { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(Object.assign(readCrawlForm(s2), { stops: stops })) });
+          var data = await res.json().catch(function () { return {}; });
+          if (res.status === 401) { showAuthRequired(s2.querySelector("#cfStatus")); btn.disabled = false; return; }
+          if (!res.ok) throw new Error(data.error || "Couldn’t start that crawl.");
+          closeSheet();
+          toast("Crawl planned — " + plural(data.crawl.stops.length, "stop", "stops") + " in the shortest order");
+          crawlOpen = data.crawl.id; crawlEditing = false;
+          $("crListView").hidden = true; $("crDetail").hidden = false;
+          setCrawlView(data); startCrawlPoll(); window.scrollTo(0, 0);
+          loadCrawls(currentTripId);
+        } catch (e) { setStatus(s2.querySelector("#cfStatus"), (e && e.message) || "Couldn’t start that crawl.", "error"); btn.disabled = false; }
+      });
+    }
+    if (restore) {
+      list = restore.list; picked = restore.picked;
+      q("#crNearNote").textContent = plural(list.length, "brewery", "breweries") + " found. Tick the ones to visit — they’re put in the shortest order.";
+      draw();
+    } else load("");
+  }
+
+
   /* ---------- Itinerary ---------- */
   var dayList = $("dayList"), itineraryEmpty = $("itineraryEmpty");
 
@@ -3349,7 +4489,7 @@
       // days it stores, so rendering the proposal would briefly show something
       // slightly different from what a reload will show.
       renderItinerary(Array.isArray(saved.days) ? saved.days : doc.proposedChange.days);
-      if (currentTrip) { currentTrip.days = itineraryDays; renderNextUp(); }
+      if (currentTrip) { currentTrip.days = itineraryDays; if (saved.daysUpdatedAt) currentTrip.daysUpdatedAt = saved.daysUpdatedAt; renderNextUp(); }
       setStatus(chatStatus, "");
       toast("Itinerary updated");
     } catch (e) { setStatus(chatStatus, "Couldn't save that. Try again.", "error"); }
