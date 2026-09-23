@@ -402,6 +402,98 @@ seven. The Overview has a tile for each.
 - The example trip has read-only packing and budget (`demo.DEMO_PACKING`,
   `DEMO_BUDGET`).
 
+## Receipts, card statements and Memories (2026-09-23)
+
+Three ways to get the trip itself into the app while it is happening: what it
+cost, and what it looked like. The helpers are shared with the vacation app
+(`eriks-projects/shared/`, synced — **do not edit the copies here**):
+`receipts.js`, `statement.js`, `photostore.js`, `public/photo-tools.js`.
+
+**No bank connection, by design.** Erik chose a receipt photo and the CSV
+every card's website already offers over an aggregator like Plaid. Nothing here
+holds a bank login or a standing link to anyone's account, there is no
+aggregator fee, and both files are read in the request and dropped. The price
+is a download step, which the Budget tab explains in one line.
+
+- **A receipt** — `POST /api/trips/:id/budget/receipt`, body
+  `{image:{mediaType,data}}`. A model call, so `requireLogin, requireBudget,
+  requireDailyCap` like every other. The page shrinks the photo to ~1600px
+  first (`PhotoTools.receipt`); `receipts.request()` refuses a bad image with a
+  400 **before** anything is spent; the model is forced through one tool;
+  `receipts.read()` checks the answer. It returns a *proposed* line
+  (`source: 'receipt'`) and a `currency`, and the page shows an editable card —
+  a euro receipt says so rather than being counted as dollars. **The photo is
+  read once by the model and never stored**: not in Firestore, not in the
+  photo bucket. Unreadable is a 422. Not streamed: 5–15 s is far short of the
+  silence that drops a phone, and plain status codes read better here.
+- **A card statement** — `POST /api/trips/:id/budget/statement`, body `{csv}`.
+  No model call, so login only. `statement.parse` reads it against the trip's
+  own dates (`tripDates()`, a day of slack either side; no dates, no window),
+  skips payments and refunds, and `markDuplicates` flags — never drops — a
+  charge that matches an existing line's amount within three days (the dinner
+  scanned at the table). Kinds map to this budget's categories in
+  `budget.KIND_CATEGORY`. It returns `{transactions, skipped, window, room}`
+  and saves nothing; the page lists them ticked (duplicates unticked, "Maybe
+  already added"), and adds the ticked ones in one `/budget/lines` call with
+  `source: 'card'`.
+- **Lines remember where their number came from.** `budget.line()` keeps an
+  optional `date` (a real ISO day or null) and `source` (`manual | receipt |
+  card | estimate`, default manual). The list shows the date and a Receipt /
+  Card badge. Claude's estimates are stamped `estimate` by the server, whatever
+  the model claims. Older lines read back as undated manual lines. A full
+  budget (`MAX_LINES`, 100) now says how many more fit.
+
+**Memories** — a tab (under More on a phone, in the sidebar on a desktop) and
+an Overview tile. Photos filed under the itinerary's days
+(`PhotoTools.groupByDay`), played back as a full-screen picture show.
+
+- **Photos are never public and are served through the app.** They live in a
+  private bucket (`PHOTOS_BUCKET`, public access prevention enforced) at
+  `trips/<tripId>/<photoId>.jpg` and `…-thumb.jpg`, and every image request —
+  `GET /api/trips/:id/photos/:pid/thumb|full` — passes `requireLogin` and
+  `loadOwnedTrip`, exactly like the trip. **No signed URLs, no public links:**
+  a link is a bearer token, and these are people's holiday photos. The list
+  (`GET /photos`) carries no paths or URLs; the page builds its own. Served
+  `private, max-age=31536000, immutable` (ids are never reused, bytes never
+  change) with `nosniff`, and only the types `imageBuffer()` admits.
+- **The phone strips location.** `PhotoTools.prepare` redraws each photo at
+  2048px (plus a 480px thumbnail) through a canvas, which drops its EXIF,
+  GPS included; only `takenAt` is read first and sent as a plain field. The
+  tab says so in one quiet line.
+- **Upload** `POST /photos` `{full, thumb, takenAt, width, height, caption}`:
+  both checked by their bytes (`imageBuffer`), a thumbnail required, both
+  objects written **before** the Firestore record so a record never points at a
+  missing photo (and the objects are removed if the record fails). Ids are 12
+  random bytes. `PATCH /photos/:pid` edits the caption; `DELETE` removes the
+  objects, then the record — if storage fails the record stays, so a retry can
+  finish. Deleting a trip removes its photos too, awaited (see "Billed per
+  request") but never allowed to fail the delete.
+- The page uploads **one at a time** with "Adding 3 of 12…" — a phone decoding
+  a dozen photos at once runs out of memory, and one bad file must not stop the
+  rest. It re-fetches the list when the tab opens and when the app comes back
+  to the foreground: two phones, one trip.
+- Without `PHOTOS_BUCKET` the list answers `{available:false}` and writes 503
+  — unavailable rather than half-working, like Gmail. The example trip lists
+  none and explains that photos are for your own trips.
+
+**Limits.** The app-wide JSON parser keeps Express's 100 KB default; only the
+three file routes skip it and mount their own (receipt 8 MB, statement
+2.5 MB, photo 12 MB — each a little over its decoded ceiling in the module),
+**after** the sign-in and ownership checks, so a stranger's 12 MB is never
+read. A body too large is a JSON 413. Photos: 8 MB full, 600 KB thumbnail,
+500 per trip. Receipts: 5 MB. Statements: 2 MB, 5,000 rows.
+
+**Infrastructure.** The bucket is `metal-celerity-236019-trip-photos`
+(created 2026-09-23: uniform access, public access prevention enforced), with
+`roles/storage.objectUser` for `trip-planner-run@` — get, create, delete and
+the list that deleting a trip's photos needs. See
+`eriks-projects/docs/phase4-runtime-service-accounts.md`. The service needs
+`PHOTOS_BUCKET` set to that name; check it is on the revision before relying
+on Memories. The token comes from the metadata server; no key.
+
+Tests: `test/trip-receipts.js`, `test/trip-photos.js` (Cloud Storage faked at
+`global.fetch`). Rendered at 390px and 1280px before shipping.
+
 ### Gmail connections end after seven days — by Google's rule
 
 An OAuth app in **Testing** that asks for more than basic profile gets refresh

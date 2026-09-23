@@ -16,6 +16,9 @@ const ideasLib = require('./ideas');
 const packingLib = require('./packing');
 const budgetLib = require('./budget');
 const weatherLib = require('./weather');
+const receipts = require('./receipts');
+const statement = require('./statement');
+const photostore = require('./photostore');
 const demo = require('./demo');
 
 const PORT = process.env.PORT || 8080;
@@ -30,7 +33,31 @@ const anthropic = new Anthropic(); // reads ANTHROPIC_API_KEY from env
 const db = new Firestore({ projectId: PROJECT_ID, databaseId: FIRESTORE_DB });
 
 const app = express();
-app.use(express.json());
+
+// Request bodies. Everything here is small JSON, and express.json()'s default
+// 100 KB ceiling is a cheap guard on every route that reads one. Three routes
+// carry a file and need more: a receipt photo, a card statement, a trip photo.
+//
+// Raising the global limit to fit them would let ANY route - including the
+// ones a signed-out visitor can reach - make the server buffer and parse
+// megabytes. So those three skip the global parser and mount their own, with
+// their own ceiling, AFTER the sign-in and ownership checks: a stranger's
+// 12 MB is refused on its headers and never read.
+const BIG_BODY_ROUTES = [
+  /^\/api\/trips\/[^/]+\/budget\/receipt$/,
+  /^\/api\/trips\/[^/]+\/budget\/statement$/,
+  /^\/api\/trips\/[^/]+\/photos$/,
+];
+const smallJson = express.json();
+app.use((req, res, next) => (req.method === 'POST' && BIG_BODY_ROUTES.some((re) => re.test(req.path)) ? next() : smallJson(req, res, next)));
+// The limits sit a little above what each file may be once decoded, because
+// base64 is a third bigger than the bytes it carries: a receipt is at most
+// 5 MB (receipts.js), a statement 2 MB of text (statement.js), a photo 8 MB
+// plus a 600 KB thumbnail (photostore.js). Each module checks its own real
+// ceiling; these only stop a body far beyond it from being parsed at all.
+const receiptJson = express.json({ limit: '8mb' });
+const statementJson = express.json({ limit: '2560kb' });
+const photoJson = express.json({ limit: '12mb' });
 
 // Only the landing page may put this app in a frame - it shows a live
 // preview you can swipe through. Nothing else should be able to: a gated app
@@ -278,6 +305,18 @@ function tripOut(id, data) {
   return out;
 }
 
+/** loadOwnedTrip as middleware, for the routes that must know whose trip it
+ *  is BEFORE they read a large body (see BIG_BODY_ROUTES). The trip is left
+ *  on req.owned. */
+async function ownedTrip(req, res, next) {
+  try {
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    req.owned = owned;
+    next();
+  } catch (err) { next(err); }
+}
+
 async function loadOwnedTrip(req, res) {
   // The example trip is served from code (see demo.js) and every route that
   // would change a trip comes through here, so this one check covers all of
@@ -505,6 +544,11 @@ app.delete('/api/trips/:id', requireLogin, async (req, res) => {
     const owned = await loadOwnedTrip(req, res);
     if (!owned) return;
     await owned.ref.delete();
+    // Its photos go with it. Awaited, because this service stops working the
+    // moment a response is sent (see "Billed per request" in CLAUDE.md), but
+    // never allowed to fail the delete: the trip is gone either way, and a
+    // photo left behind in a private bucket is a cost, not a leak.
+    await deleteTripPhotos(owned.ref, owned.doc.id);
     res.json({ ok: true });
   } catch (err) {
     console.error('DELETE /api/trips/:id', err);
@@ -1431,7 +1475,12 @@ app.post('/api/trips/:id/budget/lines', requireLogin, async (req, res) => {
     const incoming = (Array.isArray(body.lines) ? body.lines : [body]).map(budgetLib.line).filter(Boolean);
     if (!incoming.length) return res.status(400).json({ error: 'Give the line a name.' });
     const have = await rows(budgetCol(owned.ref));
-    if (have.length + incoming.length > budgetLib.MAX_LINES) return res.status(400).json({ error: 'That budget is full.' });
+    if (have.length + incoming.length > budgetLib.MAX_LINES) {
+      // Said with numbers: a statement import adds dozens of lines at once, and
+      // "full" with no figure leaves nobody knowing how many to untick.
+      const room = Math.max(0, budgetLib.MAX_LINES - have.length);
+      return res.status(400).json({ error: `That budget is full. It holds ${budgetLib.MAX_LINES} lines, and there is room for ${room} more.`, room });
+    }
     const now = Date.now();
     await Promise.all(incoming.map((l, i) => budgetCol(owned.ref).add({ ...l, order: now + i, createdAt: new Date(now).toISOString() })));
     res.json(await budgetView(owned));
@@ -1490,8 +1539,10 @@ app.post('/api/trips/:id/budget/suggest', requireLogin, identity.requireBudget, 
       messages: [{ role: 'user', content: 'What should we budget?' }],
     }, req.user);
     const block = response.content.find((b) => b.type === 'tool_use' && b.name === 'budget_estimate');
+    // Marked as an estimate, so once added the Budget can say whose number it is.
     const lines = (block && block.input && Array.isArray(block.input.lines) ? block.input.lines : [])
-      .map(budgetLib.line).filter((l) => l && l.planned != null).slice(0, 20);
+      .map((l) => budgetLib.line(Object.assign({}, l, { source: 'estimate', date: null })))
+      .filter((l) => l && l.planned != null).slice(0, 20);
     if (!lines.length) return send({ error: 'The estimate came back empty. Try again in a moment.' });
     send({ lines });
   } catch (err) {
@@ -1499,6 +1550,265 @@ app.post('/api/trips/:id/budget/suggest', requireLogin, identity.requireBudget, 
     if (send) return send({ error: 'Could not estimate a budget right now.' });
     res.status(500).json({ error: 'Could not estimate a budget right now.' });
   }
+});
+
+/* ---- receipts and card statements (2026-09-23) ------------------------------
+ * The two ways real spending gets into the Budget without typing it. Both
+ * only PROPOSE: what they find comes back to the page unsaved, and the page
+ * adds what is confirmed through /budget/lines, like a suggested estimate.
+ *
+ * No bank connection, by design. Erik chose a receipt photo and the CSV every
+ * card already offers over an aggregator like Plaid: nothing here ever holds a
+ * bank login or a standing link to anyone's account, and neither file is kept.
+ */
+
+/** A photo of a receipt, read into one line. A model call, so behind the
+ *  budget and the daily ceiling like every other. The photo is sent to Claude
+ *  once and dropped with the request - never written to Firestore or to the
+ *  photo bucket. The receipt's line, if someone adds it, is the record.
+ *
+ *  Not streamed: one image and one forced tool call take 5-15 seconds, far
+ *  short of the minutes of silence that drop a phone's connection, and
+ *  ordinary status codes let "could not read it" be a plain 422. */
+app.post('/api/trips/:id/budget/receipt', requireLogin, identity.requireBudget, identity.requireDailyCap, ownedTrip, receiptJson, async (req, res) => {
+  try {
+    const trip = tripOut(req.owned.doc.id, req.owned.data);
+    // A line about the trip, so "which category" has something to go on and
+    // a date with no year on the receipt has a trip to fall in.
+    const context = [trip.name, trip.destination,
+      trip.dates ? trip.dates.start + ' to ' + trip.dates.end : trip.dateRange].filter(Boolean).join(', ');
+    // A bad image is refused here, before anything is spent on it.
+    const built = receipts.request({ categories: budgetLib.CATEGORIES, image: (req.body || {}).image, context });
+    if (built.error) return res.status(400).json({ error: built.error });
+    const plan = identityLib.planFor(req.user, MODEL_TIERS);
+    const response = await completeTurn(Object.assign({ model: plan.model }, built.params), req.user);
+    const out = receipts.read(response, budgetLib.CATEGORIES);
+    if (out.error) return res.status(422).json({ error: out.error });
+    const r = out.receipt;
+    res.json({
+      line: { category: r.category, label: r.merchant, spent: r.total, date: r.date, note: r.note, source: 'receipt' },
+      // The budget counts dollars. A receipt from Lisbon is in euros, and the
+      // page says so rather than adding 42 euros as $42.
+      currency: r.currency,
+    });
+  } catch (err) {
+    console.error('POST budget/receipt', err);
+    // The API refusing the image itself (a corrupt file that passed the
+    // checks) is a photo problem, not a server one.
+    if (err.status === 400) return res.status(422).json({ error: 'That photo could not be read. Try taking it again.' });
+    res.status(500).json({ error: 'Could not read that receipt right now.' });
+  }
+});
+
+/** A card statement CSV, read into the charges that fall inside the trip.
+ *  No model call - statement.js does it with rules - so no budget gate. The
+ *  file is parsed in the request and dropped; nothing is saved until the
+ *  person ticks charges and adds them. */
+app.post('/api/trips/:id/budget/statement', requireLogin, ownedTrip, statementJson, async (req, res) => {
+  try {
+    const trip = tripOut(req.owned.doc.id, req.owned.data);
+    // The same dates the Overview counts down to. A month-only "When" gives
+    // the whole month, which is honest about what is known; no dates at all
+    // gives no window, and every charge in the file is offered.
+    const span = trip.dates ? { from: trip.dates.start, to: trip.dates.end } : { from: null, to: null };
+    const parsed = statement.parse((req.body || {}).csv, { from: span.from, to: span.to, slackDays: 1 });
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    // A dinner scanned at the table and then found again on the statement is
+    // the double-count this catches. Flagged, never dropped.
+    const have = await rows(budgetCol(req.owned.ref));
+    const existing = have.filter((l) => l.spent != null).map((l) => ({ date: l.date || null, amount: l.spent }));
+    const transactions = statement.markDuplicates(parsed.transactions, existing).map((t) => ({
+      key: t.key, date: t.date, description: t.description, amount: t.amount,
+      category: budgetLib.KIND_CATEGORY[t.kind] || 'Other',
+      possibleDuplicate: !!t.possibleDuplicate,
+    }));
+    res.json({ transactions, skipped: parsed.skipped, window: span, room: Math.max(0, budgetLib.MAX_LINES - have.length) });
+  } catch (err) {
+    console.error('POST budget/statement', err);
+    res.status(500).json({ error: 'Could not read that statement right now.' });
+  }
+});
+
+/* ==========================================================================
+ * Memories: a trip's photos, and a picture show (2026-09-23)
+ *
+ * Photos live in a private Cloud Storage bucket (PHOTOS_BUCKET) and are
+ * SERVED BY THIS APP, every one of them, through the same sign-in and
+ * ownership check as the trip - never a public object, never a signed URL.
+ * A link is a bearer token; these are people's holiday photos. photostore.js
+ * has the full reasoning.
+ *
+ *   objects    trips/<tripId>/<photoId>.jpg, trips/<tripId>/<photoId>-thumb.jpg
+ *   Firestore  trips/<id>/photos/<photoId>: when, caption, size, who, order
+ *
+ * The page shrinks each photo before it is sent (photo-tools.js), and the
+ * redraw drops its embedded metadata - location included. Only the time it
+ * was taken comes along, as a plain field, to file it under the right day.
+ * ========================================================================== */
+const photos = photostore.create();
+const MAX_PHOTOS_PER_TRIP = 500;
+// Ids are 12 random bytes: unguessable, and a shape the routes can check
+// before anything reaches storage, so no path can be smuggled in through one.
+const PHOTO_ID = /^[a-f0-9]{24}$/;
+const photosCol = (ref) => ref.collection('photos');
+const photoPath = (tripId, pid, thumb) => `trips/${tripId}/${pid}${thumb ? '-thumb' : ''}.jpg`;
+// Only what imageBuffer() admits is ever stored, so only that is ever served.
+const SERVABLE = ['image/jpeg', 'image/png', 'image/webp'];
+const dimension = (v) => { const n = Number(v); return Number.isInteger(n) && n > 0 && n <= 20000 ? n : null; };
+const photoOut = (id, d) => ({
+  id, takenAt: d.takenAt || null, caption: d.caption || '',
+  width: d.width || null, height: d.height || null, uploadedAt: d.uploadedAt || null,
+});
+
+/** Without a bucket the feature says it is unavailable rather than
+ *  half-working, the way Gmail does. Placed before the upload's body parser,
+ *  so a deployment with no bucket never reads the 12 MB it cannot keep. */
+function photosEnabled(req, res, next) {
+  if (!photos.enabled()) return res.status(503).json({ error: 'Photos are not set up on this deployment.', unavailable: true });
+  next();
+}
+
+/** Everything of a trip's photos: the objects, then the records. Used when
+ *  the trip is deleted. Best-effort and logged - the caller's delete has
+ *  already happened and must not be undone by a storage hiccup. */
+async function deleteTripPhotos(tripRef, tripId) {
+  try {
+    if (photos.enabled()) await photos.delPrefix(`trips/${tripId}/`);
+  } catch (err) { console.error('trip delete: photo objects', tripId, err.message); }
+  try {
+    const snap = await photosCol(tripRef).get();
+    await Promise.all(snap.docs.map((d) => d.ref.delete()));
+  } catch (err) { console.error('trip delete: photo records', tripId, err.message); }
+}
+
+// The example trip has no photos - they are for your own trips - and the
+// page says so. Writes to it go through loadOwnedTrip, which refuses them.
+app.get(`/api/trips/${demo.DEMO_ID}/photos`, (req, res) => res.json({ available: true, photos: [], demo: true }));
+
+app.get('/api/trips/:id/photos', requireLogin, ownedTrip, async (req, res) => {
+  if (!photos.enabled()) return res.json({ available: false, photos: [] });
+  try {
+    const snap = await photosCol(req.owned.ref).get();
+    const when = (p) => p.takenAt || p.uploadedAt || '';
+    const list = snap.docs.map((d) => photoOut(d.id, d.data()))
+      .sort((a, b) => (when(a) < when(b) ? -1 : when(a) > when(b) ? 1 : 0));
+    // Two phones add to one trip; the list must never be answered from a cache.
+    res.set('Cache-Control', 'no-store');
+    res.json({ available: true, photos: list });
+  } catch (err) { console.error('GET photos', err); res.status(500).json({ error: 'Could not load the photos.' }); }
+});
+
+app.post('/api/trips/:id/photos', requireLogin, ownedTrip, photosEnabled, photoJson, async (req, res) => {
+  const b = req.body || {};
+  // Either a base64 string or the {data, width, height} photo-tools hands back.
+  const dataOf = (v) => (v && typeof v === 'object' ? v.data : v);
+  const full = photostore.imageBuffer(dataOf(b.full), photostore.MAX_PHOTO_BYTES);
+  if (full.error) return res.status(400).json({ error: full.error });
+  // The grid draws thumbnails, so a photo without one would be a grey square
+  // that downloads the full image to draw itself.
+  if (!dataOf(b.thumb)) return res.status(400).json({ error: 'The photo arrived without its preview. Add it again.' });
+  const thumb = photostore.imageBuffer(dataOf(b.thumb), photostore.MAX_THUMB_BYTES);
+  if (thumb.error) return res.status(400).json({ error: thumb.error });
+
+  const tripId = req.owned.doc.id;
+  try {
+    // Two phones uploading at once can pass this together and land a few over;
+    // the ceiling is about cost, not an exact count, so that is acceptable.
+    const have = await photosCol(req.owned.ref).get();
+    if (have.size >= MAX_PHOTOS_PER_TRIP) {
+      return res.status(400).json({ error: `This trip has ${MAX_PHOTOS_PER_TRIP} photos, which is as many as one trip holds.` });
+    }
+  } catch (err) { console.error('POST photos count', err); return res.status(500).json({ error: 'Could not add that photo.' }); }
+
+  const pid = crypto.randomBytes(12).toString('hex');
+  const fullName = photoPath(tripId, pid), thumbName = photoPath(tripId, pid, true);
+  const forget = () => Promise.all([photos.del(fullName), photos.del(thumbName)].map((p) => p.catch(() => {})));
+  // Both objects first, the record last: a record is what the page lists, so
+  // it must never point at a photo that is not there.
+  try {
+    await photos.put(fullName, full.buffer, full.contentType);
+    await photos.put(thumbName, thumb.buffer, thumb.contentType);
+  } catch (err) {
+    console.error('POST photos: storage', err.message);
+    await forget();
+    return res.status(502).json({ error: 'Could not store that photo. Try again.' });
+  }
+  const full0 = b.full && typeof b.full === 'object' ? b.full : {};
+  const record = {
+    takenAt: photostore.takenAt(b.takenAt),
+    caption: photostore.caption(b.caption),
+    width: dimension(b.width != null ? b.width : full0.width),
+    height: dimension(b.height != null ? b.height : full0.height),
+    bytes: full.buffer.length,
+    uploadedAt: new Date().toISOString(),
+    uploadedBy: req.user.uid,
+    order: Date.now(),
+  };
+  try {
+    await photosCol(req.owned.ref).doc(pid).set(record);
+  } catch (err) {
+    console.error('POST photos: record', err);
+    await forget();
+    return res.status(500).json({ error: 'Could not add that photo. Try again.' });
+  }
+  res.json({ photo: photoOut(pid, record) });
+});
+
+/** The bytes, streamed through the app. `immutable` because a photo id is
+ *  never reused and a photo never changes - a caption is not in the image -
+ *  so a phone scrolling back through Memories never asks twice. `private`
+ *  so no shared cache between here and the phone keeps a copy. */
+async function servePhoto(req, res, thumb) {
+  if (!PHOTO_ID.test(req.params.pid)) return res.status(404).json({ error: 'No such photo.' });
+  try {
+    const got = await photos.get(photoPath(req.owned.doc.id, req.params.pid, thumb));
+    if (!got) return res.status(404).json({ error: 'No such photo.' });
+    const type = String(got.contentType || '').split(';')[0].trim().toLowerCase();
+    res.set({
+      'Content-Type': SERVABLE.includes(type) ? type : 'image/jpeg',
+      'Cache-Control': 'private, max-age=31536000, immutable',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Length': String(got.buffer.length),
+    });
+    res.end(got.buffer);
+  } catch (err) {
+    console.error('GET photo', err.message);
+    res.status(502).json({ error: 'Could not load that photo.' });
+  }
+}
+app.get('/api/trips/:id/photos/:pid/thumb', requireLogin, ownedTrip, photosEnabled, (req, res) => servePhoto(req, res, true));
+app.get('/api/trips/:id/photos/:pid/full', requireLogin, ownedTrip, photosEnabled, (req, res) => servePhoto(req, res, false));
+
+app.patch('/api/trips/:id/photos/:pid', requireLogin, ownedTrip, photosEnabled, async (req, res) => {
+  if (!PHOTO_ID.test(req.params.pid)) return res.status(404).json({ error: 'No such photo.' });
+  try {
+    const ref = photosCol(req.owned.ref).doc(req.params.pid);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ error: 'No such photo.' });
+    const caption = photostore.caption((req.body || {}).caption);
+    await ref.update({ caption });
+    res.json({ photo: photoOut(req.params.pid, { ...snap.data(), caption }) });
+  } catch (err) { console.error('PATCH photo', err); res.status(500).json({ error: 'Could not save that caption.' }); }
+});
+
+app.delete('/api/trips/:id/photos/:pid', requireLogin, ownedTrip, photosEnabled, async (req, res) => {
+  if (!PHOTO_ID.test(req.params.pid)) return res.status(404).json({ error: 'No such photo.' });
+  try {
+    const ref = photosCol(req.owned.ref).doc(req.params.pid);
+    if (!(await ref.get()).exists) return res.status(404).json({ error: 'No such photo.' });
+    // The objects first. If storage fails the record stays, so the photo is
+    // still listed and a second tap can finish the job - rather than a record
+    // gone and the bytes left behind with nothing pointing at them.
+    try {
+      await photos.del(photoPath(req.owned.doc.id, req.params.pid));
+      await photos.del(photoPath(req.owned.doc.id, req.params.pid, true));
+    } catch (err) {
+      console.error('DELETE photo: storage', err.message);
+      return res.status(502).json({ error: 'Could not delete that photo. Try again.' });
+    }
+    await ref.delete();
+    res.json({ ok: true });
+  } catch (err) { console.error('DELETE photo', err); res.status(500).json({ error: 'Could not delete that photo.' }); }
 });
 
 /** The tap. Only what was chosen, and only as ordinary trips. */
@@ -1826,6 +2136,15 @@ app.post('/api/cron/check-watches', requireLoginOrCron, async (req, res) => {
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// A body too large or not JSON, said in JSON. Express's own answer is an HTML
+// page, which the page's res.json() cannot read - so a photo over the limit
+// would surface as "something went wrong" instead of saying what.
+app.use((err, req, res, next) => {
+  if (err && err.type === 'entity.too.large') return res.status(413).json({ error: 'That file is too large to send.' });
+  if (err && err.type === 'entity.parse.failed') return res.status(400).json({ error: 'That request could not be read.' });
+  return next(err);
 });
 
 app.listen(PORT, () => {

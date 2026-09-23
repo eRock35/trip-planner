@@ -371,6 +371,115 @@
   .bg-row .lbl span { font-size: 12.5px; color: var(--label-2); }
   .bg-spent { width: 88px; flex: 0 0 auto; min-height: 36px; border-radius: 9px; border: 1px solid var(--sep); background: var(--fill); color: var(--label); text-align: right; padding: 0 10px; font: inherit; font-size: 15px; font-variant-numeric: tabular-nums; }
   .g-amt { font-weight: 600; font-variant-numeric: tabular-nums; }
+  /* Where a line's number came from. A figure someone can trace back to a
+     receipt or a card charge is one they can check. */
+  .src { display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; line-height: 1.5;
+         padding: 0 6px; border-radius: 999px; margin-right: 6px; vertical-align: 1px; background: var(--fill-2); }
+  .bg-row .lbl span.src { color: var(--label); font-size: 10.5px; }
+  .bg-row .lbl span.src.receipt { background: var(--tint-soft); color: var(--tint); }
+
+  /* ---------- Receipts and card statements ---------- */
+  /* File inputs sit inside a <label> styled as the button: a label opens its
+     picker everywhere, iOS included, without a script-driven click - and the
+     input stays focusable for a keyboard. */
+  .vh { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; opacity: 0; }
+  label.btn { cursor: pointer; position: relative; -webkit-user-select: none; user-select: none; }
+  label.btn:focus-within { outline: 2px solid var(--tint); outline-offset: 2px; }
+  label.btn.is-busy { opacity: .45; pointer-events: none; }
+  .bg-import { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .bg-import .btn { font-size: 15px; min-height: 48px; padding: 10px 12px; line-height: 1.2; text-align: center; }
+  .bg-import .btn svg { width: 19px; height: 19px; flex: 0 0 auto; }
+  .bg-hint { font-size: 12.5px; color: var(--label-2); line-height: 1.4; margin: -6px 4px 0; }
+  /* An empty status line still took a row plus two gaps above Spending. */
+  #bgImportStatus:empty, #rcStatus:empty { display: none; }
+  .rc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .rc-grid .wide { grid-column: 1 / -1; }
+  .rc-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .rc-field > span { font-size: 12px; font-weight: 600; color: var(--label-2); text-transform: uppercase; letter-spacing: .03em; }
+  /* 16px, or iOS zooms the page in on focus. */
+  .rc-field input, .rc-field select { width: 100%; min-width: 0; min-height: 42px; border-radius: 10px; border: 1px solid var(--sep); background: var(--fill);
+    color: var(--label); padding: 0 12px; font: inherit; font-size: 16px; -webkit-appearance: none; appearance: none; }
+  .rc-field input[type="date"] { display: flex; align-items: center; }
+  select.chev, .rc-field select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238E8E93' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 10l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 8px center; padding-right: 30px; }
+  .rc-warn { font-size: 13.5px; line-height: 1.4; background: rgba(255,149,0,.14); border-radius: 10px; padding: 8px 10px; }
+
+  .st-lede { font-size: 15px; line-height: 1.45; margin: 0 2px 12px; }
+  .st-lede .muted { display: block; margin-top: 4px; font-size: 13px; }
+  .st-list { background: var(--card); border-radius: 16px; overflow: hidden; }
+  .st-row { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; column-gap: 12px; row-gap: 6px; align-items: center; padding: 11px 14px; cursor: pointer; }
+  .st-row + .st-row::before { content: ""; position: absolute; left: 48px; right: 0; top: 0; height: 1px; background: var(--sep); transform: scaleY(.5); }
+  .st-row input[type="checkbox"] { width: 20px; height: 20px; margin: 0; accent-color: var(--tint); grid-row: 1 / span 2; align-self: start; margin-top: 1px; }
+  .st-desc { font-size: 15px; font-weight: 500; line-height: 1.3; overflow-wrap: anywhere; }
+  .st-amt { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .st-meta { grid-column: 2 / 4; display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; font-size: 13px; color: var(--label-2); }
+  .st-meta select { font: inherit; font-size: 16px; min-height: 32px; border-radius: 8px; border: 1px solid var(--sep); background-color: var(--fill); color: var(--label);
+    padding: 0 28px 0 9px; -webkit-appearance: none; appearance: none; }
+  .st-dup { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--orange); }
+  .st-row.off .st-desc, .st-row.off .st-amt { color: var(--label-2); }
+  /* The total and the button stay in reach however long the statement is. */
+  .st-foot { position: sticky; bottom: calc(-20px - var(--sab)); z-index: 1; background: var(--bg); margin: 0 -16px; padding: 12px 16px calc(12px + var(--sab));
+             display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--sep); }
+  .st-total { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; color: var(--label-2); }
+  .st-total b { font-size: 20px; color: var(--label); font-variant-numeric: tabular-nums; }
+  .st-foot .status { padding: 0; text-align: left; }
+  .st-foot .status:empty { display: none; }
+  @media (min-width: 768px) { .st-foot { bottom: -20px; padding-bottom: 12px; } }
+
+  /* ---------- Memories ---------- */
+  .mem-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .mem-count { font-size: 24px; font-weight: 700; letter-spacing: -.01em; }
+  .mem-head .btn { flex: 0 0 auto; }
+  .btn svg.i-play { width: 14px; height: 14px; }
+  .mem-add { display: flex; flex-direction: column; gap: 8px; }
+  .mem-private { font-size: 12.5px; color: var(--label-2); text-align: center; line-height: 1.4; margin: 0 12px; }
+  .mem-empty { padding: 28px 20px 8px; }
+  .mem-progress { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; }
+  .mem-progress .top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .mem-progress .top b { font-weight: 600; }
+  .mem-errs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--red); overflow-wrap: anywhere; }
+  .mem-day { display: flex; flex-direction: column; gap: 8px; }
+  .mem-day-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 4px; min-height: 36px; }
+  .mem-day-head h3 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.3; min-width: 0; }
+  .mem-day-head h3 span { color: var(--label-2); font-weight: 500; }
+  .mem-day-head .btn { flex: 0 0 auto; min-height: 32px; padding: 4px 12px; font-size: 14px; }
+  /* Each square is rounded on its own: rounding the grid as a whole left a
+     lone photo in a row with two round corners and two square ones. */
+  .mem-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
+  .mem-thumb { position: relative; display: block; width: 100%; aspect-ratio: 1; border: 0; padding: 0; margin: 0; background: var(--fill); overflow: hidden; cursor: pointer; border-radius: 6px; }
+  .mem-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .mem-thumb:focus-visible { outline: 3px solid var(--tint); outline-offset: -3px; }
+  .mem-thumb:active img { opacity: .8; }
+  @media (min-width: 700px) {
+    .mem-grid { grid-template-columns: repeat(5, 1fr); gap: 4px; }
+    .mem-add .btn { width: auto; min-width: 280px; align-self: center; }
+  }
+  @media (min-width: 1100px) { .mem-grid { grid-template-columns: repeat(6, 1fr); } }
+
+  /* The Overview's Memories tile spans the row under Packing and Budget. It
+     is a section, not a button, because it holds two things to tap. */
+  .ov-mem { grid-column: 1 / -1; position: relative; padding: 0; cursor: default; }
+  .ov-mem:active { transform: none; }
+  .ov-mem .mem-open { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; width: 100%; text-align: left; background: none; border: 0;
+                      font: inherit; color: inherit; padding: 12px 14px; border-radius: 16px; min-height: 76px; }
+  .ov-mem .mem-open:active { background: var(--fill); }
+  .ov-mem .t-sub { margin-top: 1px; }
+  .mem-strip { display: flex; gap: 6px; margin-top: 8px; }
+  .mem-strip:empty { display: none; }
+  .mem-strip img { width: 58px; height: 58px; border-radius: 9px; object-fit: cover; background: var(--fill); display: block; }
+  .ov-mem .mem-tile-play { position: absolute; top: 10px; right: 10px; }
+
+  /* The viewer: the full photo over its own thumbnail, which is already
+     cached, so the sheet never opens on an empty box. */
+  .mv { display: flex; flex-direction: column; gap: 12px; }
+  .mv-frame { position: relative; background: #000 center / contain no-repeat; border-radius: 14px; overflow: hidden; width: 100%; max-height: 58vh; }
+  .mv-frame img { display: block; width: 100%; height: 100%; max-height: 58vh; object-fit: contain; }
+  .mv-meta { font-size: 13px; color: var(--label-2); margin: 0 2px; }
+  .mv-cap { width: 100%; min-height: 44px; border-radius: 12px; border: 1px solid var(--sep); background: var(--card); color: var(--label); padding: 0 14px; font: inherit; font-size: 16px; }
+  .mv-cap:focus { outline: none; border-color: var(--tint); }
+  .mv-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .mv-actions .btn { min-height: 46px; font-size: 16px; }
+  .sheet .mv-actions .btn-danger, .sheet .mv-actions .btn-secondary { background: var(--card); }
 
   @media (min-width: 700px) {
     .ov-hero { grid-template-columns: 3fr 2fr; }
@@ -544,7 +653,11 @@
     <symbol id="i-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 12l6-6 6 6"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l5 5L20 6"/></symbol>
     <symbol id="i-plane" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 13.5L3 11l1.5-1.5 7.5 1 5-5a2 2 0 0 1 3 3l-5 5 1 7.5L14.5 22.5l-2.5-7.5-3.5 3.5v3l-1.5 1.5-1.5-4-4-1.5L3 16h3l3.5-3.5z"/></symbol>
-    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-photo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14.5" rx="3"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 15.5l-4.8-4.8L8 19"/></symbol>
+    <symbol id="i-receipt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h12v17l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4-2 1.4z"/><path d="M9 8.5h6M9 12h6M9 15.5h3.5"/></symbol>
+    <symbol id="i-card" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M3 10h18M7 15h3.5"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.2v13.6a1 1 0 0 0 1.5.86l10.6-6.8a1 1 0 0 0 0-1.72L9.5 4.34A1 1 0 0 0 8 5.2z"/></symbol>
+    <symbol id="i-lock"viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></symbol>
   </defs>
 </svg>
 
@@ -608,6 +721,10 @@
       <div class="ov-tiles">
         <button type="button" class="ov-tile" id="ovPackTile"><span class="t-label">Packing</span><span class="t-value" id="ovPackVal">&ndash;</span><span class="t-bar"><i id="ovPackBar"></i></span></button>
         <button type="button" class="ov-tile" id="ovBudgetTile"><span class="t-label">Budget</span><span class="t-value" id="ovBudgetVal">&ndash;</span><span class="t-sub" id="ovBudgetSub"></span></button>
+        <section class="ov-tile ov-mem" id="ovMemTile" hidden aria-label="Memories">
+          <button type="button" class="mem-open" id="ovMemOpen"><span class="t-label">Memories</span><span class="t-value" id="ovMemVal">&ndash;</span><span class="t-sub" id="ovMemSub"></span><span class="mem-strip" id="ovMemStrip"></span></button>
+          <button type="button" class="btn btn-secondary btn-sm mem-tile-play" id="ovMemPlay" hidden><svg class="i-play" aria-hidden="true"><use href="#i-play"/></svg>Play</button>
+        </section>
       </div>
 
       <div class="ov-group" id="ovNextGroup" hidden>
@@ -680,6 +797,18 @@
     <!-- Budget: a target, what the bookings cost, and spending by line. -->
     <div id="tab-budget" class="tabpanel" role="tabpanel" hidden>
       <div class="ov-card bg-summary" id="bgSummary"></div>
+      <!-- Real spending in, without typing it: a receipt photo read by Claude,
+           or the CSV every card's website offers. Both only propose; nothing
+           is added until it is confirmed here. Straight under the summary,
+           because on the trip this is what the tab is opened for. -->
+      <div class="bg-import" id="bgImport">
+        <label class="btn btn-secondary" id="bgReceiptLbl"><svg aria-hidden="true"><use href="#i-receipt"/></svg>Scan a receipt<input type="file" id="bgReceiptFile" class="vh" accept="image/*"></label>
+        <label class="btn btn-secondary" id="bgStatementLbl"><svg aria-hidden="true"><use href="#i-card"/></svg>Import card statement<input type="file" id="bgStatementFile" class="vh" accept=".csv,text/csv"></label>
+      </div>
+      <p class="bg-hint" id="bgImportHint">Statement: your card’s website → Statements / Activity → Download → CSV. The file is read once and not kept.</p>
+      <div class="status" id="bgImportStatus"></div>
+      <div id="bgTopUpRow" style="text-align:center;margin-top:-10px" hidden><button type="button" class="link-btn" id="bgTopUpBtn">Top up AI credit</button></div>
+      <div id="bgReceipt" hidden></div>
       <div class="ov-group" id="bgBookedGroup" hidden>
         <div class="section-header">Booked</div>
         <div class="ov-card" style="padding:0"><div class="glist" id="bgBooked"></div></div>
@@ -701,6 +830,26 @@
       </div>
       <div class="status" id="bgStatus"></div>
       <div id="bgSuggest" hidden></div>
+    </div>
+
+    <!-- Memories: the trip's photos, filed by day, played back as a picture
+         show. Stored privately and served only through this app. -->
+    <div id="tab-memories" class="tabpanel" role="tabpanel" hidden>
+      <div class="ov-card mem-head" id="memHead" hidden>
+        <div><div class="t-label">Memories</div><div class="mem-count" id="memCount"></div></div>
+        <button type="button" class="btn btn-primary btn-sm" id="memPlayAll" hidden><svg class="i-play" aria-hidden="true"><use href="#i-play"/></svg>Play picture show</button>
+      </div>
+      <div class="empty mem-empty" id="memEmpty" hidden>
+        <svg><use href="#i-photo"/></svg>
+        <b id="memEmptyTitle">Your trip, in pictures</b>
+        <span id="memEmptyText"></span>
+      </div>
+      <div class="mem-add" id="memAdd" hidden>
+        <label class="btn btn-primary" id="memAddLbl"><svg aria-hidden="true"><use href="#i-plus"/></svg>Add photos<input type="file" id="memFile" class="vh" accept="image/*" multiple></label>
+        <p class="mem-private">Private to your account. Your phone removes location data before a photo is uploaded.</p>
+      </div>
+      <div class="mem-progress" id="memProgress" hidden></div>
+      <div class="stack" id="memGroups"></div>
     </div>
 
     <div id="tab-watches" class="tabpanel" role="tabpanel" hidden>
@@ -743,9 +892,10 @@
     <button type="button" role="tab" class="tab" id="tab-btn-itinerary" aria-selected="false" aria-controls="tab-itinerary"><svg><use href="#i-cal"/></svg>Itinerary</button>
     <button type="button" role="tab" class="tab" id="tab-btn-chat" aria-selected="false" aria-controls="tab-chat"><svg><use href="#i-chat"/></svg>Chat</button>
     <button type="button" role="tab" class="tab" id="tab-btn-packing" aria-selected="false" aria-controls="tab-packing"><svg><use href="#i-bag"/></svg>Packing</button>
-    <!-- On a phone these three live under More, the way the vacation app
-         keeps five items in its bar; the desktop sidebar shows all of them. -->
+    <!-- On a phone these live under More, the way the vacation app keeps
+         five items in its bar; the desktop sidebar shows all of them. -->
     <button type="button" role="tab" class="tab in-more" id="tab-btn-budget" aria-selected="false" aria-controls="tab-budget"><svg><use href="#i-dollar"/></svg>Budget</button>
+    <button type="button" role="tab" class="tab in-more" id="tab-btn-memories" aria-selected="false" aria-controls="tab-memories"><svg><use href="#i-photo"/></svg>Memories</button>
     <button type="button" role="tab" class="tab in-more" id="tab-btn-watches" aria-selected="false" aria-controls="tab-watches"><svg><use href="#i-eye"/></svg>Watches</button>
     <button type="button" role="tab" class="tab in-more" id="tab-btn-details" aria-selected="false" aria-controls="tab-details"><svg><use href="#i-info"/></svg>Details</button>
     <button type="button" class="tab is-more" id="tab-btn-more" aria-haspopup="dialog"><svg><use href="#i-more"/></svg>More</button>
@@ -761,6 +911,11 @@
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- Shrinking photos on the phone, grouping them by day, the picture show.
+     Shared with the vacation app; see the file for why photos are shrunk
+     before they leave the phone. -->
+<script src="/photo-tools.js"></script>
 
 <!-- Sheet contents live here until opened -->
 <div id="sheetStash" hidden>
@@ -1695,13 +1850,15 @@
   }
 
   /* ---------- Trip detail: tabs ---------- */
-  var tripTabs = ["overview", "chat", "itinerary", "packing", "budget", "watches", "details"];
-  var MORE_TABS = ["budget", "watches", "details"];
+  var tripTabs = ["overview", "chat", "itinerary", "packing", "budget", "memories", "watches", "details"];
+  var MORE_TABS = ["budget", "memories", "watches", "details"];
   var currentTab = "overview";
   function selectTripTab(name) {
     currentTab = name;
     // The countdown ticks only while it can be seen.
     if (name === "overview") startCountdown(); else stopCountdown();
+    // Someone else on the trip may have added photos since this was drawn.
+    if (name === "memories" && currentTripId && currentTrip) loadPhotos(currentTripId);
     tripTabs.forEach(function (t) {
       $("tab-" + t).hidden = t !== name;
       $("tab-btn-" + t).setAttribute("aria-selected", String(t === name));
@@ -1723,7 +1880,8 @@
   // and the rest open from a sheet. The desktop sidebar shows everything.
   $("tab-btn-more").addEventListener("click", function () {
     var list = document.createElement("div"); list.className = "list";
-    [["budget", "Budget", "i-dollar", "Target, bookings and spending"], ["watches", "Watches", "i-eye", "Prices being checked"], ["details", "Details", "i-info", "Name, dates, notes, lock in"]]
+    [["budget", "Budget", "i-dollar", "Target, bookings and spending"], ["memories", "Memories", "i-photo", "Trip photos and a picture show"],
+     ["watches", "Watches", "i-eye", "Prices being checked"], ["details", "Details", "i-info", "Name, dates, notes, lock in"]]
       .forEach(function (r) {
         var b = document.createElement("button"); b.type = "button"; b.className = "row";
         b.innerHTML = svgUse(r[2], "row-icon") + '<div class="row-main"><div class="row-title">' + r[1] + '</div><div class="row-sub">' + r[3] + '</div></div>' + svgUse("i-chev-r", "row-chevron");
@@ -1742,7 +1900,9 @@
     $("tripBadge").className = "badge"; $("tripBadge").textContent = "";
     clearOverview();
     packItems = []; budgetData = { target: null, lines: [], booked: [] };
-    ["pkSuggest", "bgSuggest"].forEach(function (id) { $(id).hidden = true; $(id).innerHTML = ""; });
+    ["pkSuggest", "bgSuggest", "bgReceipt"].forEach(function (id) { $(id).hidden = true; $(id).innerHTML = ""; });
+    setStatus($("bgImportStatus"), ""); $("bgTopUpRow").hidden = true;
+    resetMemories();
     renderTiles();
     selectTripTab("overview");
     try {
@@ -1773,6 +1933,7 @@
     loadWeather(id);
     loadPacking(id);
     loadBudget(id);
+    loadPhotos(id);
     refreshChat();
     refreshWatches();
   }
@@ -2345,15 +2506,23 @@
     var lines = budgetData.lines || [];
     if (!lines.length) {
       $("bgLines").innerHTML = '<div class="ov-card ov-cta"><p>' + (demoTrip ? "No spending lines on the example." :
-        "Nothing planned yet. Add lines below — groceries, dinners out, the boat tour — or let Claude estimate them. Bookings with a price are counted above already.") + '</p></div>';
+        "Nothing here yet. Scan a receipt or import your card statement above, add lines below — groceries, dinners out, the boat tour — or let Claude estimate them. Bookings with a price are counted above already.") + '</p></div>';
     } else {
       var cats = [];
       lines.forEach(function (l) { if (cats.indexOf(l.category) < 0) cats.push(l.category); });
       $("bgLines").innerHTML = cats.map(function (c) {
         var ls = lines.filter(function (l) { return l.category === c; });
         return '<div class="section-header" style="margin-top:4px">' + escapeHtml(c) + '</div><div class="bg-cat">' + ls.map(function (l) {
+          // Where the number came from, and when: a receipt or a card charge
+          // says so, so a figure can be traced back and checked.
+          var bits = [];
+          if (l.date) bits.push(escapeHtml(niceDay(l.date, true)));
+          if (l.planned != null) bits.push(money(l.planned) + " planned");
+          else if (l.spent == null) bits.push("No plan");
+          if (l.note) bits.push(escapeHtml(l.note));
+          var badge = l.source === "receipt" ? '<span class="src receipt">Receipt</span>' : l.source === "card" ? '<span class="src card">Card</span>' : '';
           return '<div class="bg-row" data-id="' + escapeHtml(l.id) + '"><div class="lbl"><b>' + escapeHtml(l.label) + '</b><span>' +
-            (l.planned != null ? money(l.planned) + " planned" : "No plan") + (l.note ? " · " + escapeHtml(l.note) : "") + '</span></div>' +
+            badge + bits.join(" · ") + '</span></div>' +
             (demoTrip ? '<span class="g-amt">' + (l.spent != null ? money(l.spent) : "–") + '</span>'
               : '<input class="bg-spent" inputmode="decimal" placeholder="Spent" aria-label="Spent on ' + escapeHtml(l.label) + '" value="' + (l.spent != null ? l.spent : "") + '" data-spent="' + escapeHtml(l.id) + '">' +
                 '<button type="button" class="cl-del" data-bgdel="' + escapeHtml(l.id) + '" aria-label="Remove">' + svgUse("i-x") + '</button>') +
@@ -2361,7 +2530,7 @@
         }).join("") + '</div>';
       }).join("");
     }
-    document.querySelectorAll("#tab-budget .pk-add, #bgSuggestBtn").forEach(function (el) { el.hidden = demoTrip; });
+    document.querySelectorAll("#tab-budget .pk-add, #bgSuggestBtn, #bgImport, #bgImportHint").forEach(function (el) { el.hidden = demoTrip; });
     renderTiles();
   }
 
@@ -2415,6 +2584,201 @@
     finally { btn.disabled = false; }
   });
 
+  /* ---------- Receipts and card statements ----------
+   * Both only PROPOSE, the way Claude's estimate does: a receipt comes back
+   * as an editable card, a statement as a list to tick, and nothing reaches
+   * the budget until Add is tapped. Neither file is kept anywhere. */
+  var importStatus = $("bgImportStatus"), receiptBox = $("bgReceipt");
+
+  function importBusy(on) {
+    ["bgReceiptLbl", "bgStatementLbl"].forEach(function (id) { $(id).classList.toggle("is-busy", on); });
+    $("bgReceiptFile").disabled = on; $("bgStatementFile").disabled = on;
+  }
+  $("bgTopUpBtn").addEventListener("click", function () { openCreditSheet(); });
+
+  // A photo of a receipt: shrunk on the phone, read by Claude, shown back as
+  // a card to correct. The value is cleared first so the same photo can be
+  // picked again after a Discard.
+  $("bgReceiptFile").addEventListener("change", async function () {
+    var file = this.files && this.files[0];
+    this.value = "";
+    if (!file || isDemo()) return;
+    var id = currentTripId;
+    receiptBox.hidden = true; receiptBox.innerHTML = "";
+    $("bgTopUpRow").hidden = true;
+    importBusy(true);
+    setStatus(importStatus, "Reading the receipt…");
+    try {
+      var image = await window.PhotoTools.receipt(file);
+      var res = await fetch(tripApi("/budget/receipt"), {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: image })
+      });
+      if (res.status === 401) { showAuthRequired(importStatus); return; }
+      // Out of credit: the same words every other Claude button shows, and
+      // the way to more, rather than a dead end.
+      if (res.status === 402 || res.status === 503) {
+        await showSpendBlocked(importStatus, res);
+        $("bgTopUpRow").hidden = res.status !== 402;
+        return;
+      }
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok || data.error) throw new Error(data.error || "Couldn’t read that receipt. Try again, or add it by hand below.");
+      if (currentTripId !== id) return;
+      setStatus(importStatus, "");
+      showReceiptCard(data.line || {}, data.currency);
+    } catch (e) {
+      setStatus(importStatus, (e && e.message) || "Couldn’t read that receipt.", "error");
+    } finally { importBusy(false); }
+  });
+
+  function showReceiptCard(line, currency) {
+    var field = function (label, control, wide) {
+      return '<label class="rc-field' + (wide ? ' wide' : '') + '"><span>' + label + '</span>' + control + '</label>';
+    };
+    receiptBox.hidden = false;
+    receiptBox.innerHTML = '<div class="sg-card"><div class="pc-label">From the receipt</div>' +
+      (currency && currency !== "USD"
+        ? '<div class="rc-warn">This receipt is in ' + escapeHtml(currency) + '. The budget counts dollars, so change the amount to what it cost you in dollars.</div>' : '') +
+      '<div class="rc-grid">' +
+        field("What", '<input id="rcLabel" maxlength="80" autocomplete="off" value="' + escapeHtml(line.label || "") + '">', true) +
+        field("Amount", '<input id="rcSpent" inputmode="decimal" autocomplete="off" placeholder="$" value="' + escapeHtml(line.spent != null ? String(line.spent) : "") + '">') +
+        field("Date", '<input id="rcDate" type="date" value="' + escapeHtml(line.date || "") + '">') +
+        field("Category", '<select id="rcCat">' + BUDGET_CATS.map(function (c) {
+          return '<option' + (c === line.category ? " selected" : "") + '>' + c + '</option>';
+        }).join("") + '</select>', true) +
+        field("Note", '<input id="rcNote" maxlength="200" autocomplete="off" placeholder="Optional" value="' + escapeHtml(line.note || "") + '">', true) +
+      '</div>' +
+      '<p class="muted" style="margin:0">Check the total before adding. Nothing is saved until you do, and the photo isn’t kept.</p>' +
+      '<div class="pc-actions"><button type="button" class="btn btn-primary" id="rcAdd">Add to budget</button><button type="button" class="btn btn-secondary" id="rcDiscard">Discard</button></div>' +
+      '<div class="status" id="rcStatus" style="padding:0"></div></div>';
+    requestAnimationFrame(function () { receiptBox.scrollIntoView({ behavior: "smooth", block: "nearest" }); });
+    $("rcDiscard").addEventListener("click", function () { receiptBox.hidden = true; receiptBox.innerHTML = ""; });
+    $("rcAdd").addEventListener("click", async function () {
+      var btn = this, spent = $("rcSpent").value.trim(), cat = $("rcCat").value;
+      if (!/\d/.test(spent)) { setStatus($("rcStatus"), "Add the amount first.", "error"); $("rcSpent").focus(); return; }
+      btn.disabled = true;
+      try {
+        await addBudgetLines([{ category: cat, label: $("rcLabel").value.trim() || "Receipt", spent: spent,
+          date: $("rcDate").value || null, note: $("rcNote").value.trim(), source: "receipt" }]);
+        receiptBox.hidden = true; receiptBox.innerHTML = "";
+        toast("Added to " + cat);
+      } catch (e) { btn.disabled = false; setStatus($("rcStatus"), e.message, "error"); }
+    });
+  }
+
+  // A card statement: read as text here, parsed on the server against the
+  // trip's dates, and offered back as a list to tick.
+  $("bgStatementFile").addEventListener("change", function () {
+    var file = this.files && this.files[0];
+    this.value = "";
+    if (!file || isDemo()) return;
+    $("bgTopUpRow").hidden = true;
+    // The server's own ceiling, said before a long upload rather than after.
+    if (file.size > 2 * 1024 * 1024) { setStatus(importStatus, "That file is larger than a statement should be (2 MB). Download a shorter date range.", "error"); return; }
+    var reader = new FileReader();
+    importBusy(true);
+    setStatus(importStatus, "Reading the statement…");
+    reader.onerror = function () { importBusy(false); setStatus(importStatus, "Couldn’t open that file.", "error"); };
+    reader.onload = function () { sendStatement(String(reader.result || "")); };
+    reader.readAsText(file);
+  });
+
+  async function sendStatement(csv) {
+    var id = currentTripId;
+    try {
+      var res = await fetch(tripApi("/budget/statement"), {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ csv: csv })
+      });
+      if (res.status === 401) { showAuthRequired(importStatus); return; }
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok || data.error) throw new Error(data.error || "Couldn’t read that statement.");
+      if (currentTripId !== id) return;
+      setStatus(importStatus, "");
+      openStatementSheet(data);
+    } catch (e) {
+      setStatus(importStatus, (e && e.message) || "Couldn’t read that statement.", "error");
+    } finally { importBusy(false); }
+  }
+
+  function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
+
+  function openStatementSheet(data) {
+    var tx = Array.isArray(data.transactions) ? data.transactions : [];
+    var sk = data.skipped || {}, win = data.window || {};
+    var room = typeof data.room === "number" ? data.room : Infinity;
+    var skipped = [];
+    if (sk.payments) skipped.push(plural(sk.payments, "payment or refund", "payments and refunds"));
+    if (sk.outOfRange) skipped.push(plural(sk.outOfRange, "charge", "charges") + " outside the trip dates");
+    if (sk.unreadable) skipped.push(plural(sk.unreadable, "row", "rows") + " that couldn’t be read");
+    var span = win.from ? " from " + niceDay(win.from) + " to " + niceDay(win.to) + ", with a day either side" : "";
+    var lede = tx.length
+      ? "Found " + plural(tx.length, "charge", "charges") + span + ". Tick the ones to add."
+      : "No charges" + (win.from ? span.replace(/^ from/, " between") : "") + " in that file.";
+    var body = '<p class="st-lede">' + escapeHtml(lede) +
+      (skipped.length ? '<span class="muted">Skipped ' + escapeHtml(skipped.join(", ")) + '.</span>' : '') + '</p>';
+    if (tx.length) {
+      body += '<div class="st-list">' + tx.map(function (t, i) {
+        return '<label class="st-row' + (t.possibleDuplicate ? ' off' : '') + '" data-i="' + i + '">' +
+          '<input type="checkbox" data-i="' + i + '"' + (t.possibleDuplicate ? '' : ' checked') + ' aria-label="Add ' + escapeHtml(t.description) + '">' +
+          '<span class="st-desc">' + escapeHtml(t.description) + '</span><span class="st-amt">' + money(t.amount) + '</span>' +
+          '<span class="st-meta">' + escapeHtml(niceDay(t.date, true)) +
+            '<select class="chev" data-cat="' + i + '" aria-label="Category">' + BUDGET_CATS.map(function (c) {
+              return '<option' + (c === t.category ? ' selected' : '') + '>' + c + '</option>';
+            }).join("") + '</select>' +
+            (t.possibleDuplicate ? '<span class="st-dup">Maybe already added</span>' : '') + '</span>' +
+        '</label>';
+      }).join("") + '</div>' +
+      '<div class="st-foot"><div class="st-total"><span id="stCount"></span><b id="stSum"></b></div>' +
+        '<div class="status error" id="stStatus"></div>' +
+        '<div class="pc-actions"><button type="button" class="btn btn-primary" id="stAdd"></button><button type="button" class="btn btn-secondary" id="stCancel">Discard</button></div></div>';
+    } else {
+      body += '<button type="button" class="btn btn-secondary" id="stCancel">Done</button>';
+    }
+    var sheet = openSheet({ title: "Card statement", body: body });
+    $("stCancel").addEventListener("click", closeSheet);
+    if (!tx.length) return;
+
+    var picked = function () {
+      return Array.prototype.filter.call(sheet.querySelectorAll("input[data-i]"), function (c) { return c.checked; })
+        .map(function (c) { return Number(c.getAttribute("data-i")); });
+    };
+    var update = function () {
+      var ids = picked(), sum = 0;
+      ids.forEach(function (i) { sum += tx[i].amount; });
+      $("stCount").textContent = plural(ids.length, "charge", "charges") + " ticked";
+      $("stSum").textContent = money(Math.round(sum * 100) / 100) || "$0";
+      var add = $("stAdd");
+      add.textContent = ids.length ? "Add " + plural(ids.length, "charge", "charges") : "Tick charges to add";
+      // Said before the tap, not after it: the budget holds a fixed number of
+      // lines, and a statement can offer more than are left.
+      var over = ids.length > room;
+      add.disabled = !ids.length || over;
+      setStatus($("stStatus"), over ? "The budget has room for " + plural(room, "more line", "more lines") + " — untick " + (ids.length - room) + "." : "", "error");
+      Array.prototype.forEach.call(sheet.querySelectorAll(".st-row"), function (row) {
+        var cb = row.querySelector("input[data-i]"); row.classList.toggle("off", !cb.checked);
+      });
+    };
+    sheet.addEventListener("change", function (e) {
+      var cat = e.target.closest("[data-cat]");
+      if (cat) tx[Number(cat.getAttribute("data-cat"))].category = cat.value;
+      update();
+    });
+    update();
+    $("stAdd").addEventListener("click", async function () {
+      var btn = this, ids = picked();
+      if (!ids.length) return;
+      btn.disabled = true;
+      try {
+        await addBudgetLines(ids.map(function (i) {
+          var t = tx[i];
+          return { label: t.description, spent: t.amount, date: t.date, category: t.category, source: "card" };
+        }));
+        closeSheet();
+        toast(plural(ids.length, "charge", "charges") + " added");
+      } catch (e) { btn.disabled = false; setStatus($("stStatus"), e.message, "error"); }
+    });
+  }
+
   // ---- the two Overview tiles ----
   function renderTiles() {
     var done = packItems.filter(function (i) { return i.checked; }).length, total = packItems.length;
@@ -2426,6 +2790,265 @@
   }
   $("ovPackTile").addEventListener("click", function () { selectTripTab("packing"); });
   $("ovBudgetTile").addEventListener("click", function () { selectTripTab("budget"); });
+
+  /* ---------- Memories ----------
+   * The trip's photos, filed under the itinerary's days and played back as a
+   * picture show. Every image is fetched from this app's own routes, which
+   * check the session and the trip's owner on each one - there is no public
+   * link to any of them. */
+  var photos = [], photosAvailable = null, photosDemo = false, photosSig = "", photosTrip = null;
+
+  function photoUrl(p, size) { return "/api/trips/" + encodeURIComponent(currentTripId) + "/photos/" + encodeURIComponent(p.id) + "/" + size; }
+
+  function resetMemories() {
+    photos = []; photosAvailable = null; photosDemo = false; photosSig = ""; photosTrip = null;
+    $("memGroups").innerHTML = ""; $("ovMemTile").hidden = true;
+    ["memHead", "memEmpty", "memAdd"].forEach(function (id) { $(id).hidden = true; });
+    if (!upload.running) { $("memProgress").hidden = true; $("memProgress").innerHTML = ""; }
+  }
+
+  async function loadPhotos(id) {
+    if (!id) return;
+    try {
+      // By id, not tripApi(): this also runs while a trip is still loading,
+      // and the example trip's id is its route.
+      var res = await fetch("/api/trips/" + encodeURIComponent(id) + "/photos", { cache: "no-store" });
+      if (!res.ok || currentTripId !== id) return;
+      var data = await res.json();
+      var sig = JSON.stringify(data);
+      // Unchanged since the last look: leave the grid alone rather than
+      // redrawing every thumbnail on each return to the app.
+      if (sig === photosSig && photosTrip === id) return;
+      photosSig = sig; photosTrip = id;
+      photosAvailable = data.available !== false;
+      photosDemo = !!data.demo;
+      photos = Array.isArray(data.photos) ? data.photos : [];
+      renderMemories(); renderMemTile();
+    } catch (e) {}
+  }
+  // Two phones add to one trip. Coming back to the app, look again.
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible" && currentTripId) loadPhotos(currentTripId);
+  });
+  window.addEventListener("pageshow", function () { if (currentTripId) loadPhotos(currentTripId); });
+
+  function groupsNow() { return window.PhotoTools.groupByDay(photos, itineraryDays); }
+  function groupHeading(g) {
+    return g.dayNumber ? "Day " + g.dayNumber + (g.dateLabel ? " · " + g.dateLabel : "") : (g.dateLabel || g.title);
+  }
+  function tripSpan() {
+    if (currentTrip.dateRange) return currentTrip.dateRange;
+    var d = currentTrip.dates;
+    return d ? (d.start === d.end ? niceDay(d.start) : niceDay(d.start) + " – " + niceDay(d.end)) : "";
+  }
+
+  function renderMemories() {
+    var n = photos.length, box = $("memGroups");
+    var canAdd = photosAvailable && !photosDemo;
+    $("memHead").hidden = !n;
+    $("memCount").textContent = plural(n, "photo", "photos");
+    $("memPlayAll").hidden = !n;
+    $("memAdd").hidden = !canAdd;
+    $("memEmpty").hidden = !!n;
+    if (!n) {
+      box.innerHTML = "";
+      $("memEmptyTitle").textContent = photosDemo ? "Photos are for your own trips" : photosAvailable === false ? "Photos aren’t set up here" : "Your trip, in pictures";
+      $("memEmptyText").textContent = photosDemo
+        ? "On a trip of your own, add photos from your phone and they’re filed under the day they were taken, ready to play back as a picture show."
+        : photosAvailable === false
+          ? "This copy of Trip Planner has nowhere to keep photos yet."
+          : "Add photos from this trip and they’re filed under the day they were taken. Then play the whole trip back as a picture show.";
+      return;
+    }
+    box.innerHTML = groupsNow().map(function (g) {
+      var head = escapeHtml(groupHeading(g)) + (g.dayNumber && g.title ? ' <span>— ' + escapeHtml(g.title) + '</span>' : '');
+      return '<section class="mem-day"><div class="mem-day-head"><h3>' + head + '</h3>' +
+          '<button type="button" class="btn btn-secondary btn-sm" data-play-day="' + escapeHtml(g.key) + '"><svg class="i-play" aria-hidden="true"><use href="#i-play"/></svg>Play</button></div>' +
+        '<div class="mem-grid">' + g.photos.map(function (p) {
+          return '<button type="button" class="mem-thumb" data-photo="' + escapeHtml(p.id) + '" aria-label="' + escapeHtml(p.caption || "Photo") + '">' +
+            '<img loading="lazy" decoding="async" alt="" src="' + escapeHtml(photoUrl(p, "thumb")) + '"></button>';
+        }).join("") + '</div></section>';
+    }).join("");
+  }
+
+  function renderMemTile() {
+    var tile = $("ovMemTile");
+    if (!photosAvailable) { tile.hidden = true; return; }
+    tile.hidden = false;
+    var n = photos.length;
+    $("ovMemVal").textContent = n ? plural(n, "photo", "photos") : photosDemo ? "Your own trips" : "Add photos";
+    $("ovMemSub").textContent = n ? "Tap to see them by day" : photosDemo ? "Photos and a picture show, on a trip of yours" : "Filed by day, played back as a picture show";
+    // The newest few: the strip is a reminder of what was added, not an index.
+    $("ovMemStrip").innerHTML = photos.slice(-4).reverse().map(function (p) {
+      return '<img loading="lazy" decoding="async" alt="" src="' + escapeHtml(photoUrl(p, "thumb")) + '">';
+    }).join("");
+    $("ovMemPlay").hidden = !n;
+  }
+  $("ovMemOpen").addEventListener("click", function () { selectTripTab("memories"); });
+  $("ovMemPlay").addEventListener("click", function () { playShow({}); });
+  $("memPlayAll").addEventListener("click", function () { playShow({}); });
+
+  $("memGroups").addEventListener("click", function (e) {
+    var day = e.target.closest("[data-play-day]");
+    if (day) { playShow({ day: day.getAttribute("data-play-day") }); return; }
+    var t = e.target.closest("[data-photo]");
+    if (t) openViewer(t.getAttribute("data-photo"));
+  });
+
+  /** The picture show: the whole trip, one day, or the whole trip starting at
+   *  one photo. The title card is the trip's name and dates. */
+  function playShow(o) {
+    if (!photos.length) return;
+    var groups = groupsNow(), title = currentTrip.name || "Our trip", subtitle = tripSpan();
+    if (o.day) {
+      groups = groups.filter(function (g) { return g.key === o.day; });
+      if (!groups.length) return;
+      var g = groups[0];
+      title = g.dayNumber ? g.title || groupHeading(g) : groupHeading(g);
+      subtitle = g.dayNumber ? "Day " + g.dayNumber + (g.dateLabel ? " · " + g.dateLabel : "") : (currentTrip.name || "");
+    }
+    var slides = window.PhotoTools.slidesFrom(groups, { title: title, subtitle: subtitle, src: function (p) { return photoUrl(p, "full"); } });
+    // A day the itinerary does not name gets its date as both its title and
+    // its subtitle; once is enough.
+    slides.forEach(function (s) { if (s.type === "title" && s.subtitle === s.title) s.subtitle = ""; });
+    var start = 0;
+    if (o.photoId) {
+      var want = photoUrl({ id: o.photoId }, "full");
+      slides.forEach(function (s, i) { if (s.src === want) start = i; });
+    }
+    window.PhotoTools.slideshow(slides, { start: start });
+  }
+
+  function whenTaken(p) {
+    if (p.takenAt) {
+      // The camera's own wall-clock time, no zone: read as local, so a 6:32 PM
+      // sunset says 6:32 PM wherever the phone is now.
+      var d = new Date(p.takenAt);
+      if (!isNaN(d)) return d.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    }
+    return p.uploadedAt ? "Added " + new Date(p.uploadedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+  }
+
+  function openViewer(pid) {
+    var p = photos.filter(function (x) { return x.id === pid; })[0];
+    if (!p) return;
+    var g = groupsNow().filter(function (x) { return x.photos.some(function (y) { return y.id === pid; }); })[0];
+    var ratio = p.width && p.height ? p.width + " / " + p.height : "4 / 3";
+    var sheet = openSheet({
+      title: g ? groupHeading(g) : "Photo",
+      body: '<div class="mv">' +
+        '<div class="mv-frame" style="aspect-ratio:' + ratio + ';background-image:url(\'' + escapeHtml(photoUrl(p, "thumb")) + '\')">' +
+          '<img alt="' + escapeHtml(p.caption || "") + '" src="' + escapeHtml(photoUrl(p, "full")) + '"></div>' +
+        '<div class="mv-meta">' + escapeHtml(whenTaken(p)) + '</div>' +
+        '<input class="mv-cap" id="mvCap" maxlength="200" placeholder="Add a caption" enterkeyhint="done" autocomplete="off" aria-label="Caption" value="' + escapeHtml(p.caption || "") + '">' +
+        '<div class="mv-actions"><button type="button" class="btn btn-secondary" id="mvPlay"><svg class="i-play" aria-hidden="true"><use href="#i-play"/></svg>Play from here</button>' +
+          '<button type="button" class="btn btn-danger" id="mvDelete">Delete</button></div>' +
+      '</div>'
+    });
+    var cap = sheet.querySelector("#mvCap");
+    // Saved when the field is left or Return is pressed, like the budget's
+    // spent figures - no Save button to forget.
+    var saveCaption = async function () {
+      var v = cap.value.trim();
+      if (v === (p.caption || "")) return;
+      var was = p.caption;
+      p.caption = v;
+      var res = await fetch("/api/trips/" + encodeURIComponent(currentTripId) + "/photos/" + encodeURIComponent(p.id), {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ caption: v })
+      }).catch(function () {});
+      if (!res || !res.ok) { p.caption = was; toast("Couldn’t save that caption"); return; }
+      p.caption = (await res.json()).photo.caption;
+      photosSig = "";
+      toast("Caption saved");
+    };
+    cap.addEventListener("blur", saveCaption);
+    cap.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); cap.blur(); } });
+    sheet.querySelector("#mvPlay").addEventListener("click", function () { closeSheet(); playShow({ photoId: p.id }); });
+    sheet.querySelector("#mvDelete").addEventListener("click", async function () {
+      var ok = await confirmSheet({ title: "Delete this photo?", message: "It’s removed from the trip for everyone. This can’t be undone.", confirmLabel: "Delete photo", destructive: true });
+      if (!ok) { openViewer(p.id); return; }
+      var res = await fetch("/api/trips/" + encodeURIComponent(currentTripId) + "/photos/" + encodeURIComponent(p.id), { method: "DELETE" }).catch(function () {});
+      if (!res || !res.ok) { toast("Couldn’t delete that photo"); return; }
+      photos = photos.filter(function (x) { return x.id !== p.id; });
+      photosSig = "";
+      renderMemories(); renderMemTile();
+      toast("Photo deleted");
+    });
+  }
+
+  /* Adding photos: one at a time, each shrunk on the phone first. One at a
+     time because a phone holding a dozen full-size decodes at once runs out
+     of memory, and because the count should mean something - "Adding 3 of
+     12" - and one bad file must not stop the other eleven. */
+  var upload = { queue: [], total: 0, done: 0, added: 0, errors: [], trip: null, running: false };
+
+  $("memFile").addEventListener("change", function () {
+    var files = Array.prototype.slice.call(this.files || []);
+    this.value = "";
+    if (!files.length || !currentTripId || photosDemo) return;
+    if (upload.running && upload.trip !== currentTripId) { toast("Still adding photos to another trip"); return; }
+    if (!upload.running) upload = { queue: [], total: 0, done: 0, added: 0, errors: [], trip: currentTripId, running: false };
+    upload.queue = upload.queue.concat(files);
+    upload.total += files.length;
+    if (!upload.running) runUploads();
+  });
+
+  function renderUpload(finished) {
+    var box = $("memProgress");
+    if (upload.trip !== currentTripId) { box.hidden = true; return; }
+    box.hidden = false;
+    var pct = upload.total ? Math.round(((finished ? upload.done : Math.max(0, upload.done - 1)) / upload.total) * 100) : 0;
+    var head = finished
+      ? (upload.errors.length ? "Added " + upload.added + " of " + plural(upload.total, "photo", "photos") : plural(upload.added, "photo", "photos") + " added")
+      : "Adding " + upload.done + " of " + upload.total + "…";
+    box.innerHTML = '<div class="top"><b>' + escapeHtml(head) + '</b>' +
+        (finished ? '<button type="button" class="link-btn" id="memProgressOk" style="padding:0">OK</button>' : '') + '</div>' +
+      (finished ? '' : '<div class="progress-track"><div class="progress-fill" style="width:' + pct + '%"></div></div>') +
+      (upload.errors.length ? '<ul class="mem-errs">' + upload.errors.map(function (e) {
+        return '<li>' + escapeHtml(e.name) + ': ' + escapeHtml(e.why) + '</li>';
+      }).join("") + '</ul>' : '');
+    var okBtn = $("memProgressOk");
+    if (okBtn) okBtn.addEventListener("click", function () { box.hidden = true; box.innerHTML = ""; });
+  }
+
+  async function runUploads() {
+    upload.running = true;
+    var trip = upload.trip;
+    while (upload.queue.length) {
+      var file = upload.queue.shift();
+      upload.done++;
+      renderUpload(false);
+      try {
+        var prep = await window.PhotoTools.prepare(file);
+        var res = await fetch("/api/trips/" + encodeURIComponent(trip) + "/photos", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ full: prep.full.data, thumb: prep.thumb.data, takenAt: prep.takenAt, width: prep.full.width, height: prep.full.height })
+        });
+        var data = await res.json().catch(function () { return {}; });
+        // Signed out, or no storage here: every file after this one would
+        // fail the same way, so say it once and stop.
+        if (res.status === 401 || res.status === 503) {
+          upload.errors.push({ name: file.name || "Photo", why: res.status === 401 ? "Sign in again to add photos." : (data.error || "Photos aren’t available.") });
+          upload.done += upload.queue.length; upload.queue = [];
+          break;
+        }
+        if (!res.ok || data.error) throw new Error(data.error || "Couldn’t add it.");
+        upload.added++;
+        if (currentTripId === trip && data.photo) {
+          photos.push(data.photo); photosSig = "";
+          renderMemories(); renderMemTile();
+        }
+      } catch (e) {
+        upload.errors.push({ name: file.name || "Photo", why: (e && e.message) || "Couldn’t add it." });
+      }
+    }
+    upload.running = false;
+    renderUpload(true);
+    if (!upload.errors.length) {
+      setTimeout(function () { if (!upload.running && upload.trip === trip) { $("memProgress").hidden = true; $("memProgress").innerHTML = ""; } }, 2500);
+    }
+    if (currentTripId === trip) loadPhotos(trip);
+  }
 
   /* ---------- Itinerary ---------- */
   var dayList = $("dayList"), itineraryEmpty = $("itineraryEmpty");

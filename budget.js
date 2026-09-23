@@ -26,6 +26,21 @@ function money(v) {
   return Math.round(n * 100) / 100;
 }
 
+/** A calendar day, "2026-09-24", or null. A real day: "2026-02-30" is not
+ *  one, and a date that is not a date would sort and group as nonsense. */
+function isoDate(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v == null ? '' : v).trim());
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  if (d.getUTCFullYear() !== +m[1] || d.getUTCMonth() !== +m[2] - 1 || d.getUTCDate() !== +m[3]) return null;
+  return m[0];
+}
+
+/** Where a line's number came from, so the page can say so: typed in, read
+ *  off a receipt photo, taken from a card statement, or estimated by Claude.
+ *  A figure someone can trace is a figure someone can check. */
+const SOURCES = ['manual', 'receipt', 'card', 'estimate'];
+
 function line(l) {
   if (!l || typeof l !== 'object') return null;
   const label = clean(l.label, 80);
@@ -37,8 +52,22 @@ function line(l) {
     planned: money(l.planned),
     spent: money(l.spent),
     note: clean(l.note, 200),
+    // Both optional. Lines written before these existed read back as an
+    // undated manual line, which is what they were.
+    date: isoDate(l.date),
+    source: SOURCES.includes(l.source) ? l.source : 'manual',
   };
 }
+
+/** statement.js sorts a card charge into generic kinds shared with the
+ *  vacation app; these are this budget's categories for them. Groceries and
+ *  meals out are both Food here because that is how people budget a trip -
+ *  the vacation app splits them, which is its call. */
+const KIND_CATEGORY = {
+  food: 'Food', groceries: 'Food',
+  gas: 'Transport', transport: 'Transport',
+  lodging: 'Lodging', activities: 'Activities', shopping: 'Shopping', other: 'Other',
+};
 
 const TOOL = {
   name: 'budget_estimate',
@@ -64,4 +93,4 @@ const TOOL = {
   },
 };
 
-module.exports = { money, line, TOOL, CATEGORIES, MAX_LINES };
+module.exports = { money, line, isoDate, TOOL, CATEGORIES, SOURCES, KIND_CATEGORY, MAX_LINES };
