@@ -96,27 +96,36 @@ const DEMO_MESSAGES = [
   },
 ];
 
+// Each check leads with the price, the way runWatchCheck asks, so the
+// Watches tab can draw the example's sparklines (pricehistory.js).
 const DEMO_WATCHES = [
   {
     kind: 'flight', label: 'ATL -> LIS, Oct 1-5, TAP nonstop', criteria: 'Economy, nonstop, under $900 return',
     url: 'https://www.google.com/travel/flights', intervalHours: 24,
     lastCheckedAt: '2026-09-18T10:00:00.000Z',
-    lastResult: 'TAP nonstop is $842 return in economy - down from $1,010 last week. Booked at this price.',
+    lastResult: '$842 return on the TAP nonstop - down from $1,010 in August. Booked at this price.',
     history: [
-      { at: '2026-08-15T10:00:00.000Z', result: 'TAP nonstop $1,010 return. Delta via JFK $890 but 4h layover.' },
-      { at: '2026-08-29T10:00:00.000Z', result: 'TAP nonstop $985. No meaningful change.' },
-      { at: '2026-09-11T10:00:00.000Z', result: 'TAP nonstop dropped to $868. Worth watching one more week.' },
-      { at: '2026-09-18T10:00:00.000Z', result: 'TAP nonstop $842 return - down from $1,010 last week. Booked at this price.' },
+      { at: '2026-08-15T10:00:00.000Z', result: '$1,010 return, TAP nonstop. Delta via JFK is $890 but with a 4h layover.' },
+      { at: '2026-08-20T10:00:00.000Z', result: '$1,024 return on the TAP nonstop - up a little.' },
+      { at: '2026-08-25T10:00:00.000Z', result: '$998 return. No meaningful change.' },
+      { at: '2026-08-29T10:00:00.000Z', result: '$985 return on the TAP nonstop. No meaningful change.' },
+      { at: '2026-09-04T10:00:00.000Z', result: '$912 return - TAP has a fare sale on October dates.' },
+      { at: '2026-09-08T10:00:00.000Z', result: '$934 return. The sale fare has gone on the Oct 1 flight.' },
+      { at: '2026-09-11T10:00:00.000Z', result: '$868 return. Worth watching one more week.' },
+      { at: '2026-09-18T10:00:00.000Z', result: '$842 return on the TAP nonstop - down from $1,010 in August. Booked at this price.' },
     ],
   },
   {
     kind: 'hotel', label: 'Memmo Alfama, 4 nights', criteria: 'River-view room, breakfast included, under $260/night',
     url: 'https://www.memmohotels.com/alfama', intervalHours: 72,
     lastCheckedAt: '2026-09-16T10:00:00.000Z',
-    lastResult: 'River-view with breakfast is $238/night direct, $251 on Booking. Direct rate is the one to take.',
+    lastResult: '$238/night direct for the river-view room with breakfast, $251 on Booking. Direct rate is the one to take.',
     history: [
-      { at: '2026-08-20T10:00:00.000Z', result: 'River-view $255/night direct. Booking.com $262.' },
-      { at: '2026-09-16T10:00:00.000Z', result: 'River-view with breakfast is $238/night direct, $251 on Booking. Direct rate is the one to take.' },
+      { at: '2026-08-20T10:00:00.000Z', result: '$255/night direct for the river-view room. Booking.com $262.' },
+      { at: '2026-08-27T10:00:00.000Z', result: '$261/night direct; Booking.com has it at $259.' },
+      { at: '2026-09-03T10:00:00.000Z', result: '$249/night direct, breakfast included.' },
+      { at: '2026-09-10T10:00:00.000Z', result: '$236/night direct with breakfast - a two-day promotion.' },
+      { at: '2026-09-16T10:00:00.000Z', result: '$238/night direct for the river-view room with breakfast, $251 on Booking. Direct rate is the one to take.' },
     ],
   },
 ];
@@ -129,10 +138,24 @@ const DEMO_PACKING = [
 ].map(([text, group, checked], i) => ({ id: 'demopack' + i, text, group, checked, order: i }));
 const DEMO_BUDGET = {
   target: 3500,
+  // Some lines in euros, entered the way a receipt from Lisbon arrives, so
+  // the example shows them converted at DEMO_RATES and labelled as estimates.
   lines: [
-    ['Food', 'Meals out', 600, 180, 'Two people, about 60 euros a day'], ['Activities', 'Sintra: Pena Palace + Quinta da Regaleira', 70, 0, 'Two tickets each'],
-    ['Transport', 'Metro, trams, train to Sintra', 60, 22, 'Viva Viagem top-ups'], ['Food', 'Pasteis, coffee, snacks', 80, 31, ''],
-  ].map(([category, label, planned, spent, note], i) => ({ id: 'demoline' + i, category, label, planned, spent, note, order: i })),
+    ['Food', 'Meals out', 600, 180, 'Two people, about 60 euros a day', null, 'manual'],
+    ['Activities', 'Sintra: Pena Palace + Quinta da Regaleira', 64, 0, 'Two tickets each', 'EUR', 'manual'],
+    ['Transport', 'Metro, trams, train to Sintra', 50, 19, 'Viva Viagem top-ups', 'EUR', 'manual'],
+    ['Food', 'Pasteis de Belem', null, 12.6, 'Six pasteis and two coffees', 'EUR', 'receipt'],
+    ['Food', 'Pasteis, coffee, snacks', 80, 31, '', null, 'manual'],
+  ].map(([category, label, planned, spent, note, currency, source], i) => ({ id: 'demoline' + i, category, label, planned, spent, note, currency, source, date: null, order: i })),
+};
+
+// The example trip's exchange rate: fixed, and labelled as an example on the
+// page. Near the real euro rate of the time, but not a live number.
+const DEMO_RATES = {
+  status: 'ok', example: true, home: 'USD', local: 'EUR', rate: 1.17, rates: { EUR: 1.17 },
+  date: '2026-09-24', publishedAt: '2026-09-24T14:00:00.000Z', fetchedAt: '2026-09-24T15:00:00.000Z',
+  attribution: 'Example rate. On your own trip: European Central Bank reference rates, via Frankfurter.',
+  homeCurrencies: ['USD'],
 };
 
 // The example trip's brewery crawl. The breweries are real Lisbon craft
@@ -185,4 +208,4 @@ const DEMO_CRAWL_MENUS = {
   'demo-musa': exampleMenu([['House IPA', 'IPA', 6.2], ['Pilsner', 'Pilsner', 5], ['Red ale', 'Red ale', 5.5]]),
 };
 
-module.exports = { DEMO_ID, DEMO_TRIP, DEMO_MESSAGES, DEMO_WATCHES, DEMO_PACKING, DEMO_BUDGET, DEMO_CRAWL, DEMO_CRAWL_MENUS };
+module.exports = { DEMO_ID, DEMO_TRIP, DEMO_MESSAGES, DEMO_WATCHES, DEMO_PACKING, DEMO_BUDGET, DEMO_RATES, DEMO_CRAWL, DEMO_CRAWL_MENUS };

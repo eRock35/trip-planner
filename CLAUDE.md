@@ -62,7 +62,8 @@ need it.
   ("planning"|"locked"), days, createdAt, updatedAt, lockedAt}`. `days` is
   the itinerary once one exists — same shape as `santa-rosa-beach-trip`'s
   (`title`, `date` as an ISO string when known, `dateLabel`, `blocks` as
-  `[time, plan]` pairs, `tip`).
+  `[time, plan]` pairs, `tip`). Also `homeCurrency` (ISO 4217, default
+  USD) and `geo` (the geocoded place, with `countryCode`) - see "Live parts".
   - `trips/<id>/messages/<auto>` — chat history: `{question, answer,
     proposedChange, askedAt, answeredAt}`.
   - `trips/<id>/watches/<auto>` — monitored listings: `{kind
@@ -374,6 +375,67 @@ into a next step when it has nothing to show.
 
 Tests: `tripdates.js`, `weather.js`, `bookings.js`, `trip-bookings.js`,
 `trip-ideas.js`. Rendered at phone and desktop width before shipping.
+
+## Live parts: countdown, exchange rates, price sparklines (2026-09-25)
+
+Three things on a trip that change while you look at it. **No model call in
+any of them**, no server timer, nothing after a response.
+
+- **The countdown** is worked out in the browser by `public/live.js`
+  (`window.Live`, and `require`d by `test/live.js` - one file, so the sums the
+  page draws are the sums the tests check). It takes the trip's `dates`, the
+  itinerary, the clock and a time zone (the viewer's; tests pass one): days,
+  hours and minutes to local midnight of the first day, counted in real
+  hours across a DST change; on the first day **"Today: <first block>"** and
+  "in 4h 40m" when that block has a clock time; during the trip "Day 2 of 5".
+  Month-only dates are "About 3 weeks" / "About 7 months", measured to the
+  middle of the month, and never tick. The Overview redraws on each minute
+  boundary while it is on screen; the trips list shows a compact form
+  ("in 5 days", "Today", "Day 4 of 6", "about 7 months") and does the same.
+  `GET /api/trips` carries `dates` per trip for it. The server is never
+  polled for any of this.
+- **Exchange rates** - `fx.js`, `GET /api/trips/:id/rates[?also=GBP,JPY]`.
+  The destination's currency is the stored `geo.countryCode` (Nominatim's,
+  kept since the Overview shipped) through a static ISO country -> currency
+  map; a place stored without the key is looked up once more through the
+  one-a-second path and the answer kept. Rates are the **ECB's reference
+  rates via Frankfurter** (`api.frankfurter.dev/v1/latest?base=USD`): free,
+  no key, no non-commercial clause - the weather.js reasoning. **It is sent
+  a base currency code and nothing else.** Cached per base in memory for six
+  hours, a failure remembered for ten minutes, concurrent asks share one
+  request; not Firestore, because the source has no quota to protect. Every
+  failure is a 200 whose `status` (`unavailable`, `unsupported`,
+  `no-currency`, `same`) hides the chip. The ECB publishes about 30
+  currencies; a destination outside them (Vietnam, Morocco, Costa Rica) gets
+  no chip, and a budget line in one is left out of the totals and says so.
+  - The Overview chip: "€1 = $1.17 · updated 8h ago · an estimate" (or "$1 =
+    ¥150" for small units), tapping opens a two-way converter.
+  - **Home currency** is `trip.homeCurrency` (Details → Budget currency,
+    USD by default, only currencies the ECB publishes). **A line with no
+    `currency` is in the home currency**, which is what every older line was.
+  - **Budget lines keep `currency`** (`budget.line()`); a receipt's currency
+    is saved on its line instead of the old "change it to dollars" warning;
+    the add row offers the destination's currency; Claude's estimates are
+    stamped `USD` because that is what the tool asks for. `Live.convertBudget`
+    counts every line in the home currency, labels the result "≈ ... est." and
+    says which lines and rate it used.
+- **Price sparklines** - `pricehistory.js`. Each watch's `history` (≤ 20) is
+  read into prices: the **first amount with a currency mark** in each check's
+  sentence, parsed by `budget.money()`. Bare numbers never count (dates,
+  flight numbers, "4h"); an entry with no price is skipped; one currency per
+  line. `GET /watches` adds `price: {currency, points, trend}` per watch,
+  computed on read and never stored - `null` under two prices, and then no
+  chart. The Watches tab draws the line, a lowest-seen marker and "Down $168
+  (17%) since Aug 15"; the Overview has a tile for the three biggest moves.
+  `runWatchCheck`'s prompt now asks the check to **lead with the price**, so
+  the first amount is the price rather than "down from $1,010".
+- **The example trip** has fixed data for all three: `demo.DEMO_RATES`
+  (labelled "Example rate"), euro lines in `DEMO_BUDGET`, and longer watch
+  histories. **Members** see the same as the owner; strangers 404.
+
+Tests: `test/live.js`, `test/fx.js`, `test/pricehistory.js` (Frankfurter and
+Nominatim faked at fetch - the sandbox cannot reach either). Rendered at 390px
+and 1280px, light and dark; every new text colour measured at ≥ 5.5:1.
 
 ## Packing and Budget (2026-09-23)
 

@@ -26,6 +26,10 @@
     --sheet-shadow: 0 -8px 40px rgba(0,0,0,0.18);
     --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px);
     --nav-h: 44px; --tab-h: 50px; --kb: 0px;
+    /* Text colours for the live parts (countdown pills, rates, price
+       badges), each at least 4.5:1 on the card and on its own soft fill. */
+    --tint-text: #0059B8; --ok-text: #1A6E2E; --bad-text: #B3261E; --label-2s: #55555B;
+    --ok-soft: rgba(52,199,89,0.14); --bad-soft: rgba(255,59,48,0.12);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -36,6 +40,8 @@
       --bar: rgba(22,22,24,0.78); --bar-border: rgba(255,255,255,0.12);
       --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 10px 24px rgba(0,0,0,0.45);
       --sheet-shadow: 0 -8px 40px rgba(0,0,0,0.6);
+      --tint-text: #6CB4FF; --ok-text: #4ADE6D; --bad-text: #FF8A80; --label-2s: #AEAEB5;
+      --ok-soft: rgba(50,215,75,0.16); --bad-soft: rgba(255,69,58,0.18);
     }
   }
   :root[data-theme="dark"] {
@@ -46,6 +52,8 @@
     --bar: rgba(22,22,24,0.78); --bar-border: rgba(255,255,255,0.12);
     --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 10px 24px rgba(0,0,0,0.45);
     --sheet-shadow: 0 -8px 40px rgba(0,0,0,0.6);
+    --tint-text: #6CB4FF; --ok-text: #4ADE6D; --bad-text: #FF8A80; --label-2s: #AEAEB5;
+    --ok-soft: rgba(50,215,75,0.16); --bad-soft: rgba(255,69,58,0.18);
   }
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -299,6 +307,65 @@
   .idea-meta { font-size: 12.5px; color: var(--label-2); }
   .ov-notes { white-space: pre-wrap; font-size: 15px; line-height: 1.45; -webkit-user-select: text; user-select: text; }
   .ov-empty { color: var(--label-2); font-size: 14px; line-height: 1.45; }
+
+
+  /* ---------- Live parts: countdown, rates, price sparklines ---------- */
+  .cd-first { font-size: 17px; font-weight: 600; line-height: 1.35; max-width: 34ch; margin: 0 auto; text-wrap: balance; overflow-wrap: anywhere; }
+  .cd-first b { font-weight: 800; }
+  .cd-time { font-variant-numeric: tabular-nums; color: #9FD0FF; }
+  .cd-in { display: inline-block; align-self: center; margin-top: 8px; font-size: 13px; font-weight: 600; color: #fff; background: rgba(255,255,255,.16); border-radius: 999px; padding: 3px 10px; font-variant-numeric: tabular-nums; }
+  .trip-cd { display: inline-block; vertical-align: 2px; margin-left: 6px; font-size: 12px; font-weight: 600; letter-spacing: .01em; white-space: nowrap;
+             color: var(--label-2s); background: var(--fill); border-radius: 999px; padding: 1px 8px; font-variant-numeric: tabular-nums; }
+  .trip-cd.now { color: var(--ok-text); background: var(--ok-soft); }
+  body.dk #tripsList .trip-cd { margin-left: 4px; }
+
+  .ov-fx { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: none; font: inherit; color: inherit; cursor: pointer;
+           background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 10px 14px; min-height: 48px; }
+  .ov-fx:active { transform: scale(.99); }
+  .fx-icon { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; background: var(--tint-soft); color: var(--tint-text); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; }
+  .fx-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+  .fx-rate { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .fx-when { font-size: 12.5px; color: var(--label-2s); }
+  .fx-go { flex: 0 0 auto; font-size: 13px; font-weight: 600; color: var(--tint-text); }
+  .fx-conv { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .fx-table { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 12px; background: var(--card); border-radius: 14px; overflow: hidden; font-variant-numeric: tabular-nums; }
+  .fx-table span { padding: 8px 14px; font-size: 15px; border-top: 1px solid var(--sep); }
+  .fx-table span:nth-child(-n+2) { border-top: none; }
+  .fx-table span:nth-child(odd) { color: var(--label-2s); }
+  .fx-table span:nth-child(even) { text-align: right; font-weight: 600; }
+  .fx-credit { font-size: 12.5px; color: var(--label-2s); line-height: 1.45; margin: 12px 2px 0; }
+
+  .bg-fx { font-size: 12.5px; line-height: 1.45; color: var(--label-2s); background: var(--fill); border-radius: 10px; padding: 7px 10px; }
+  .bg-fx.warn { color: var(--bad-text); background: var(--bad-soft); }
+  .bg-row .lbl span.src.fx { background: var(--tint-soft); color: var(--tint-text); }
+  .bg-row .lbl span.src.est { background: var(--fill-2); color: var(--label); }
+  .bg-row .lbl .conv { color: var(--label-2s); }
+  .bg-cur { flex: 0 0 auto; font-size: 13px; font-weight: 600; color: var(--label-2s); margin-right: -4px; }
+  .pk-add-row #bgCur { flex: 0 1 92px; }
+
+  .w-price { margin: 2px 0 10px; }
+  .w-now { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+  .w-last { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  .w-badge { font-size: 12.5px; font-weight: 700; border-radius: 999px; padding: 2px 9px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .w-badge.down { color: var(--ok-text); background: var(--ok-soft); }
+  .w-badge.up { color: var(--bad-text); background: var(--bad-soft); }
+  .w-badge.flat { color: var(--label-2s); background: var(--fill); }
+  .spark { display: block; width: 100%; height: auto; overflow: visible; }
+  .spark .s-area { fill: var(--tint); opacity: .12; }
+  .spark .s-line { fill: none; stroke: var(--tint); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .spark .s-dot { fill: var(--tint); }
+  .spark .s-low { fill: var(--ok-text); stroke: var(--card); stroke-width: 2; }
+  .w-spark { margin: 8px 0 4px; }
+  .w-low { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--label-2s); font-variant-numeric: tabular-nums; }
+  .w-low b { color: var(--ok-text); font-weight: 700; }
+
+  .ov-watch { grid-column: 1 / -1; gap: 0; padding: 12px 14px 6px; }
+  .ow-row { display: grid; grid-template-columns: minmax(0, 1fr) 84px auto; align-items: center; gap: 10px; width: 100%; padding: 8px 0; }
+  .ow-row + .ow-row { border-top: 1px solid var(--sep); }
+  .ow-name { display: block; font-size: 14.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ow-sub { display: block; font-size: 12px; font-weight: 600; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ow-sub.down { color: var(--ok-text); } .ow-sub.up { color: var(--bad-text); } .ow-sub.flat { color: var(--label-2s); }
+  .ow-price { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
 
   /* ---------- tab bar: More on a phone, everything in the sidebar ---------- */
   .tab.in-more { display: none; }
@@ -909,11 +976,15 @@
         <section class="ov-weather" id="ovWeather" hidden aria-label="Weather"></section>
         <section class="ov-countdown" id="ovCountdown" hidden aria-label="Countdown"></section>
       </div>
+      <!-- What the money there is worth. Only for a trip abroad, and only
+           when a rate came back; tap for a converter. -->
+      <button type="button" class="ov-fx" id="ovFx" hidden></button>
 
       <div class="ov-tiles">
         <button type="button" class="ov-tile" id="ovPackTile"><span class="t-label">Packing</span><span class="t-value" id="ovPackVal">&ndash;</span><span class="t-bar"><i id="ovPackBar"></i></span></button>
         <button type="button" class="ov-tile" id="ovBudgetTile"><span class="t-label">Budget</span><span class="t-value" id="ovBudgetVal">&ndash;</span><span class="t-sub" id="ovBudgetSub"></span></button>
         <button type="button" class="ov-tile ov-crawl" id="ovCrawlTile" hidden><span class="t-label" id="ovCrawlLabel">Beer crawl</span><span class="t-value" id="ovCrawlVal"></span><span class="t-sub" id="ovCrawlSub"></span></button>
+        <button type="button" class="ov-tile ov-watch" id="ovWatchTile" hidden><span class="t-label">Price watches</span><span id="ovWatchRows" style="display:block;width:100%"></span></button>
         <section class="ov-tile ov-mem" id="ovMemTile" hidden aria-label="Memories">
           <button type="button" class="mem-open" id="ovMemOpen"><span class="t-label">Memories</span><span class="t-value" id="ovMemVal">&ndash;</span><span class="t-sub" id="ovMemSub"></span><span class="mem-strip" id="ovMemStrip"></span></button>
           <button type="button" class="btn btn-secondary btn-sm mem-tile-play" id="ovMemPlay" hidden><svg class="i-play" aria-hidden="true"><use href="#i-play"/></svg>Play</button>
@@ -1015,6 +1086,7 @@
           <select id="bgCat"></select>
           <input id="bgLabel" placeholder="What for" autocomplete="off" maxlength="80">
           <input id="bgPlanned" placeholder="$ planned" inputmode="decimal" autocomplete="off">
+          <select id="bgCur" aria-label="Currency" hidden></select>
           <button type="button" class="btn btn-primary btn-sm" id="bgAddBtn">Add</button>
         </div>
       </div>
@@ -1096,6 +1168,7 @@
         <div class="field"><label for="dName">Trip name</label><input id="dName" autocomplete="off" enterkeyhint="next"></div>
         <div class="field"><label for="dDest">Destination</label><input id="dDest" autocomplete="off" enterkeyhint="next"></div>
         <div class="field"><label for="dDates">When</label><input id="dDates" autocomplete="off" enterkeyhint="next"></div>
+        <div class="field"><label for="dCur">Budget currency</label><select id="dCur"></select></div>
         <div class="field"><label for="dNotes">Notes</label><textarea id="dNotes" rows="4" placeholder="Confirmation numbers, ideas, who's coming…"></textarea></div>
       </div>
       <button type="button" class="btn btn-secondary" id="dSaveBtn">Save details</button>
@@ -1145,6 +1218,9 @@
      Shared with the vacation app; see the file for why photos are shrunk
      before they leave the phone. -->
 <script src="/photo-tools.js"></script>
+<!-- The countdown, the budget across currencies, price sparklines: plain
+     functions shared with test/live.js. -->
+<script src="/live.js"></script>
 
 <!-- Sheet contents live here until opened -->
 <div id="sheetStash" hidden>
@@ -2135,6 +2211,27 @@
   }
   $("shareBtn").addEventListener("click", openShareSheet);
 
+  /* The compact countdown on each trip in the list - "in 6 days", "Today",
+     "Day 2 of 5" - from the same Live.countdown as the Overview, redrawn on
+     the minute while the list is on screen. Finished trips say nothing. */
+  var listCountdowns = [], tripListTimer = null;
+  function stopTripListTick() { if (tripListTimer) { clearTimeout(tripListTimer); tripListTimer = null; } }
+  function tickTripList() {
+    stopTripListTick();
+    if (currentTripId || !window.Live) return;
+    var els = document.querySelectorAll("#tripsList [data-cd]");
+    if (!els.length) return;
+    var now = Date.now();
+    Array.prototype.forEach.call(els, function (el) {
+      var st = Live.countdown(listCountdowns[Number(el.getAttribute("data-cd"))], now);
+      var txt = Live.compact(st);
+      el.textContent = txt || "";
+      el.hidden = !txt;
+      el.className = "trip-cd" + (st && (st.kind === "travel" || st.kind === "during") ? " now" : "");
+    });
+    if (!document.hidden) tripListTimer = setTimeout(tickTripList, 60000 - (now % 60000) + 150);
+  }
+
   async function loadTripsList() {
     var list = $("tripsList");
     list.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
@@ -2157,6 +2254,7 @@
       }
       var groups = [["Planning", trips.filter(function (t) { return t.status !== "locked"; })], ["Locked in", trips.filter(function (t) { return t.status === "locked"; })]];
       list.innerHTML = "";
+      listCountdowns = [];
       var planningList = null;
       groups.forEach(function (g, gi) {
         // Planning is drawn even when empty, because "Start another trip"
@@ -2173,7 +2271,10 @@
           // Whose trip it is, when it is not only yours.
           var shared = t.role === "member" ? "Shared by " + personName(t.sharedBy)
             : (t.sharedWith && t.sharedWith.length ? "Shared with " + t.sharedWith.map(personName).join(", ") : "");
-          btn.innerHTML = '<div class="row-main"><div class="row-title">' + escapeHtml(t.name) + '</div><div class="row-sub">' + escapeHtml(sub + extra) + '</div>' +
+          listCountdowns.push({ dates: t.dates });
+          btn.innerHTML = '<div class="row-main"><div class="row-title">' + escapeHtml(t.name) +
+            (t.dates ? ' <span class="trip-cd" data-cd="' + (listCountdowns.length - 1) + '" hidden></span>' : '') +
+            '</div><div class="row-sub">' + escapeHtml(sub + extra) + '</div>' +
             (shared ? '<div class="row-sub" style="color:var(--tint)">' + escapeHtml(shared) + '</div>' : '') + '</div>' +
             (t.status === "locked" ? '<span class="badge locked">Locked</span>' : '') + svgUse("i-chev-r", "row-chevron");
           btn.addEventListener("click", function () { goToTrip(t.id); });
@@ -2196,6 +2297,7 @@
         '<div class="row-sub">A name and a rough idea of where and when</div></div>';
       add.addEventListener("click", function () { newTripBtn.click(); });
       planningList.appendChild(add);
+      tickTripList();
     } catch (e) {
       list.innerHTML = '<div class="empty"><b>Couldn’t load trips</b><span>Check your connection and pull down to try again.</span></div>';
     }
@@ -2256,6 +2358,7 @@
     $("shareBtn").hidden = true;
     clearOverview();
     packItems = []; budgetData = { target: null, lines: [], booked: [] };
+    fxData = null; $("ovFx").hidden = true; $("ovWatchTile").hidden = true;
     ["pkSuggest", "bgSuggest", "bgReceipt"].forEach(function (id) { $(id).hidden = true; $(id).innerHTML = ""; });
     setStatus($("bgImportStatus"), ""); $("bgTopUpRow").hidden = true;
     resetMemories();
@@ -2282,6 +2385,7 @@
     $("dDest").value = currentTrip.destination || "";
     $("dDates").value = currentTrip.dateRange || "";
     $("dNotes").value = currentTrip.notes || "";
+    fillHomeCurrencies(null);
     $("lockBtn").hidden = currentTrip.status === "locked";
     $("unlockBtn").hidden = currentTrip.status !== "locked";
 
@@ -2290,7 +2394,9 @@
     renderOverview();
     loadWeather(id);
     loadPacking(id);
-    loadBudget(id);
+    // Rates after the budget, so one request covers the destination's
+    // currency and any other a budget line is in.
+    loadBudget(id).then(function () { loadRates(id); });
     loadPhotos(id);
     loadCrawls(id);
     refreshChat();
@@ -2336,60 +2442,63 @@
     return d.toLocaleDateString(undefined, withWeekday ? { weekday: "short", month: "short", day: "numeric" } : { month: "short", day: "numeric" });
   }
 
+  /* The countdown is worked out by Live.countdown (public/live.js, tested in
+     test/live.js) from the trip's dates and the phone's clock, and redrawn on
+     each minute boundary while the Overview is on screen. The server is never
+     asked: the only moving part is the time, and the phone has that. */
+  function cdUnit(n, u) { return '<div class="cd-unit"><span class="n">' + n + '</span><span class="u">' + u + '</span></div>'; }
+  function spanText(ms) {
+    var min = Math.max(1, Math.round(ms / 60000)), h = Math.floor(min / 60);
+    return h ? h + "h " + (min % 60) + "m" : min + " min";
+  }
   function renderCountdown() {
-    var box = $("ovCountdown"), dates = currentTrip.dates;
+    var box = $("ovCountdown");
     stopCountdown();
-    if (!dates) { box.hidden = true; return; }
+    var st = currentTrip && window.Live ? Live.countdown(currentTrip, Date.now()) : null;
+    if (!st) { box.hidden = true; return; }
     box.hidden = false;
-    var today = todayIso(), place = currentTrip.destination || currentTrip.name || "your trip";
-    if (dates.precision === "month") {
+    var dates = currentTrip.dates, place = currentTrip.destination || currentTrip.name || "your trip";
+    if (st.kind === "month" || st.kind === "month-now") {
       // "December 2026" is a month, not a date: say about how long, never
       // tick down to a midnight nobody chose.
-      var days = daysBetween(today, dates.start);
-      var weeks = Math.round(days / 7), months = Math.round(days / 30.4);
-      var words = days <= 0 ? "This month" : months >= 2 ? "About " + months + " months" : weeks >= 2 ? "About " + weeks + " weeks" : "Soon";
       box.innerHTML = '<div class="cd-label">' + escapeHtml(place) + ' · ' + escapeHtml(currentTrip.dateRange || "") + '</div>' +
-        '<div class="cd-big">' + escapeHtml(words) + '</div>' +
+        '<div class="cd-big">' + escapeHtml(st.words) + '</div>' +
         '<div class="cd-label" style="margin:8px 0 0">Add exact dates under Details for a real countdown</div>';
-      return;
-    }
-    if (today < dates.start) {
+    } else if (st.kind === "before") {
       box.innerHTML = '<div class="cd-label">Until ' + escapeHtml(place) + ' · ' + escapeHtml(niceDay(dates.start, true)) + '</div>' +
-        '<div class="cd-grid">' +
-          '<div class="cd-unit"><span class="n" id="cdD">0</span><span class="u">days</span></div>' +
-          '<div class="cd-unit"><span class="n" id="cdH">00</span><span class="u">hrs</span></div>' +
-          '<div class="cd-unit"><span class="n" id="cdM">00</span><span class="u">min</span></div>' +
-          '<div class="cd-unit"><span class="n" id="cdS">00</span><span class="u">sec</span></div>' +
+        '<div class="cd-grid" role="timer" aria-label="' + st.d + ' days, ' + st.h + ' hours, ' + st.m + ' minutes">' +
+          cdUnit(st.d, st.d === 1 ? "day" : "days") + cdUnit(String(st.h).padStart(2, "0"), "hrs") + cdUnit(String(st.m).padStart(2, "0"), "min") +
         '</div>';
-      tick();
-      if (currentTab === "overview") startCountdown();
-      return;
-    }
-    if (today <= dates.end) {
-      var total = daysBetween(dates.start, dates.end) + 1, n = daysBetween(dates.start, today) + 1;
+    } else if (st.kind === "travel") {
+      var f = st.first;
+      box.innerHTML = '<div class="cd-label">Travel day · ' + escapeHtml(place) + '</div>' +
+        (f ? '<div class="cd-first"><b>Today:</b> ' + (f.time ? '<span class="cd-time">' + escapeHtml(f.time) + '</span> ' : '') + escapeHtml(f.plan) + '</div>' +
+             (f.inMs ? '<div class="cd-in">in ' + escapeHtml(spanText(f.inMs)) + '</div>' : '')
+           : '<div class="cd-big">Today’s the day</div>') +
+        (st.total > 1 ? '<div class="cd-bar"><i style="width:' + Math.round(100 / st.total) + '%"></i></div>' : '');
+    } else if (st.kind === "during") {
       box.innerHTML = '<div class="cd-label">You’re in ' + escapeHtml(place) + '</div>' +
-        '<div class="cd-big">' + (total > 1 ? "Day " + n + " of " + total : "Today’s the day") + '</div>' +
-        '<div class="cd-bar"><i style="width:' + Math.round((n / total) * 100) + '%"></i></div>';
-      return;
+        '<div class="cd-big">Day ' + st.n + ' of ' + st.total + '</div>' +
+        '<div class="cd-bar"><i style="width:' + Math.round((st.n / st.total) * 100) + '%"></i></div>';
+    } else {
+      box.innerHTML = '<div class="cd-label">' + escapeHtml(place) + '</div>' +
+        '<div class="cd-big">' + (st.ago <= 1 ? "Just got back" : "Back " + st.ago + " days") + '</div>' +
+        '<div class="cd-label" style="margin:8px 0 0">Hope it was a good one.</div>';
     }
-    var ago = daysBetween(dates.end, today);
-    box.innerHTML = '<div class="cd-label">' + escapeHtml(place) + '</div>' +
-      '<div class="cd-big">' + (ago <= 1 ? "Just got back" : "Back " + ago + " days") + '</div>' +
-      '<div class="cd-label" style="margin:8px 0 0">Hope it was a good one.</div>';
+    if (currentTab === "overview" && !document.hidden) {
+      cdTimer = setTimeout(function () { cdTimer = null; renderCountdown(); }, Live.msToNextMinute(st) + 150);
+    }
   }
-  function tick() {
-    var dates = currentTrip && currentTrip.dates;
-    var el = $("cdD"); if (!el || !dates) return;
-    var ms = Math.max(0, dayStart(dates.start) - Date.now());
-    var sec = Math.floor(ms / 1000);
-    el.textContent = Math.floor(sec / 86400);
-    $("cdH").textContent = String(Math.floor(sec / 3600) % 24).padStart(2, "0");
-    $("cdM").textContent = String(Math.floor(sec / 60) % 60).padStart(2, "0");
-    $("cdS").textContent = String(sec % 60).padStart(2, "0");
-    if (ms === 0) renderCountdown();
-  }
-  function startCountdown() { if (!cdTimer && $("cdD")) cdTimer = setInterval(tick, 1000); }
-  function stopCountdown() { if (cdTimer) { clearInterval(cdTimer); cdTimer = null; } }
+  // Only the trip on screen: a tab switch during a load must not draw the
+  // previous trip's countdown.
+  function startCountdown() { if (!cdTimer && currentTrip && String(currentTrip.id) === String(currentTripId)) renderCountdown(); }
+  function stopCountdown() { if (cdTimer) { clearTimeout(cdTimer); cdTimer = null; } }
+  // A phone put away and taken out again: timers were frozen, so redraw now.
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { stopCountdown(); stopTripListTick(); return; }
+    if (currentTripId && currentTab === "overview") renderCountdown();
+    if (!currentTripId) tickTripList();
+  });
 
   function renderNextUp() {
     var group = $("ovNextGroup"), box = $("ovNext"), days = itineraryDays || [];
@@ -2817,6 +2926,88 @@
     if (n == null || isNaN(n)) return "";
     return Number(n).toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: Number(n) % 1 ? 2 : 0 });
   }
+  /* ---------- Exchange rates ----------
+   * A trip abroad gets the destination's currency and a rate from the server
+   * (GET /rates, fx.js): the ECB's reference rates, which the page calls
+   * estimates wherever it uses them. No rate, no chip - and a budget line in
+   * a currency with no rate is left out of the totals and says so, never
+   * counted as if it were home money. */
+  var HOME_CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "NZD", "CHF", "JPY", "MXN", "SEK", "NOK", "DKK", "ISK", "PLN", "CZK",
+    "HUF", "RON", "TRY", "BRL", "CNY", "HKD", "SGD", "INR", "IDR", "ILS", "KRW", "MYR", "PHP", "THB", "ZAR"];
+  var fxData = null;
+  function homeCur() { return (currentTrip && currentTrip.homeCurrency) || "USD"; }
+  /** Money in the trip's home currency, or in `cur`. */
+  function hmoney(n, cur) { return Live.fmtMoney(n, cur || homeCur()); }
+  function fxRates() { return (fxData && fxData.rates) || {}; }
+  function fillHomeCurrencies(list) {
+    var sel = $("dCur"), cur = homeCur();
+    list = (list && list.length ? list : HOME_CURRENCIES).slice();
+    if (list.indexOf(cur) < 0) list.unshift(cur);
+    sel.innerHTML = list.map(function (c) { return '<option' + (c === cur ? " selected" : "") + '>' + escapeHtml(c) + '</option>'; }).join("");
+    sel.disabled = isDemo();
+  }
+  /** The currencies this budget's lines are in, other than home. */
+  function lineCurrencies() {
+    var out = [], home = homeCur();
+    (budgetData.lines || []).forEach(function (l) { if (l.currency && l.currency !== home && out.indexOf(l.currency) < 0) out.push(l.currency); });
+    return out;
+  }
+  async function loadRates(id) {
+    var also = lineCurrencies();
+    try {
+      var res = await fetch(tripApi("/rates") + (also.length ? "?also=" + encodeURIComponent(also.join(",")) : ""));
+      if (!res.ok || currentTripId !== id) return;
+      fxData = await res.json();
+    } catch (e) { fxData = null; }
+    if (currentTripId !== id) return;
+    if (fxData && fxData.homeCurrencies && !isDemo()) fillHomeCurrencies(fxData.homeCurrencies);
+    renderFxChip();
+    renderBudget();
+  }
+  /** "updated 3h ago", or "rate of Fri, Sep 25" once it is more than a day
+   *  old (a weekend: the ECB publishes on working days). */
+  function fxWhen(d) {
+    if (d.example) return "Example rate";
+    var t = Date.parse(d.publishedAt || "");
+    if (isNaN(t)) return "";
+    var h = Math.max(0, Math.round((Date.now() - t) / 3600000));
+    if (h < 1) return "updated just now";
+    if (h < 30) return "updated " + h + "h ago";
+    return "rate of " + niceDay(d.date, true);
+  }
+  function renderFxChip() {
+    var chip = $("ovFx"), d = fxData;
+    if (!d || d.status !== "ok" || !(d.rate > 0)) { chip.hidden = true; return; }
+    chip.hidden = false;
+    var pair = Live.fxPair(d.rate, d.local, d.home);
+    chip.setAttribute("aria-label", "Exchange rate, " + pair + ", " + fxWhen(d) + ". Open the converter.");
+    chip.innerHTML = '<span class="fx-icon" aria-hidden="true">' + escapeHtml(Live.symbol(d.local).slice(0, 3)) + '</span>' +
+      '<span class="fx-main"><span class="fx-rate">' + escapeHtml(pair) + '</span>' +
+        '<span class="fx-when">' + escapeHtml(fxWhen(d)) + ' · an estimate</span></span>' +
+      '<span class="fx-go">Convert</span>';
+  }
+  $("ovFx").addEventListener("click", function () {
+    var d = fxData; if (!d || !d.rate) return;
+    var loc = d.local, home = d.home, rate = d.rate;
+    var sym = Live.symbol;
+    var body = '<p class="sheet-lede">' + escapeHtml(Live.fmtMoney(1, loc)) + ' is about ' + escapeHtml(Live.fmtMoney(Math.round(rate * 100) / 100, home)) +
+        ' — the European Central Bank’s reference rate' + (d.date ? ' of ' + escapeHtml(niceDay(d.date, true)) : '') + '. A card or a counter will charge a little more.</p>' +
+      '<div class="rc-grid fx-conv">' +
+        '<label class="rc-field"><span>' + escapeHtml(loc) + ' ' + escapeHtml(sym(loc)) + '</span><input id="fxLocal" inputmode="decimal" autocomplete="off" value="20"></label>' +
+        '<label class="rc-field"><span>' + escapeHtml(home) + ' ' + escapeHtml(sym(home)) + '</span><input id="fxHome" inputmode="decimal" autocomplete="off"></label>' +
+      '</div>' +
+      '<div class="fx-table">' + [5, 10, 20, 50, 100].map(function (n) {
+        return '<span>' + escapeHtml(Live.fmtMoney(n, loc)) + '</span><span>' + escapeHtml(Live.fmtMoney(Math.round(n * rate * 100) / 100, home)) + '</span>';
+      }).join("") + '</div>' +
+      '<p class="fx-credit">' + escapeHtml(d.attribution || "") + '</p>';
+    var sheet = openSheet({ title: loc + " to " + home, body: body });
+    var a = sheet.querySelector("#fxLocal"), b = sheet.querySelector("#fxHome");
+    var num = function (v) { var n = Number(String(v).replace(/[^0-9.]/g, "")); return isFinite(n) ? n : 0; };
+    var r2 = function (n) { return (Math.round(n * 100) / 100).toFixed(2); };
+    a.addEventListener("input", function () { b.value = a.value.trim() ? r2(num(a.value) * rate) : ""; });
+    b.addEventListener("input", function () { a.value = b.value.trim() ? r2(num(b.value) / rate) : ""; });
+    b.value = r2(20 * rate);
+  });
 
   async function loadBudget(id) {
     try {
@@ -2827,30 +3018,47 @@
     } catch (e) {}
   }
 
+  /** Everything counted in the home currency: a line in euros at the day's
+   *  rate (Live.convertBudget, tested in test/live.js). */
   function budgetTotals() {
-    var booked = (budgetData.booked || []).reduce(function (a, b) { return a + (b.total || 0); }, 0);
-    var planned = 0, spent = 0;
-    (budgetData.lines || []).forEach(function (l) { planned += l.planned || 0; spent += l.spent || 0; });
-    return { booked: booked, planned: planned, spent: spent, expected: booked + planned, sofar: booked + spent, target: budgetData.target };
+    var t = Live.convertBudget(budgetData.lines || [], budgetData.booked || [], { home: homeCur(), rates: fxRates() });
+    t.target = budgetData.target;
+    return t;
   }
 
   function renderBudget() {
-    var t = budgetTotals(), demoTrip = isDemo();
+    var t = budgetTotals(), demoTrip = isDemo(), home = homeCur();
     var ceiling = t.target || t.expected || 0;
     var pct = function (n) { return ceiling ? Math.min(100, (n / ceiling) * 100) : 0; };
     var over = t.target && t.sofar > t.target;
+    // Lines in another currency are counted at the day's rate, and the
+    // summary says so - the totals are estimates the moment one is in them.
+    var fxNote = "";
+    if (t.converted) {
+      var rates = fxRates();
+      fxNote += '<div class="bg-fx">Includes ' + plural(t.converted, "line", "lines") + ' in ' + escapeHtml(t.convertedFrom.join(", ")) +
+        ', counted at ' + t.convertedFrom.map(function (c) { return escapeHtml(Live.fxPair(rates[c], c, home)); }).join(", ") +
+        (fxData && fxData.example ? ' (an example rate)' : fxData && fxData.date ? ' (ECB reference rate, ' + escapeHtml(niceDay(fxData.date, true)) + ')' : '') +
+        '. Totals are estimates.</div>';
+    }
+    if (t.uncounted) {
+      fxNote += '<div class="bg-fx warn">' + plural(t.uncounted, "line isn’t", "lines aren’t") + ' counted: no exchange rate for ' +
+        escapeHtml(t.lines.filter(function (l) { return l.uncounted; }).map(function (l) { return l.cur; }).filter(function (c, i, a) { return a.indexOf(c) === i; }).join(", ")) +
+        ' right now.</div>';
+    }
     $("bgSummary").innerHTML =
-      '<div class="bg-top"><div><div class="t-label">Booked + spent</div><div class="bg-big">' + money(t.sofar) + '</div></div>' +
+      '<div class="bg-top"><div><div class="t-label">Booked + spent' + (t.estimated ? ' · est.' : '') + '</div><div class="bg-big">' + (t.estimated ? '≈ ' : '') + hmoney(t.sofar) + '</div></div>' +
         '<div style="text-align:right"><div class="t-label">Target</div>' +
-        (demoTrip ? '<div class="g-amt">' + (t.target ? money(t.target) : "None") + '</div>'
-                  : '<button type="button" class="bg-target" id="bgTargetBtn">' + (t.target ? money(t.target) : "Set a target") + '</button>') + '</div></div>' +
+        (demoTrip ? '<div class="g-amt">' + (t.target ? hmoney(t.target) : "None") + '</div>'
+                  : '<button type="button" class="bg-target" id="bgTargetBtn">' + (t.target ? hmoney(t.target) : "Set a target") + '</button>') + '</div></div>' +
       '<div class="bg-bar"><i class="booked" style="width:' + pct(t.sofar) + '%"></i><i class="spent" style="left:' + pct(t.booked) + '%;width:' + Math.max(0, pct(t.sofar) - pct(t.booked)) + '%"></i>' +
         (over ? '<i class="over" style="width:100%;opacity:.25"></i>' : '') + '</div>' +
-      '<div class="bg-legend"><span><i style="background:var(--tint)"></i>Booked ' + money(t.booked) + '</span><span><i style="background:var(--green)"></i>Spent ' + money(t.spent) + '</span>' +
-        '<span>Planned ' + money(t.planned) + ' more</span>' + (t.target ? '<span>' + (over ? "Over by " + money(t.sofar - t.target) : money(Math.max(0, t.target - t.expected)) + " left after plans") + '</span>' : '') + '</div>';
+      '<div class="bg-legend"><span><i style="background:var(--tint)"></i>Booked ' + hmoney(t.booked) + '</span><span><i style="background:var(--green)"></i>Spent ' + hmoney(t.spent) + '</span>' +
+        '<span>Planned ' + hmoney(t.planned) + ' more</span>' + (t.target ? '<span>' + (over ? "Over by " + hmoney(t.sofar - t.target) : hmoney(Math.max(0, t.target - t.expected)) + " left after plans") + '</span>' : '') + '</div>' +
+      fxNote;
     var tb = $("bgTargetBtn");
     if (tb) tb.addEventListener("click", async function () {
-      var v = window.prompt("Budget target for this trip, in dollars", t.target || "");
+      var v = window.prompt("Budget target for this trip, in " + home, t.target || "");
       if (v === null) return;
       var res = await fetch(tripApi("/budget/target"), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target: v }) });
       if (res.ok) { budgetData.target = (await res.json()).target; renderBudget(); }
@@ -2859,10 +3067,10 @@
     var booked = budgetData.booked || [];
     $("bgBookedGroup").hidden = !booked.length;
     $("bgBooked").innerHTML = booked.map(function (b) {
-      return '<div class="grow"><span class="g-label">' + (BOOKING_ICON[b.kind] || "") + ' ' + escapeHtml(b.title) + '</span><span class="g-value g-amt">' + money(b.total) + '</span></div>';
+      return '<div class="grow"><span class="g-label">' + (BOOKING_ICON[b.kind] || "") + ' ' + escapeHtml(b.title) + '</span><span class="g-value g-amt">' + hmoney(b.total) + '</span></div>';
     }).join("");
 
-    var lines = budgetData.lines || [];
+    var lines = t.lines;
     if (!lines.length) {
       $("bgLines").innerHTML = '<div class="ov-card ov-cta"><p>' + (demoTrip ? "No spending lines on the example." :
         "Nothing here yet. Scan a receipt or import your card statement above, add lines below — groceries, dinners out, the boat tour — or let Claude estimate them. Bookings with a price are counted above already.") + '</p></div>';
@@ -2873,25 +3081,37 @@
         var ls = lines.filter(function (l) { return l.category === c; });
         return '<div class="section-header" style="margin-top:4px">' + escapeHtml(c) + '</div><div class="bg-cat">' + ls.map(function (l) {
           // Where the number came from, and when: a receipt or a card charge
-          // says so, so a figure can be traced back and checked.
+          // says so, so a figure can be traced back and checked. A line in
+          // another currency keeps its own amount and shows the home one
+          // beside it, marked as the estimate it is.
           var bits = [];
           if (l.date) bits.push(escapeHtml(niceDay(l.date, true)));
-          if (l.planned != null) bits.push(money(l.planned) + " planned");
+          if (l.planned != null) bits.push(hmoney(l.planned, l.cur) + " planned" + (l.foreign && l.plannedHome != null ? ' <span class="conv">(≈ ' + hmoney(l.plannedHome) + ')</span>' : ''));
           else if (l.spent == null) bits.push("No plan");
+          if (l.foreign && l.spent != null) bits.push(l.spentHome != null ? '<span class="conv">≈ ' + hmoney(l.spentHome) + ' spent</span>' : '<span class="conv">not counted: no rate</span>');
           if (l.note) bits.push(escapeHtml(l.note));
-          var badge = l.source === "receipt" ? '<span class="src receipt">Receipt</span>' : l.source === "card" ? '<span class="src card">Card</span>' : '';
+          var badge = (l.source === "receipt" ? '<span class="src receipt">Receipt</span>' : l.source === "card" ? '<span class="src card">Card</span>' : '') +
+            (l.foreign ? '<span class="src fx" title="Amounts in ' + escapeHtml(l.cur) + '">' + escapeHtml(l.cur) + '</span>' : '');
           return '<div class="bg-row" data-id="' + escapeHtml(l.id) + '"><div class="lbl"><b>' + escapeHtml(l.label) + '</b><span>' +
             badge + bits.join(" · ") + '</span></div>' +
-            (demoTrip ? '<span class="g-amt">' + (l.spent != null ? money(l.spent) : "–") + '</span>'
-              : '<input class="bg-spent" inputmode="decimal" placeholder="Spent" aria-label="Spent on ' + escapeHtml(l.label) + '" value="' + (l.spent != null ? l.spent : "") + '" data-spent="' + escapeHtml(l.id) + '">' +
+            (demoTrip ? '<span class="g-amt">' + (l.spent != null ? hmoney(l.spent, l.cur) : "–") + '</span>'
+              : (l.foreign ? '<span class="bg-cur" aria-hidden="true">' + escapeHtml(Live.symbol(l.cur)) + '</span>' : '') +
+                '<input class="bg-spent" inputmode="decimal" placeholder="Spent" aria-label="Spent on ' + escapeHtml(l.label) + (l.foreign ? ', in ' + escapeHtml(l.cur) : '') + '" value="' + (l.spent != null ? l.spent : "") + '" data-spent="' + escapeHtml(l.id) + '">' +
                 '<button type="button" class="cl-del" data-bgdel="' + escapeHtml(l.id) + '" aria-label="Remove">' + svgUse("i-x") + '</button>') +
             '</div>';
         }).join("") + '</div>';
       }).join("");
     }
+    // The add row offers the destination's currency beside home's.
+    var local = fxData && fxData.local && fxData.local !== home && fxData.rates && fxData.rates[fxData.local] ? fxData.local : null;
+    var curSel = $("bgCur"), was = curSel.value;
+    curSel.hidden = !local;
+    curSel.innerHTML = local ? [home, local].map(function (c) { return '<option' + (c === was ? " selected" : "") + '>' + escapeHtml(c) + '</option>'; }).join("") : "";
+    $("bgPlanned").placeholder = Live.symbol(local && curSel.value === local ? local : home) + " planned";
     document.querySelectorAll("#tab-budget .pk-add, #bgSuggestBtn, #bgImport, #bgImportHint").forEach(function (el) { el.hidden = demoTrip; });
     renderTiles();
   }
+  $("bgCur").addEventListener("change", function () { $("bgPlanned").placeholder = Live.symbol(this.value) + " planned"; });
 
   // Spent: saved when the field is left, the way the vacation app's actuals are.
   $("bgLines").addEventListener("change", async function (e) {
@@ -2917,11 +3137,14 @@
     var data = await res.json().catch(function () { return {}; });
     if (!res.ok) throw new Error(data.error || "Couldn’t add that.");
     budgetData = data; renderBudget();
+    // A line in a currency the rates do not cover yet: ask for it.
+    if (lineCurrencies().some(function (c) { return !fxRates()[c]; })) loadRates(currentTripId);
   }
   $("bgAddBtn").addEventListener("click", async function () {
     var label = $("bgLabel").value.trim(); if (!label) { $("bgLabel").focus(); return; }
     try {
-      await addBudgetLines([{ category: $("bgCat").value, label: label, planned: $("bgPlanned").value }]);
+      var cur = !$("bgCur").hidden && $("bgCur").value !== homeCur() ? $("bgCur").value : null;
+      await addBudgetLines([{ category: $("bgCat").value, label: label, planned: $("bgPlanned").value, currency: cur }]);
       $("bgLabel").value = ""; $("bgPlanned").value = "";
     } catch (e) { setStatus($("bgStatus"), e.message, "error"); }
   });
@@ -2937,7 +3160,7 @@
       if (currentTripId !== id) return;
       setStatus(status, "");
       showSuggestions($("bgSuggest"), (data.lines || []).map(function (l) {
-        return { group: l.category, text: l.label + " — " + money(l.planned), sub: l.note, value: l };
+        return { group: l.category, text: l.label + " — " + hmoney(l.planned, l.currency), sub: l.note, value: l };
       }), "Estimated for this trip", "Nothing to add.", async function (chosen) { await addBudgetLines(chosen); toast(chosen.length + " added"); });
     } catch (e) { setStatus(status, e.message, "error"); }
     finally { btn.disabled = false; }
@@ -2991,16 +3214,20 @@
   });
 
   function showReceiptCard(line, currency) {
+    var home = homeCur();
+    currency = /^[A-Z]{3}$/.test(String(currency || "")) ? currency : home;
+    var foreign = currency !== home;
     var field = function (label, control, wide) {
       return '<label class="rc-field' + (wide ? ' wide' : '') + '"><span>' + label + '</span>' + control + '</label>';
     };
     receiptBox.hidden = false;
     receiptBox.innerHTML = '<div class="sg-card"><div class="pc-label">From the receipt</div>' +
-      (currency && currency !== "USD"
-        ? '<div class="rc-warn">This receipt is in ' + escapeHtml(currency) + '. The budget counts dollars, so change the amount to what it cost you in dollars.</div>' : '') +
+      (foreign
+        ? '<div class="rc-warn" id="rcFx">This receipt is in ' + escapeHtml(currency) + '. It is saved in ' + escapeHtml(currency) + ' and counted in ' + escapeHtml(home) +
+          ' at the day’s reference rate' + (fxRates()[currency] ? ', as an estimate' : ' once one is available') + '.</div>' : '') +
       '<div class="rc-grid">' +
         field("What", '<input id="rcLabel" maxlength="80" autocomplete="off" value="' + escapeHtml(line.label || "") + '">', true) +
-        field("Amount", '<input id="rcSpent" inputmode="decimal" autocomplete="off" placeholder="$" value="' + escapeHtml(line.spent != null ? String(line.spent) : "") + '">') +
+        field("Amount" + (foreign ? " (" + escapeHtml(currency) + ")" : ""), '<input id="rcSpent" inputmode="decimal" autocomplete="off" placeholder="' + escapeHtml(Live.symbol(currency)) + '" value="' + escapeHtml(line.spent != null ? String(line.spent) : "") + '">') +
         field("Date", '<input id="rcDate" type="date" value="' + escapeHtml(line.date || "") + '">') +
         field("Category", '<select id="rcCat">' + BUDGET_CATS.map(function (c) {
           return '<option' + (c === line.category ? " selected" : "") + '>' + c + '</option>';
@@ -3018,7 +3245,7 @@
       btn.disabled = true;
       try {
         await addBudgetLines([{ category: cat, label: $("rcLabel").value.trim() || "Receipt", spent: spent,
-          date: $("rcDate").value || null, note: $("rcNote").value.trim(), source: "receipt" }]);
+          date: $("rcDate").value || null, note: $("rcNote").value.trim(), source: "receipt", currency: foreign ? currency : null }]);
         receiptBox.hidden = true; receiptBox.innerHTML = "";
         toast("Added to " + cat);
       } catch (e) { btn.disabled = false; setStatus($("rcStatus"), e.message, "error"); }
@@ -3079,7 +3306,7 @@
       body += '<div class="st-list">' + tx.map(function (t, i) {
         return '<label class="st-row' + (t.possibleDuplicate ? ' off' : '') + '" data-i="' + i + '">' +
           '<input type="checkbox" data-i="' + i + '"' + (t.possibleDuplicate ? '' : ' checked') + ' aria-label="Add ' + escapeHtml(t.description) + '">' +
-          '<span class="st-desc">' + escapeHtml(t.description) + '</span><span class="st-amt">' + money(t.amount) + '</span>' +
+          '<span class="st-desc">' + escapeHtml(t.description) + '</span><span class="st-amt">' + hmoney(t.amount) + '</span>' +
           '<span class="st-meta">' + escapeHtml(niceDay(t.date, true)) +
             '<select class="chev" data-cat="' + i + '" aria-label="Category">' + BUDGET_CATS.map(function (c) {
               return '<option' + (c === t.category ? ' selected' : '') + '>' + c + '</option>';
@@ -3105,7 +3332,7 @@
       var ids = picked(), sum = 0;
       ids.forEach(function (i) { sum += tx[i].amount; });
       $("stCount").textContent = plural(ids.length, "charge", "charges") + " ticked";
-      $("stSum").textContent = money(Math.round(sum * 100) / 100) || "$0";
+      $("stSum").textContent = hmoney(Math.round(sum * 100) / 100) || hmoney(0);
       var add = $("stAdd");
       add.textContent = ids.length ? "Add " + plural(ids.length, "charge", "charges") : "Tick charges to add";
       // Said before the tap, not after it: the budget holds a fixed number of
@@ -3144,8 +3371,8 @@
     $("ovPackVal").textContent = total ? done + " / " + total : "Start a list";
     $("ovPackBar").style.width = total ? Math.round((done / total) * 100) + "%" : "0";
     var t = budgetTotals();
-    $("ovBudgetVal").textContent = (t.sofar || t.target) ? money(t.sofar) : "Plan it";
-    $("ovBudgetSub").textContent = t.target ? "of " + money(t.target) + " target" : (t.sofar ? "booked + spent" : "");
+    $("ovBudgetVal").textContent = (t.sofar || t.target) ? (t.estimated ? "≈ " : "") + hmoney(t.sofar) : "Plan it";
+    $("ovBudgetSub").textContent = t.target ? "of " + hmoney(t.target) + " target" : (t.sofar ? "booked + spent" + (t.estimated ? ", est." : "") : "");
   }
   $("ovPackTile").addEventListener("click", function () { selectTripTab("packing"); });
   $("ovBudgetTile").addEventListener("click", function () { selectTripTab("budget"); });
@@ -4627,7 +4854,49 @@
     return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
+  /* ---- price sparklines ----
+   * The server reads each check's price out of its sentence
+   * (pricehistory.js) and sends `price: {currency, points, trend}` - or null
+   * when fewer than two checks named one, and then nothing is drawn. The
+   * geometry and the badge's words are Live's, tested in test/live.js. */
+  function sparkSvg(price, w, h, cls) {
+    var g = price && Live.sparkGeometry(price.points, w, h, 5);
+    if (!g) return "";
+    var t = price.trend, cur = price.currency;
+    var label = "Price over " + t.count + " checks: " + Live.fmtMoney(t.first, cur) + " to " + Live.fmtMoney(t.last, cur) + ", lowest " + Live.fmtMoney(t.low, cur);
+    return '<svg class="spark ' + (cls || "") + '" viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + escapeHtml(label) + '">' +
+      '<path class="s-area" d="' + g.area + '"/><path class="s-line" d="' + g.line + '"/>' +
+      '<circle class="s-dot" cx="' + g.last.x + '" cy="' + g.last.y + '" r="3"/>' +
+      '<circle class="s-low" cx="' + g.low.x + '" cy="' + g.low.y + '" r="4.5"><title>Lowest seen: ' + escapeHtml(Live.fmtMoney(t.low, cur)) + '</title></circle></svg>';
+  }
+  function priceBlock(w) {
+    var p = w.price; if (!p || !p.trend) return "";
+    var b = Live.priceBadge(p.trend, p.currency, Date.now());
+    return '<div class="w-price"><div class="w-now"><span class="w-last">' + escapeHtml(Live.fmtMoney(p.trend.last, p.currency)) + '</span>' +
+      '<span class="w-badge ' + b.tone + '">' + escapeHtml(b.text) + '</span></div>' +
+      '<div class="w-spark">' + sparkSvg(p, 300, 64) + '</div>' +
+      '<div class="w-low">' + (p.trend.atLow ? '<b>● Lowest yet</b>' : '<span><b>●</b> ' + escapeHtml(b.low) + '</span>') +
+        '<span>' + escapeHtml(p.trend.count + " prices · high " + Live.fmtMoney(p.trend.high, p.currency)) + '</span></div></div>';
+  }
+  /** The Overview's tile: up to three watches with a price, biggest move first. */
+  function renderWatchTile() {
+    var tile = $("ovWatchTile");
+    var priced = watches.filter(function (w) { return w.price && w.price.trend; })
+      .sort(function (a, b) { return Math.abs(b.price.trend.pct) - Math.abs(a.price.trend.pct); }).slice(0, 3);
+    tile.hidden = !priced.length;
+    if (!priced.length) return;
+    $("ovWatchRows").innerHTML = priced.map(function (w) {
+      var b = Live.priceBadge(w.price.trend, w.price.currency, Date.now());
+      return '<span class="ow-row"><span style="min-width:0"><span class="ow-name">' + escapeHtml(w.label) + '</span>' +
+        '<span class="ow-sub ' + b.tone + '" title="' + escapeHtml(b.text) + '">' + escapeHtml(b.short) + '</span></span>' +
+        sparkSvg(w.price, 84, 30, "mini") +
+        '<span class="ow-price">' + escapeHtml(Live.fmtMoney(w.price.trend.last, w.price.currency)) + '</span></span>';
+    }).join("");
+  }
+  $("ovWatchTile").addEventListener("click", function () { selectTripTab("watches"); });
+
   function renderWatches() {
+    renderWatchTile();
     watchesEmpty.hidden = !!watches.length;
     watchesList.innerHTML = "";
     watches.forEach(function (w) {
@@ -4637,6 +4906,7 @@
       el.innerHTML =
         '<div class="watch-top"><span class="watch-label">' + escapeHtml(w.label) + '</span><span class="watch-kind">' + escapeHtml(w.kind) + '</span></div>' +
         (w.criteria ? '<div class="watch-criteria">' + escapeHtml(w.criteria) + '</div>' : '') +
+        priceBlock(w) +
         (w.lastResult ? '<div class="watch-result">' + escapeHtml(w.lastResult) + '</div>' : '<div class="watch-none">Not checked yet.</div>') +
         '<div class="watch-meta">' + (w.lastCheckedAt ? "Checked " + relTime(w.lastCheckedAt) : "Never checked") + ' · every ' + intervalLabel + '</div>' +
         '<div class="watch-actions"><button type="button" class="btn btn-secondary btn-sm watch-check-btn">Check now</button>' +
@@ -4706,7 +4976,7 @@
     try {
       var res = await fetch("/api/trips/" + currentTripId, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: $("dName").value.trim(), destination: $("dDest").value.trim(), dateRange: $("dDates").value.trim(), notes: $("dNotes").value })
+        body: JSON.stringify({ name: $("dName").value.trim(), destination: $("dDest").value.trim(), dateRange: $("dDates").value.trim(), notes: $("dNotes").value, homeCurrency: $("dCur").value })
       });
       if (res.status === 401) { showAuthRequired(status); btn.disabled = false; return; }
       if (!res.ok) throw new Error();

@@ -16,6 +16,8 @@ const ideasLib = require('./ideas');
 const packingLib = require('./packing');
 const budgetLib = require('./budget');
 const weatherLib = require('./weather');
+const fxLib = require('./fx');
+const priceHistory = require('./pricehistory');
 const receipts = require('./receipts');
 const statement = require('./statement');
 const photostore = require('./photostore');
@@ -444,6 +446,53 @@ app.get('/api/trips/:id/weather', requireLogin, async (req, res) => {
   res.json(await weatherFor(owned.ref, owned.data));
 });
 
+/* ---------- Exchange rates for a trip abroad ----------
+ * No model call, so login and ownership only. The destination's currency
+ * comes from the country on the stored place (fx.js); the rates from the
+ * ECB's reference set via Frankfurter, which is sent currency codes and
+ * nothing else. Every failure is a 200 whose status hides the chip. */
+const fx = fxLib.create();
+
+/** The trip's place WITH a country. Every place stored since the Overview
+ *  shipped has `countryCode`; one that somehow lacks the key is looked up
+ *  again once, through the same one-a-second path, and the answer (even an
+ *  empty one) stored so it is never asked twice. A lookup that FAILS is not
+ *  stored, the same rule placeFor keeps. */
+async function placeWithCountry(ref, data) {
+  const geo = await placeFor(ref, data);
+  if (!geo || Object.prototype.hasOwnProperty.call(geo, 'countryCode')) return geo;
+  const fresh = await geocodePolitely(geo.query);
+  const merged = { ...geo, countryCode: (fresh && fresh.countryCode) || '' };
+  if (ref) await ref.update({ geo: merged }).catch(() => {});
+  return merged;
+}
+
+/** Currencies the page also needs rates for - its budget lines' - from
+ *  `?also=GBP,JPY`. Bounded and checked: only real codes reach the source. */
+const alsoFrom = (q) => String(q || '').split(',').map(fxLib.code).filter(Boolean).slice(0, 10);
+
+// The example trip's rate is fixed and says so: a live number on a page that
+// is otherwise frozen in September would be the one thing in it that moves.
+app.get(`/api/trips/${demo.DEMO_ID}/rates`, (req, res) => {
+  res.set('Cache-Control', 'public, max-age=600');
+  res.json(demo.DEMO_RATES);
+});
+
+app.get('/api/trips/:id/rates', requireLogin, async (req, res) => {
+  const owned = await loadOwnedTrip(req, res);
+  if (!owned) return;
+  const home = fxLib.homeOf(owned.data);
+  try {
+    const geo = await placeWithCountry(owned.ref, owned.data);
+    const local = fxLib.currencyFor(geo && geo.countryCode);
+    res.set('Cache-Control', 'private, max-age=600');
+    res.json({ ...(await fx.view({ home, local, also: alsoFrom(req.query.also) })), homeCurrencies: fxLib.HOME_CURRENCIES });
+  } catch (err) {
+    console.error('trip rates', err.message);
+    res.json({ status: 'unavailable', home, rates: {}, homeCurrencies: fxLib.HOME_CURRENCIES, attribution: fxLib.ATTRIBUTION });
+  }
+});
+
 
 
 // ---------------------------------------------------------------------------
@@ -464,6 +513,9 @@ function tripSummary(id, data, uid) {
     dateRange: data.dateRange || '',
     status: data.status || 'planning',
     dayCount: Array.isArray(data.days) ? data.days.length : 0,
+    // For the list's compact countdown, which ticks in the browser. The same
+    // answer the trip's own page gets (tripOut), from the same fields.
+    dates: tripDates({ days: data.days, dateRange: data.dateRange }),
     createdAt: data.createdAt || null,
     updatedAt: data.updatedAt || null,
     lockedAt: data.lockedAt || null,
@@ -531,7 +583,7 @@ app.get(`/api/trips/${demo.DEMO_ID}/messages`, (req, res) => {
 });
 app.get(`/api/trips/${demo.DEMO_ID}/watches`, (req, res) => {
   res.set('Cache-Control', 'public, max-age=600');
-  res.json(demo.DEMO_WATCHES.map((w, i) => Object.assign({ id: 'demo-' + i }, w)));
+  res.json(demo.DEMO_WATCHES.map((w, i) => withPrice(Object.assign({ id: 'demo-' + i }, w))));
 });
 
 // Copy the example into an account. The demo is the best introduction this
@@ -587,8 +639,15 @@ app.get('/api/trips/:id', requireLogin, async (req, res) => {
 
 app.patch('/api/trips/:id', requireLogin, async (req, res) => {
   try {
-    const { name, destination, dateRange, notes } = req.body || {};
+    const { name, destination, dateRange, notes, homeCurrency } = req.body || {};
     const patch = { updatedAt: new Date().toISOString() };
+    // What the budget is counted in. Only a currency that has published
+    // rates, so the Budget can always convert into it.
+    if (homeCurrency !== undefined) {
+      const c = fxLib.code(homeCurrency);
+      if (!c || !fxLib.HOME_CURRENCIES.includes(c)) return res.status(400).json({ error: 'Pick a currency from the list.' });
+      patch.homeCurrency = c;
+    }
     if (typeof name === 'string' && name.trim()) patch.name = name.slice(0, 120);
     if (typeof destination === 'string') patch.destination = destination.slice(0, 200);
     if (typeof dateRange === 'string') patch.dateRange = dateRange.slice(0, 120);
@@ -1658,7 +1717,9 @@ app.post('/api/trips/:id/budget/suggest', requireLogin, identity.requireBudget, 
     const block = response.content.find((b) => b.type === 'tool_use' && b.name === 'budget_estimate');
     // Marked as an estimate, so once added the Budget can say whose number it is.
     const lines = (block && block.input && Array.isArray(block.input.lines) ? block.input.lines : [])
-      .map((l) => budgetLib.line(Object.assign({}, l, { source: 'estimate', date: null })))
+      // The estimate tool is asked for US dollars, so its lines say so;
+      // a trip budgeted in another currency converts them like any other.
+      .map((l) => budgetLib.line(Object.assign({}, l, { source: 'estimate', date: null, currency: 'USD' })))
       .filter((l) => l && l.planned != null).slice(0, 20);
     if (!lines.length) return send({ error: 'The estimate came back empty. Try again in a moment.' });
     send({ lines });
@@ -2609,6 +2670,14 @@ async function completeTurn(params, user) {
 
 const MAX_HISTORY_ENTRIES = 20;
 
+/** A watch as the page gets it: plus `price`, the prices read out of its
+ *  history for the sparkline (pricehistory.js), or null when fewer than two
+ *  checks named one. Worked out on every read and never stored, like a
+ *  crawl's route legs - nothing to keep in step with the history. */
+function withPrice(w) {
+  try { return Object.assign(w, { price: priceHistory.forWatch(w) }); } catch (e) { return Object.assign(w, { price: null }); }
+}
+
 async function runWatchCheck(tripData, watchDoc, account) {
   const w = watchDoc.data();
   const prompt =
@@ -2620,7 +2689,11 @@ async function runWatchCheck(tripData, watchDoc, account) {
     (w.url ? 'Specific listing: ' + w.url + '.\n' : '') +
     (w.lastResult ? 'Last time you checked, you found: ' + w.lastResult + '\n' : '') +
     'Use web search to check current price/availability. Reply in 2-3 sentences: the current state, and ' +
-    'whether that is a meaningful change from last time (if you have a prior result to compare). Never invent ' +
+    'whether that is a meaningful change from last time (if you have a prior result to compare). ' +
+    // Lead with the price: the Watches tab reads the first amount of each
+    // answer into a sparkline (pricehistory.js), and a comparison written
+    // first ("down from $1,010") would be read as the price.
+    'If you found a price, begin with it, written with its currency symbol (for example "$842 return, nonstop"). Never invent ' +
     'a price - say so if you cannot verify one.';
 
   // Same tiering as chat, and the same reason the tool comes from planFor
@@ -2647,7 +2720,7 @@ app.get('/api/trips/:id/watches', requireLogin, async (req, res) => {
     if (!owned) return;
     const snap = await owned.ref.collection('watches')
       .orderBy('createdAt', 'asc').get();
-    res.json(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    res.json(snap.docs.map((d) => withPrice({ id: d.id, ...d.data() })));
   } catch (err) {
     console.error('GET /api/trips/:id/watches', err);
     res.status(500).json({ error: 'Failed to load watches.' });

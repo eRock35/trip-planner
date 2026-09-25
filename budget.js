@@ -10,6 +10,7 @@
  * go through money(): a number, or a string like "$1,240.50"; never negative,
  * never absurd, always to the cent.
  */
+const { code: fxCode } = require('./fx');
 const clean = (v, n) => String(v == null ? '' : v).replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, n);
 const CATEGORIES = ['Lodging', 'Transport', 'Food', 'Activities', 'Shopping', 'Other'];
 const MAX_LINES = 100;
@@ -56,6 +57,11 @@ function line(l) {
     // undated manual line, which is what they were.
     date: isoDate(l.date),
     source: SOURCES.includes(l.source) ? l.source : 'manual',
+    // The currency the amounts are in, when it is not the trip's home one:
+    // a receipt from Lisbon is in euros. null means the home currency, which
+    // is what every line written before this was. The Budget converts at the
+    // day's reference rate and says the result is an estimate.
+    currency: fxCode(l.currency),
   };
 }
 

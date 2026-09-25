@@ -21,7 +21,7 @@ const jar = (r) => (r.headers.getSetCookie() || []).map((c) => c.split(';')[0]).
   r = await fetch(B + '/api/trips/demo/messages'); const msgs = await r.json();
   ok('...and its chat', r.status === 200 && msgs.length === 3 && msgs[1].proposedChange);
   r = await fetch(B + '/api/trips/demo/watches'); const ws = await r.json();
-  ok('...and its watches, with history', r.status === 200 && ws.length === 2 && ws[0].history.length === 4);
+  ok('...and its watches, with history', r.status === 200 && ws.length === 2 && ws[0].history.length === 8);
   r = await fetch(B + '/api/trips');
   ok('the real trips list is still sign-in only', r.status === 401, String(r.status));
   r = await post('/api/trips/demo/chat', { question: 'hi' });
