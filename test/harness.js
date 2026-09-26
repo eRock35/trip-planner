@@ -53,7 +53,17 @@ class FakeFirestore {
         const key = name + '/' + (id || 'auto' + Math.random().toString(36).slice(2));
         return { id: key.slice(name.length + 1),
           async get() { const d = store.get(key); return { exists: d !== undefined, id: key.slice(name.length + 1), data: () => d }; },
-          async set(v, o) { noNestedArrays(v); store.set(key, o && o.merge ? applyIncrements(store.get(key), v) : JSON.parse(JSON.stringify(v))); },
+          async set(v, o) {
+            noNestedArrays(v);
+            if (o && Array.isArray(o.mergeFields)) {
+              // mergeFields: the named fields are REPLACED whole (a nested map
+              // included) and every other field on the document is kept - how
+              // the shared menu write leaves the crawlers' counters alone.
+              const out = Object.assign({}, store.get(key) || {});
+              for (const f of o.mergeFields) if (Object.prototype.hasOwnProperty.call(v, f)) out[f] = JSON.parse(JSON.stringify(v[f]));
+              store.set(key, out);
+            } else store.set(key, o && o.merge ? applyIncrements(store.get(key), v) : JSON.parse(JSON.stringify(v)));
+          },
           async update(v) { noNestedArrays(v); store.set(key, Object.assign({}, store.get(key) || {}, v)); },
           async delete() { store.delete(key); },
           collection: (sub) => new FakeFirestore({ databaseId: 'sub' }).collection(key + '/' + sub) };
@@ -62,7 +72,32 @@ class FakeFirestore {
     return mk();
   }
   batch() { const ops = []; return { set(r, v, o) { ops.push([r, v, o]); }, delete(r) { ops.push([r, null]); }, async commit() { for (const [r, v, o] of ops) v === null ? await r.delete() : await r.set(v, o); } }; }
+  /**
+   * A transaction, the way Firestore's behaves for the code that uses it:
+   * reads first, writes applied together when the function resolves, and no
+   * two transactions interleaving. Real Firestore gets there by retrying on
+   * contention; the fake by running them one at a time - the same outcome,
+   * which is what a test of "two phones check in at once" needs to see.
+   */
+  runTransaction(fn) {
+    const run = txChain.then(async () => {
+      const ops = [];
+      const t = {
+        get: (x) => x.get(),
+        set(r, v, o) { ops.push(() => r.set(v, o)); return t; },
+        create(r, v) { ops.push(() => r.set(v)); return t; },
+        update(r, v) { ops.push(() => r.update(v)); return t; },
+        delete(r) { ops.push(() => r.delete()); return t; },
+      };
+      const out = await fn(t);
+      for (const op of ops) await op();
+      return out;
+    });
+    txChain = run.catch(() => {});
+    return run;
+  }
 }
+let txChain = Promise.resolve();
 
 
 /**
@@ -139,9 +174,11 @@ function applyIncrements(existing, patch) {
   for (const [k, v] of Object.entries(patch)) {
     if (v && typeof v === 'object' && typeof v.__increment === 'number') {
       out[k] = Number(out[k] || 0) + v.__increment;
-    } else if (v && typeof v === 'object' && !Array.isArray(v)
-               && out[k] && typeof out[k] === 'object' && !Array.isArray(out[k])) {
-      out[k] = applyIncrements(out[k], v);
+    } else if (v && typeof v === 'object' && !Array.isArray(v)) {
+      // A map merges into what is there - or into nothing, with any
+      // increments inside it counted from zero, as Firestore does. (Copying
+      // it raw stored the {__increment} marker itself as the value.)
+      out[k] = applyIncrements(out[k] && typeof out[k] === 'object' && !Array.isArray(out[k]) ? out[k] : {}, v);
     } else {
       out[k] = v === undefined ? out[k] : JSON.parse(JSON.stringify(v === null ? null : v));
     }

@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const { Firestore } = require('@google-cloud/firestore');
+const { Firestore, FieldValue } = require('@google-cloud/firestore');
 const Anthropic = require('@anthropic-ai/sdk');
 const { createAccounts } = require('./accounts');
 const crypto = require('crypto');
@@ -25,6 +25,8 @@ const demo = require('./demo');
 const crawlLib = require('./crawl');
 const crawlMenu = require('./crawlmenu');
 const breweriesLib = require('./breweries');
+const crowdLib = require('./crowd');
+const lifetimeLib = require('./lifetime');
 
 const PORT = process.env.PORT || 8080;
 const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'metal-celerity-236019';
@@ -670,6 +672,10 @@ app.delete('/api/trips/:id', requireLogin, async (req, res) => {
       return res.status(403).json({ error: 'Only the person who started this trip can delete it. You can leave it from Share instead.' });
     }
     await owned.ref.delete();
+    // Its crawls go too, each taking back what it added to the shared
+    // brewery counters - a deleted trip must not keep rating anything.
+    // Awaited and never allowed to fail the delete, like the photos below.
+    await deleteTripCrawls(owned.ref);
     // Its photos go with it. Awaited, because this service stops working the
     // moment a response is sent (see "Billed per request" in CLAUDE.md), but
     // never allowed to fail the delete: the trip is gone either way, and a
@@ -2073,27 +2079,84 @@ function crawlFields(b) {
 /** The shared menus for these stops, as stored - fresh or not. A menu older
  *  than two days is still shown, marked stale with its date, because an old
  *  board is more use than no board; only a lookup replaces it. */
-async function cachedMenus(stops) {
+async function breweryEntries(stops) {
   const out = {};
   await Promise.all(stops.map(async (s) => {
     const snap = await menuCache().doc(s.id).get().catch(() => null);
-    const entry = snap && snap.exists ? snap.data() : null;
-    out[s.id] = crawlMenu.usable(entry, s)
-      ? Object.assign({}, entry.menu, { fetchedAt: entry.fetchedAt || null, stale: !crawlMenu.isFresh(entry, s) })
-      : null;
+    out[s.id] = snap && snap.exists ? snap.data() : null;
   }));
   return out;
 }
+function menusFrom(stops, entries) {
+  const out = {};
+  for (const s of stops) {
+    const entry = entries[s.id];
+    out[s.id] = crawlMenu.usable(entry, s)
+      ? Object.assign({}, entry.menu, { fetchedAt: entry.fetchedAt || null, stale: !crawlMenu.isFresh(entry, s) })
+      : null;
+  }
+  return out;
+}
+/** What every crawler thought of each stop - only the numbers that at least
+ *  crowdLib.THRESHOLD check-ins or pours back, and only from the bucket for
+ *  the stop's own name (see crowd.js). */
+function crowdFrom(stops, entries) {
+  const out = {};
+  for (const s of stops) out[s.id] = crowdLib.summary(entries[s.id], s);
+  return out;
+}
+async function cachedMenus(stops) { return menusFrom(stops, await breweryEntries(stops)); }
 
+/** A pour as the page gets it: `crowd` is what it added to the shared
+ *  counters, the server's own bookkeeping. */
+function pourOut(id, d) {
+  const p = Object.assign({ id }, d);
+  delete p.crowd;
+  return p;
+}
 async function poursOf(crawlRef) {
   const snap = await poursCol(crawlRef).get();
-  return snap.docs.map((d) => Object.assign({ id: d.id }, d.data()))
+  return snap.docs.map((d) => pourOut(d.id, d.data()))
     .sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
+}
+
+/* ---- the shared counters (crowd.js) ----
+ * Every write that changes what a crawl contributed goes through a
+ * transaction that reads what was counted, writes the change and records the
+ * new contribution together, so a replay, a second phone or an undo moves the
+ * numbers by exactly its own share. Counting is best-effort in one direction
+ * only: a failure to count never fails a check-in (the person's own record
+ * matters more than a tally), but the tally is never moved without the
+ * record that says so. */
+const inc = (n) => FieldValue.increment(n);
+function applyTally(t, tl) {
+  for (const w of tl.writes(inc)) t.set(menuCache().doc(w.id), w.data, { merge: true });
+}
+
+/** Take a crawl's whole contribution away - its check-ins and every pour -
+ *  and delete it with its pours, in one transaction. Used by delete crawl
+ *  and, per crawl, by delete trip. */
+async function dropCrawl(crawlRef) {
+  await db.runTransaction(async (t) => {
+    const [snap, pours] = await Promise.all([t.get(crawlRef), t.get(poursCol(crawlRef))]);
+    if (!snap.exists) return;
+    const data = snap.data() || {};
+    const tl = crowdLib.tally();
+    const counted = data.crowd && typeof data.crowd === 'object' ? data.crowd : {};
+    for (const [sid, k] of Object.entries(counted)) if (k) tl.change(sid, 'checkin', k, null);
+    for (const d of pours.docs) {
+      const p = d.data() || {};
+      if (p.crowd) tl.change(p.stopId, 'pour', p.crowd, null);
+      t.delete(d.ref);
+    }
+    applyTally(t, tl);
+    t.delete(crawlRef);
+  });
 }
 
 /** Everything the crawl's page draws, computed from the stops' order.
  *  `days` is the trip's itinerary, for what the crawl would clash with. */
-function crawlView(crawl, menus, pours, days) {
+function crawlView(crawl, menus, pours, days, crowd) {
   const sched = crawlLib.schedule(crawl);
   return {
     crawl,
@@ -2103,14 +2166,15 @@ function crawlView(crawl, menus, pours, days) {
     links: crawlLib.mapsLinks(crawl.stops, crawl.mode, sched.stops),
     menus,
     pours,
+    crowd: crowd || {},
   };
 }
 async function fullView(crawlRef, id, data, tripData) {
   const crawl = crawlOut(id, data);
-  const [menus, pours] = await Promise.all([cachedMenus(crawl.stops), poursOf(crawlRef)]);
+  const [entries, pours] = await Promise.all([breweryEntries(crawl.stops), poursOf(crawlRef)]);
   let days = [];
   try { days = tripData && Array.isArray(tripData.days) ? schedule.fromStore(tripData.days) : []; } catch (e) { days = []; }
-  return crawlView(crawl, menus, pours, days);
+  return crawlView(crawl, menusFrom(crawl.stops, entries), pours, days, crowdFrom(crawl.stops, entries));
 }
 
 /** One line per crawl for the list and the Overview tile - with each stop's
@@ -2193,6 +2257,66 @@ app.get(`/api/trips/${demo.DEMO_ID}/crawls/:cid`, (req, res) => {
   if (req.params.cid !== demo.DEMO_CRAWL.id) return res.status(404).json({ error: 'No such crawl.' });
   res.set('Cache-Control', 'public, max-age=600');
   res.json(Object.assign(demoCrawlView(), { demo: true }));
+});
+
+async function deleteTripCrawls(tripRef) {
+  try {
+    const snap = await crawlsCol(tripRef).get();
+    for (const d of snap.docs) await dropCrawl(d.ref).catch((err) => console.error('delete trip: crawl', d.id, err.message));
+  } catch (err) { console.error('delete trip: crawls', err.message); }
+}
+
+// ---- the lifetime passport --------------------------------------------------
+/**
+ * Every brewery this person has been checked in at, on every trip they can
+ * open, with milestones (lifetime.js). Computed on read.
+ *
+ * The trips come from the same two queries as the trips list - owned by
+ * ownerId + updatedAt (the index that already exists), shared by memberIds
+ * array-contains (no index) - and each is checked with roleIn, the test
+ * loadOwnedTrip makes. Then each trip's crawls and each crawl's pours, read
+ * through the trip: deliberately NOT a collection-group query over `crawls`,
+ * which would need its own index and would find crawls by something other
+ * than "a trip this person is on".
+ */
+const PASSPORT_TTL_MS = 60 * 1000;
+const passportCache = new Map();            // uid -> {at, sig, body}
+app.get('/api/passport', requireLogin, async (req, res) => {
+  try {
+    const uid = req.user.uid;
+    const [mine, shared] = await Promise.all([
+      db.collection('trips').where('ownerId', '==', uid).orderBy('updatedAt', 'desc').limit(100).get(),
+      db.collection('trips').where('memberIds', 'array-contains', uid).limit(100).get(),
+    ]);
+    const seen = new Set();
+    const docs = [];
+    for (const d of mine.docs.concat(shared.docs)) {
+      if (seen.has(d.id) || !roleIn(d.data(), uid)) continue;
+      seen.add(d.id);
+      docs.push(d);
+    }
+    // Held for a minute per person, and only while no trip or crawl on it
+    // has moved (every check-in and every pour written, changed or removed
+    // moves its crawl's updatedAt): what it saves is reading every pour of
+    // every crawl again each time the tab is opened.
+    const sig = docs.map((d) => d.id + ':' + (d.data().updatedAt || '')).sort().join(',');
+    const hit = passportCache.get(uid);
+    const trips = await Promise.all(docs.map(async (d) => {
+      const cs = await crawlsCol(d.ref).get();
+      return { id: d.id, crawlDocs: cs.docs };
+    }));
+    const crawlSig = trips.map((t) => t.id + '[' + t.crawlDocs.map((c) => c.id + ':' + (c.data().updatedAt || '')).join(',') + ']').join(';');
+    res.set('Cache-Control', 'no-store');
+    if (hit && hit.sig === sig + '|' + crawlSig && Date.now() - hit.at < PASSPORT_TTL_MS) return res.json(hit.body);
+    const full = await Promise.all(trips.map(async (t) => ({
+      id: t.id,
+      crawls: await Promise.all(t.crawlDocs.map(async (c) => ({ crawl: crawlOut(c.id, c.data()), pours: await poursOf(c.ref) }))),
+    })));
+    const body = lifetimeLib.passport(full, uid);
+    passportCache.set(uid, { at: Date.now(), sig: sig + '|' + crawlSig, body });
+    if (passportCache.size > 500) passportCache.delete(passportCache.keys().next().value);
+    res.json(body);
+  } catch (err) { console.error('GET passport', err); res.status(500).json({ error: 'Could not load your passport.' }); }
 });
 
 // ---- finding breweries: Open Brewery DB -------------------------------------
@@ -2311,11 +2435,10 @@ app.patch('/api/trips/:id/crawls/:cid', requireLogin, ownedTrip, ownedCrawl, asy
 
 app.delete('/api/trips/:id/crawls/:cid', requireLogin, ownedTrip, ownedCrawl, async (req, res) => {
   try {
-    // Its pours first: a crawl document gone with its subcollection left
-    // behind is invisible data nothing will ever clean up.
-    const pours = await poursCol(req.crawl.ref).get();
-    await Promise.all(pours.docs.map((d) => d.ref.delete()));
-    await req.crawl.ref.delete();
+    // Its pours go with it (a crawl document gone with its subcollection
+    // left behind is invisible data nothing will ever clean up), and so does
+    // everything it added to the shared brewery counters.
+    await dropCrawl(req.crawl.ref);
     res.json({ ok: true });
   } catch (err) { console.error('DELETE crawl', err); res.status(500).json({ error: 'Could not delete that crawl.' }); }
 });
@@ -2353,9 +2476,17 @@ app.delete('/api/trips/:id/crawls/:cid/stops/:sid', requireLogin, ownedTrip, own
     const picks = Object.assign({}, data.picks || {});
     delete picks[sid];
     const patch = { stops, picks, updatedAt: new Date().toISOString() };
-    await req.crawl.ref.update(patch);
-    const pours = await poursCol(req.crawl.ref).where('stopId', '==', sid).get();
-    await Promise.all(pours.docs.map((d) => d.ref.delete()));
+    // The stop's pours go, and so does what it added to the shared counters
+    // - its check-in and each of those pours - all in one transaction.
+    await db.runTransaction(async (t) => {
+      const [snap, pours] = await Promise.all([t.get(req.crawl.ref), t.get(poursCol(req.crawl.ref).where('stopId', '==', sid))]);
+      const counted = (snap.exists && snap.data().crowd) || {};
+      const tl = crowdLib.tally();
+      if (counted[sid]) { tl.change(sid, 'checkin', counted[sid], null); patch.crowd = Object.assign({}, counted, { [sid]: null }); }
+      for (const d of pours.docs) { const p = d.data() || {}; if (p.crowd) tl.change(sid, 'pour', p.crowd, null); t.delete(d.ref); }
+      applyTally(t, tl);
+      t.update(req.crawl.ref, patch);
+    });
     res.json(await fullView(req.crawl.ref, req.crawl.id, Object.assign({}, data, patch), req.owned.data));
   } catch (err) { console.error('DELETE crawl stop', err); res.status(500).json({ error: 'Could not remove that stop.' }); }
 });
@@ -2374,11 +2505,27 @@ app.post('/api/trips/:id/crawls/:cid/visit/:sid', requireLogin, ownedTrip, owned
     const data = req.crawl.data;
     const sid = String(req.params.sid || '');
     if (!(data.stops || []).some((s) => s.id === sid)) return res.status(404).json({ error: 'That stop isn’t on this crawl.' });
-    const current = (data.visits || {})[sid] || null;
     const b = req.body || {};
-    const want = typeof b.visited === 'boolean' ? b.visited : !current;
-    const value = want ? (current || new Date().toISOString()) : null;
-    await req.crawl.ref.set({ visits: { [sid]: value }, updatedAt: new Date().toISOString() }, { merge: true });
+    // Read inside the transaction, not from req.crawl: two phones tapping at
+    // once must see each other's write, or both count a check-in.
+    await db.runTransaction(async (t) => {
+      const cur = await t.get(req.crawl.ref);
+      const d = (cur.exists && cur.data()) || {};
+      const stop = (d.stops || []).find((s) => s.id === sid);
+      if (!stop) return;
+      const current = (d.visits || {})[sid] || null;
+      const want = typeof b.visited === 'boolean' ? b.visited : !current;
+      const value = want ? (current || new Date().toISOString()) : null;
+      // What this crawl has counted for the stop, and what it should have.
+      const was = (d.crowd || {})[sid] || null;
+      const now = want ? (was || crowdLib.checkinMark(stop)) : null;
+      const write = { visits: { [sid]: value }, updatedAt: new Date().toISOString() };
+      if (was !== now) {
+        applyTally(t, crowdLib.tally().change(sid, 'checkin', was, now));
+        write.crowd = { [sid]: now };
+      }
+      t.set(req.crawl.ref, write, { merge: true });
+    });
     const snap = await req.crawl.ref.get();
     res.json(await fullView(req.crawl.ref, req.crawl.id, snap.data(), req.owned.data));
   } catch (err) { console.error('POST crawl visit', err); res.status(500).json({ error: 'Could not save that check-in.' }); }
@@ -2404,8 +2551,18 @@ app.post('/api/trips/:id/crawls/:cid/pours', requireLogin, ownedTrip, ownedCrawl
       by: req.user.uid,
       at: new Date().toISOString(),
     };
-    const ref = await poursCol(req.crawl.ref).add(pour);
-    await req.crawl.ref.update({ updatedAt: pour.at });
+    // A new pour and what it adds to the shared counters, written together.
+    // The brewery document is read for its menu: only a beer on it becomes a
+    // named row there (crowd.js says why).
+    const stop = req.crawl.data.stops.find((s) => s.id === stopId);
+    const entry = await menuCache().doc(stopId).get().then((x) => (x.exists ? x.data() : null)).catch(() => null);
+    const mark = crowdLib.pourMark(stop, pour, entry);
+    const ref = poursCol(req.crawl.ref).doc();
+    const batch = db.batch();
+    batch.set(ref, mark ? Object.assign({}, pour, { crowd: mark }) : pour);
+    for (const w of crowdLib.tally().change(stopId, 'pour', null, mark).writes(inc)) batch.set(menuCache().doc(w.id), w.data, { merge: true });
+    batch.set(req.crawl.ref, { updatedAt: pour.at }, { merge: true });
+    await batch.commit();
     res.json({ pour: Object.assign({ id: ref.id }, pour), pours: await poursOf(req.crawl.ref) });
   } catch (err) { console.error('POST pour', err); res.status(500).json({ error: 'Could not log that.' }); }
 });
@@ -2414,10 +2571,59 @@ app.delete('/api/trips/:id/crawls/:cid/pours/:pid', requireLogin, ownedTrip, own
   try {
     if (!ROW_ID.test(req.params.pid)) return res.status(404).json({ error: 'No such beer.' });
     const ref = poursCol(req.crawl.ref).doc(req.params.pid);
-    if (!(await ref.get()).exists) return res.status(404).json({ error: 'No such beer.' });
-    await ref.delete();
+    // In a transaction, so two phones removing the same beer take its
+    // rating off the shared counters once: the second finds it gone.
+    const gone = await db.runTransaction(async (t) => {
+      const snap = await t.get(ref);
+      if (!snap.exists) return false;
+      const p = snap.data() || {};
+      if (p.crowd) applyTally(t, crowdLib.tally().change(p.stopId, 'pour', p.crowd, null));
+      t.delete(ref);
+      t.set(req.crawl.ref, { updatedAt: new Date().toISOString() }, { merge: true });
+      return true;
+    });
+    if (!gone) return res.status(404).json({ error: 'No such beer.' });
     res.json({ ok: true, pours: await poursOf(req.crawl.ref) });
   } catch (err) { console.error('DELETE pour', err); res.status(500).json({ error: 'Could not remove that.' }); }
+});
+
+/** Change a logged beer - most often its stars, after the second sip. The
+ *  shared counters move by the difference: a 3 made a 5 adds 2 to the sum
+ *  and nothing to the count. */
+app.patch('/api/trips/:id/crawls/:cid/pours/:pid', requireLogin, ownedTrip, ownedCrawl, async (req, res) => {
+  try {
+    if (!ROW_ID.test(req.params.pid)) return res.status(404).json({ error: 'No such beer.' });
+    const b = req.body || {};
+    const patch = {};
+    if (b.beer !== undefined) { patch.beer = clip(b.beer, 80); if (!patch.beer) return res.status(400).json({ error: 'Say which beer.' }); }
+    if (b.style !== undefined) patch.style = clip(b.style, 60);
+    if (b.note !== undefined) patch.note = clip(b.note, 200);
+    if (b.rating !== undefined) {
+      const r = b.rating === null || b.rating === '' ? null : Number(b.rating);
+      if (r !== null && !(Number.isInteger(r) && r >= 1 && r <= 5)) return res.status(400).json({ error: 'A rating is 1 to 5 stars.' });
+      patch.rating = r;
+    }
+    if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to change.' });
+    const ref = poursCol(req.crawl.ref).doc(req.params.pid);
+    const found = await db.runTransaction(async (t) => {
+      const snap = await t.get(ref);
+      if (!snap.exists) return null;
+      const p = snap.data() || {};
+      const stop = (req.crawl.data.stops || []).find((s) => s.id === p.stopId);
+      const next = Object.assign({}, p, patch);
+      const entry = p.crowd ? await menuCache().doc(p.stopId).get().then((x) => (x.exists ? x.data() : null)).catch(() => null) : null;
+      // A pour logged before the counters existed was never counted, so it
+      // is not counted on an edit either: "what changed" has no "before".
+      const mark = p.crowd ? crowdLib.pourMark(stop, next, entry) : null;
+      if (p.crowd) applyTally(t, crowdLib.tally().change(p.stopId, 'pour', p.crowd, mark));
+      const at = new Date().toISOString();
+      t.set(ref, Object.assign({}, patch, { crowd: mark || null, editedAt: at }), { merge: true });
+      t.set(req.crawl.ref, { updatedAt: at }, { merge: true });
+      return true;
+    });
+    if (!found) return res.status(404).json({ error: 'No such beer.' });
+    res.json({ ok: true, pours: await poursOf(req.crawl.ref) });
+  } catch (err) { console.error('PATCH pour', err); res.status(500).json({ error: 'Could not change that.' }); }
 });
 
 /**
@@ -2484,7 +2690,10 @@ app.post('/api/trips/:id/crawls/:cid/menus', requireLogin, identity.requireBudge
       // Shared: whoever looks a brewery up pays, the next crawl through it
       // within FRESH_MS reads it free. The name is kept so a cached entry is
       // only reused for a stop of the same name (crawlmenu.isFresh).
-      await menuCache().doc(s.id).set({ name: s.name, city: s.city || '', menu, fetchedAt: at });
+      // mergeFields, not a plain set: the same document carries every
+      // crawler's counters (crowd.js), which a menu lookup must not wipe.
+      // The menu itself is still replaced whole, never merged into the old.
+      await menuCache().doc(s.id).set({ name: s.name, city: s.city || '', menu, fetchedAt: at }, { mergeFields: ['name', 'city', 'menu', 'fetchedAt'] });
       wrote += 1;
     }
     if (!wrote) return send({ error: 'The search came back without menus. Try again in a moment.' });

@@ -712,6 +712,116 @@ rows, the itinerary merge, menu and pick validation) and `test/trip-crawls.js`
 390px and 1280px — picker, map, menus, picks, live mode, check-in and pour,
 recap and picture show, Overview tile, the demo crawl — before shipping.
 
+## Recap cards, crowd ratings and the lifetime passport (2026-09-26)
+
+Erik asked for features that "draw users in, feature rich, and make it fun".
+Three, built on the crawls. **No model call in any of them**, so none is
+metered.
+
+### The recap card: drawn on the phone, shared as a file
+
+`public/recap-card.js` (`window.RecapCard`; `cardData`, `fitText` and `wrap`
+are `require`d by `test/recap-card.js`). Once a crawl's Recap shows (every
+stop checked in, or its date passed), **Recap card** draws 1080x1350
+(portrait) or 1200x630 (wide) on a canvas: name, place, day, stops checked in,
+beers, **miles walked** (walk legs between two checked-in stops, not rides,
+nothing to a skipped stop), average rating, the top-rated pour, and the
+breweries as stamps ("+2 more" when they do not fit). Optionally the first
+Memories photo from the crawl, on by default with a tick box to leave it off.
+
+- **Never a link.** Trips are private (owner and members; 404 to everyone
+  else), and a card served from a URL would be the first thing about a trip a
+  stranger could open. So nothing is uploaded and no route draws it: the PNG
+  goes to `navigator.share({files})` when `canShare` allows, else it
+  downloads. The football app's brag cards ARE links, because a
+  public board has nothing private in it. Do not copy that shape here.
+- **Two taps.** The first draws and shows the preview; Share is a second tap,
+  because iOS refuses a share sheet without a fresh gesture, and drawing plus
+  fetching a photo would use that gesture up.
+- **The canvas is never tainted.** The photo is `fetch`ed from the app's own
+  authenticated route (same origin, the session cookie) and drawn from a Blob.
+  Checked in Chromium: `toBlob`/`toDataURL` succeed with the photo on it. A
+  cross-origin image would make them throw.
+- Text is cut to fit (`fitText`), numbers shrink rather than being cut, and
+  control and direction-override characters are stripped. The canvas does not
+  read markup. Stars are drawn shapes, not a font glyph.
+
+### What every crawler thought: counters only, on `breweries/<id>`
+
+`crowd.js`. The shared menu-cache document gains
+`crowd: {<nameKey>: {checkins, pours, ratingSum, ratingN, beers: {<beerKey>:
+{name, n}}}}`. A stop shows "4.3★ from 31 ratings · 27 check-ins by Trip
+Planner crawlers" and "Most poured here: X", **each number only once at least
+five (`THRESHOLD`) back it**. The server applies the threshold (`summary()`)
+and the page checks it again.
+
+- **Nothing that says who.** No uid, email, trip or crawl id, time, note or
+  style. The only strings are the brewery name (hashed, as the key) and a beer
+  name **as the shared menu spells it**. A typed beer that is not on the
+  stop's menu counts toward the rating and pour total but never becomes a
+  named row ("Erik's 40th" would otherwise be readable by every crawler).
+  At most 120 named rows a bucket.
+- **A bucket per brewery NAME.** The id comes from the browser, so a crawl
+  could rate "Totally Real Brewing" under a real brewery's id. As with the
+  menu cache's same-name rule, a stop only reads and writes the bucket for its
+  own name, and a named beer row needs the menu to be usable for that name.
+  `demo-*` ids never count, and the example trip's writes are 403 anyway.
+- **Idempotent by recording what was counted.** The crawl keeps
+  `crowd.<stopId>` (the bucket its check-in counted into) and each pour keeps
+  `crowd: {k, r, b, bn}`. Every change is "take away what was counted, add
+  what is true now" (`crowdLib.tally()`), in the **same transaction** as the
+  write: check-in and undo (read inside the transaction, so three phones
+  tapping at once count one), a pour logged (a batch with its new document),
+  **edited** (`PATCH /crawls/:cid/pours/:pid`, new: 3★ made 5★ adds 2 to the
+  sum and 0 to the count), removed (twice is a 404 and moves nothing), a stop
+  removed, a crawl deleted (`dropCrawl`), **a trip deleted** (its crawls and
+  pours are now deleted with it and take their counts back). Check-ins and
+  pours made before this shipped have no record, so they were never counted
+  and are never taken back.
+- **The menu lookup now writes with `mergeFields`** (`name, city, menu,
+  fetchedAt`), not a plain `set`. A plain set would wipe every crawler's
+  counters, and a `merge: true` would leave an old menu's fields behind.
+
+Tapping a logged beer now opens it for editing. That is what the PATCH is for.
+
+### The lifetime passport
+
+`lifetime.js`, `GET /api/passport` (login). It covers every brewery checked
+in on every crawl of every trip the person owns or is a member of. The beers,
+ratings, styles and top pour are **their own** (`pour.by`). Check-ins carry no
+uid, so a shared trip's stamps are every member's. Counts of breweries, beers,
+cities, states and countries, plus 14 milestones (`BADGES`: first stamp, full
+crawl, five-star find, 10/25/50 breweries, 5 states, 2 countries, 25/100
+pours, 10 styles...). Every badge is listed, earned ones dated to the check-in
+or pour that crossed the line, locked ones with how to earn them and how far
+along. "Next:" is the closest locked one. Computed on read, never stored.
+
+- **Read through the trips, not a collection-group query.** The same two
+  queries as the trips list (owned: `ownerId ASC, updatedAt DESC`, the index
+  that exists; shared: `memberIds array-contains`, no index), each checked with
+  `roleIn`, then each trip's crawls and pours. **No new index.** A collection
+  group over `crawls` would need one and would find crawls by something other
+  than "a trip you are on".
+- Held in memory a minute per person, and only while no trip or crawl on it
+  moved (every check-in and pour write moves the crawl's `updatedAt`). That
+  saves re-reading every pour. Left a trip: its stamps leave the passport on
+  the next read.
+- Shown in the Crawls tab under the trip passport, for anyone signed in.
+
+Tests: `test/trip-crowd.js` (58 assertions: idempotence under concurrency,
+edit deltas, nothing identifying stored, the threshold, the name guard, demo
+excluded, strangers 404, stop/crawl/trip deletion taking counts back, the menu
+lookup keeping counters, the lifetime passport's access), `test/recap-card.js`.
+The harness gained `runTransaction` (serialised), `set(..., {mergeFields})`,
+and increments inside a map that did not exist yet. Rendered at 390px and
+1280px, light and dark. New text measured at 5.5:1 or better. The passports'
+small grey labels moved to `--label-2s`: they were 3.4:1.
+
+**Privacy page:** `strongtechnicalconsulting.com/privacy` should say that
+check-ins and ratings feed anonymous per-brewery counts visible to all users,
+what is and is not stored, and that deleting a crawl or trip removes its
+contribution.
+
 ## Sharing a trip (2026-09-23)
 
 Erik asked for this so his wife could use the same trips. A trip still has one

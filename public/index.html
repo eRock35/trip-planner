@@ -558,8 +558,8 @@
   .cr-pp-cell { position: relative; display: flex; flex-direction: column; align-items: center; gap: 1px; text-align: center; padding: 0 4px; }
   .cr-pp-cell + .cr-pp-cell::before { content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 1px; background: var(--sep); }
   .cr-pp-cell .n { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.15; }
-  .cr-pp-cell .u { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--label-2); }
-  .cr-pp-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--label-2); margin: 0 8px 8px; }
+  .cr-pp-cell .u { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--label-2s); }
+  .cr-pp-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--label-2s); margin: 0 8px 8px; }
   .cr-stamps { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 10px 8px 2px; }
   .cr-stamp { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--green);
               border: 1.5px solid currentColor; border-radius: 7px; padding: 2px 7px; transform: rotate(-3deg); white-space: nowrap; }
@@ -686,6 +686,46 @@
   .cr-recap .cr-stats b { font-size: 22px; }
   .cr-recap-best { font-size: 14.5px; line-height: 1.4; }
   .cr-recap-note { font-size: 13px; color: var(--label-2); }
+  .cr-recap-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .cr-recap-actions .btn { width: auto; }
+  .cr-recap-actions svg { width: 16px; height: 16px; }
+
+  /* What every crawler thought (crowd.js) - a quiet line on the stop, shown
+     only past five check-ins or pours. Text in the measured colours. */
+  .cr-crowd { margin-left: 44px; font-size: 13.5px; line-height: 1.45; color: var(--label-2s); }
+  .cr-crowd b { color: var(--label); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cr-crowd .star { color: var(--orange); }
+  .cr-pour button.what { border: 0; background: none; padding: 0; margin: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+
+  /* The recap card sheet: shape, photo or not, a preview, then Share. */
+  .rc-opts { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+  .rc-photo { display: flex; align-items: center; gap: 10px; font-size: 15px; min-height: 44px; }
+  .rc-photo input { width: 22px; height: 22px; accent-color: var(--tint); }
+  .rc-prev { display: flex; align-items: center; justify-content: center; min-height: 220px; background: var(--fill); border-radius: 14px; overflow: hidden; }
+  .rc-prev img { display: block; max-width: 100%; max-height: 52vh; width: auto; height: auto; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+  .rc-wait { color: var(--label-2s); font-size: 14px; padding: 20px; }
+  .rc-note { font-size: 13px; line-height: 1.45; color: var(--label-2s); margin: 10px 2px 0; }
+
+  /* The lifetime passport: every trip, with milestones. Locked badges stay
+     visible - the point of one is knowing how to earn it. */
+  .lp-card { padding: 12px 8px 10px; }
+  .lp-grid { grid-template-columns: repeat(4, 1fr); }
+  .lp-next { margin: 12px 8px 2px; font-size: 14px; line-height: 1.4; }
+  .lp-next span { color: var(--label-2s); }
+  .lp-bar { height: 6px; border-radius: 3px; background: var(--fill-2); margin: 6px 8px 0; overflow: hidden; }
+  .lp-bar i { display: block; height: 100%; background: var(--orange); border-radius: 3px; }
+  .lp-badges { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 8px 0; }
+  .lp-badge { display: flex; align-items: flex-start; gap: 10px; padding: 10px; border-radius: 12px; background: var(--fill); min-width: 0; }
+  .lp-medal { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #FFB547; color: #3A2200; }
+  .lp-medal svg { width: 20px; height: 20px; }
+  .lp-badge.locked .lp-medal { background: var(--fill-2); color: var(--label-2s); }
+  .lp-badge div { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .lp-badge b { font-size: 14px; font-weight: 700; line-height: 1.25; }
+  .lp-badge div > span { font-size: 12.5px; line-height: 1.35; color: var(--label-2s); }
+  .lp-badge.earned div > span { color: var(--ok-text); font-weight: 600; }
+  .lp-more { margin: 6px 8px 0; color: var(--tint-text); }
+  .lp-places { margin: 10px 8px 0; font-size: 13px; line-height: 1.45; color: var(--label-2s); }
+  @media (min-width: 900px) { body.dk .lp-badges { grid-template-columns: repeat(4, 1fr); } }
 
   /* The picker and the other crawl sheets. */
   .cr-near { display: flex; gap: 8px; margin-bottom: 8px; }
@@ -910,6 +950,8 @@
     <symbol id="i-photo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14.5" rx="3"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 15.5l-4.8-4.8L8 19"/></symbol>
     <symbol id="i-receipt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h12v17l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4-2 1.4z"/><path d="M9 8.5h6M9 12h6M9 15.5h3.5"/></symbol>
     <symbol id="i-card" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M3 10h18M7 15h3.5"/></symbol>
+    <symbol id="i-medal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5l2.6 5.2M16 2.5l-2.6 5.2"/><circle cx="12" cy="14.5" r="6.5"/><path d="M12 11.2l1 2.1 2.3.3-1.7 1.6.4 2.3-2-1.1-2 1.1.4-2.3-1.7-1.6 2.3-.3z" fill="currentColor" stroke-width="1"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7.5 7.5L12 3l4.5 4.5"/><path d="M5 12v6.5A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V12"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.2v13.6a1 1 0 0 0 1.5.86l10.6-6.8a1 1 0 0 0 0-1.72L9.5 4.34A1 1 0 0 0 8 5.2z"/></symbol>
     <symbol id="i-beer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 8h10v11a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2z"/><path d="M15.5 10.5h1.8a2.2 2.2 0 0 1 2.2 2.2v2.1a2.2 2.2 0 0 1-2.2 2.2h-1.8"/><path d="M5.2 8.2a2.6 2.6 0 0 1 2.4-4 3.2 3.2 0 0 1 5.6.3 2.4 2.4 0 0 1 2.5 3.6"/><path d="M9 12v5.5M12 12v5.5"/></symbol>
     <symbol id="i-map" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5 3.5 6.5v13l5.5-2 6 2 5.5-2v-13l-5.5 2z"/><path d="M9 4.5v13M15 6.5v13"/></symbol>
@@ -1122,6 +1164,7 @@
     <div id="tab-crawls" class="tabpanel" role="tabpanel" hidden>
       <div id="crListView" class="stack">
         <div class="ov-card cr-passport" id="crPassport" hidden></div>
+        <div class="ov-card lp-card" id="crLifetime" hidden></div>
         <div id="crCrawls"></div>
         <button type="button" class="btn btn-primary" id="crNewBtn"><svg><use href="#i-plus"/></svg>Plan a crawl</button>
         <div class="status" id="crListStatus"></div>
@@ -1221,6 +1264,9 @@
 <!-- The countdown, the budget across currencies, price sparklines: plain
      functions shared with test/live.js. -->
 <script src="/live.js"></script>
+<!-- The crawl recap card: drawn on a canvas here and shared as a file, never
+     a link - trips are private. Pure parts shared with test/recap-card.js. -->
+<script src="/recap-card.js"></script>
 
 <!-- Sheet contents live here until opened -->
 <div id="sheetStash" hidden>
@@ -3733,7 +3779,7 @@
     // with every page: most visits to a trip never look at a crawl.
     loadLeaflet().catch(function () {});
     if (crawlOpen) { fetchCrawl(crawlOpen, true); startCrawlPoll(); }
-    else loadCrawls(currentTripId);
+    else { loadCrawls(currentTripId); loadLifetime(); }
   }
 
   function renderPassport() {
@@ -3749,6 +3795,51 @@
         : '<div class="cr-pp-top">Check in at a stop and it’s stamped here.</div>') +
       (p.top ? '<div class="cr-pp-top">Best so far: <b>' + escapeHtml(p.top.beer) + '</b>' + (p.top.brewery ? ' at ' + escapeHtml(p.top.brewery) : '') +
         ' <span class="cr-stars">' + stars(p.top.rating) + '</span></div>' : '');
+  }
+
+  /* ---- the lifetime passport (every trip) ----
+   * Per person, not per trip: the server reads every trip they own or are
+   * on (lifetime.js). Asked when the crawl list is shown, redrawn only when
+   * it changed. */
+  var lifetime = null, lifetimeSig = "", lifetimeAll = false;
+  async function loadLifetime() {
+    if (!isSignedIn) { lifetime = null; lifetimeSig = ""; $("crLifetime").hidden = true; return; }
+    try {
+      var res = await fetch("/api/passport", { cache: "no-store" });
+      if (!res.ok) return;
+      var text = await res.text();
+      if (text === lifetimeSig) return;
+      lifetimeSig = text; lifetime = JSON.parse(text);
+      renderLifetime();
+    } catch (e) {}
+  }
+  function badgeHtml(b) {
+    var at = b.earnedAt ? new Date(b.earnedAt) : null;
+    var sub = b.earned ? (at && !isNaN(at) ? "Earned " + at.toLocaleDateString(undefined, at.getFullYear() === new Date().getFullYear() ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" }) : "Earned")
+      : b.hint + (b.need > 1 ? " " + b.have + " of " + b.need + "." : "");
+    return '<div class="lp-badge ' + (b.earned ? "earned" : "locked") + '"><span class="lp-medal">' + svgUse("i-medal") + '</span>' +
+      '<div><b>' + escapeHtml(b.title) + (b.earned ? '' : '<span class="vh"> (locked)</span>') + '</b><span>' + escapeHtml(sub) + '</span></div></div>';
+  }
+  function renderLifetime() {
+    var p = lifetime, box = $("crLifetime");
+    if (!p || !Array.isArray(p.badges)) { box.hidden = true; return; }
+    box.hidden = false;
+    var cell = function (n, u) { return '<div class="cr-pp-cell"><span class="n">' + escapeHtml(String(n)) + '</span><span class="u">' + escapeHtml(u) + '</span></div>'; };
+    var earned = p.badges.filter(function (b) { return b.earned; });
+    var locked = p.badges.filter(function (b) { return !b.earned; }).sort(function (a, b) { return (b.have / b.need) - (a.have / a.need) || a.need - b.need; });
+    var shown = lifetimeAll ? earned.concat(locked) : earned.concat(locked.slice(0, Math.max(2, 4 - earned.length)));
+    var nx = p.next, left = nx ? nx.need - nx.have : 0;
+    box.innerHTML = '<div class="cr-pp-title">Your passport · every trip</div>' +
+      '<div class="cr-pp-grid lp-grid">' + cell(p.breweries, p.breweries === 1 ? "Brewery" : "Breweries") + cell(p.beers, p.beers === 1 ? "Beer" : "Beers") +
+        cell(p.cities, p.cities === 1 ? "City" : "Cities") + cell(p.states, p.states === 1 ? "State" : "States") + '</div>' +
+      (nx ? '<div class="lp-next">Next: <b>' + escapeHtml(nx.title) + '</b> <span>— ' + escapeHtml(nx.need > 1 ? left + " to go. " + nx.hint : nx.hint) + '</span></div>' +
+        '<div class="lp-bar" role="img" aria-label="' + escapeHtml(nx.have + " of " + nx.need) + '"><i style="width:' + Math.round((nx.have / nx.need) * 100) + '%"></i></div>' : '') +
+      '<div class="lp-badges">' + shown.map(badgeHtml).join("") + '</div>' +
+      (p.badges.length > shown.length || lifetimeAll ? '<button type="button" class="link-btn lp-more" id="lpMore">' + (lifetimeAll ? "Fewer badges" : "All " + p.badges.length + " badges") + '</button>' : '') +
+      (p.places && (p.places.states.length || p.places.countries.length > 1)
+        ? '<div class="lp-places">' + escapeHtml((p.places.countries.length > 1 ? p.places.countries : p.places.states).join(" · ")) + '</div>' : '');
+    var more = $("lpMore");
+    if (more) more.addEventListener("click", function () { lifetimeAll = !lifetimeAll; renderLifetime(); });
   }
 
   function renderCrawlList() {
@@ -3814,6 +3905,7 @@
     $("crDetail").hidden = true; $("crListView").hidden = false;
     window.scrollTo(0, 0);
     loadCrawls(currentTripId);
+    loadLifetime();
   }
   $("crBack").addEventListener("click", closeCrawl);
 
@@ -3846,7 +3938,8 @@
   function stopCrawlPoll() { if (crawlTimer) { clearInterval(crawlTimer); crawlTimer = null; } }
   function crawlsForeground() {
     if (!currentTripId || !currentTrip) return;
-    if (crawlOpen && currentTab === "crawls") fetchCrawl(crawlOpen, true); else loadCrawls(currentTripId);
+    if (crawlOpen && currentTab === "crawls") fetchCrawl(crawlOpen, true);
+    else { loadCrawls(currentTripId); if (currentTab === "crawls") loadLifetime(); }
   }
   document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") crawlsForeground(); });
   window.addEventListener("pageshow", crawlsForeground);
@@ -3958,14 +4051,18 @@
       if (s.phone) info.push('<a href="tel:' + escapeHtml(s.phone.replace(/[^\d+]/g, "")) + '">' + escapeHtml(phoneText(s.phone)) + '</a>');
       if (s.website) info.push('<a href="' + escapeHtml(s.website) + '" target="_blank" rel="noopener">' + escapeHtml(hostOf(s.website)) + '</a>');
       if (info.length) html += '<div class="cr-info">' + info.join("") + '</div>';
+      html += crowdHtml(v.crowd && v.crowd[s.id]);
       if (pick) html += '<div class="cr-pick"><b>Order:</b> ' + escapeHtml(pick.order) + (pick.why ? '<span>' + escapeHtml(pick.why) + '</span>' : '') + '</div>';
       html += menuHtml(v.menus && v.menus[s.id], demoTrip);
       if (pours.length) {
         html += '<div class="cr-pours">' + pours.map(function (p) {
           var who = whoAsked(p.by), extra = [who, p.note].filter(Boolean).join(" · ");
-          return '<div class="cr-pour"><div class="what">🍺 <b>' + escapeHtml(p.beer) + '</b>' + (p.style ? ' <span>' + escapeHtml(p.style) + '</span>' : '') +
+          var inner = '🍺 <b>' + escapeHtml(p.beer) + '</b>' + (p.style ? ' <span>' + escapeHtml(p.style) + '</span>' : '') +
             (p.rating ? ' <span class="cr-stars" aria-label="' + p.rating + ' of 5">' + stars(p.rating) + '</span>' : '') +
-            (extra ? '<br><span>' + escapeHtml(extra) + '</span>' : '') + '</div>' +
+            (extra ? '<br><span>' + escapeHtml(extra) + '</span>' : '');
+          // Tapping a beer changes it - its stars, mostly, after the second sip.
+          return '<div class="cr-pour">' + (demoTrip ? '<div class="what">' + inner + '</div>'
+              : '<button type="button" class="what" data-pour-edit="' + escapeHtml(p.id) + '" aria-label="Change ' + escapeHtml(p.beer) + '">' + inner + '</button>') +
             (demoTrip ? '' : '<button type="button" class="cl-del" data-pour-del="' + escapeHtml(p.id) + '" aria-label="Remove ' + escapeHtml(p.beer) + '">' + svgUse("i-x") + '</button>') + '</div>';
         }).join("") + '</div>';
       }
@@ -3978,6 +4075,21 @@
       }
       return html + '</section>';
     }).join("");
+  }
+
+  /** "4.2★ from 31 ratings · 27 check-ins by Trip Planner crawlers" - the
+   *  server sends only numbers at least five people-actions back (crowd.js),
+   *  and the page checks again rather than trust a shape. */
+  function crowdHtml(cw) {
+    if (!cw) return "";
+    var ok = function (n) { return typeof n === "number" && isFinite(n) && n >= 5; };
+    var bits = [];
+    if (typeof cw.rating === "number" && ok(cw.ratings)) bits.push('<b>' + escapeHtml(cw.rating.toFixed(1)) + '<span class="star" aria-hidden="true">★</span></b> from ' + escapeHtml(plural(cw.ratings, "rating", "ratings")));
+    if (ok(cw.checkins)) bits.push(escapeHtml(plural(cw.checkins, "check-in", "check-ins")));
+    var line = bits.length ? bits.join(" · ") + " by Trip Planner crawlers" : "";
+    var top = cw.topBeer && cw.topBeer.name && ok(cw.topBeer.n) ? 'Most poured here: <b>' + escapeHtml(cw.topBeer.name) + '</b>' : "";
+    if (!line && !top) return "";
+    return '<div class="cr-crowd">' + (line ? '<div>' + line + '</div>' : '') + (top ? '<div>' + top + '</div>' : '') + '</div>';
   }
 
   // ---- live mode: the day of the crawl ----
@@ -4070,8 +4182,9 @@
     var bestAt = best ? c.stops.filter(function (s) { return s.id === best.stopId; })[0] : null;
     var show = crawlSlides(v);
     var stat = function (b, s) { return '<div class="cr-stat"><b>' + escapeHtml(String(b)) + '</b><span>' + escapeHtml(s) + '</span></div>'; };
-    box.innerHTML = '<div class="ov-card cr-recap"><div class="cr-recap-top"><h3>' + (visited === n ? "Crawl complete" : "How it went") + '</h3>' +
-      (show.photos ? '<button type="button" class="btn btn-primary btn-sm" id="crPlay"><svg class="i-play" aria-hidden="true"><use href="#i-play"/></svg>Play the crawl</button>' : '') + '</div>' +
+    box.innerHTML = '<div class="ov-card cr-recap"><div class="cr-recap-top"><h3>' + (visited === n ? "Crawl complete" : "How it went") + '</h3></div>' +
+      '<div class="cr-recap-actions">' + (show.photos ? '<button type="button" class="btn btn-primary btn-sm" id="crPlay"><svg class="i-play" aria-hidden="true"><use href="#i-play"/></svg>Play the crawl</button>' : '') +
+        (window.RecapCard && visited ? '<button type="button" class="btn ' + (show.photos ? 'btn-secondary' : 'btn-primary') + ' btn-sm" id="crCard">' + svgUse("i-share") + 'Recap card</button>' : '') + '</div>' +
       '<div class="cr-stats">' + stat(visited + "/" + n, "Stops") + stat(v.totals.miles, "Miles") + stat(pours.length, pours.length === 1 ? "Beer" : "Beers") +
         stat(avg != null ? "★" + avg : "–", "Avg rating") + '</div>' +
       (best ? '<div class="cr-recap-best">Top-rated: <b>' + escapeHtml(best.beer) + '</b>' + (bestAt ? ' at ' + escapeHtml(bestAt.name) : '') + ' <span class="cr-stars">' + stars(best.rating) + '</span></div>' : '') +
@@ -4080,6 +4193,81 @@
     box.hidden = false;
     var play = $("crPlay");
     if (play) play.addEventListener("click", function () { window.PhotoTools.slideshow(crawlSlides(crawlView).list); });
+    var card = $("crCard");
+    if (card) card.addEventListener("click", openRecapCard);
+  }
+
+  /* ---- the recap card ----
+   * Drawn on a canvas on this phone (recap-card.js) and handed to the share
+   * sheet as a PNG file - never a link, because a trip is private. The first
+   * tap draws it and shows it; Share is a SECOND tap, because iOS refuses a
+   * share sheet that does not come straight from a gesture, and drawing plus
+   * fetching a photo would use that gesture up. The photo comes from the
+   * app's own photo route and is drawn from a Blob, so the canvas is never
+   * tainted. */
+  function crawlFirstPhoto(v) {
+    var list = crawlSlides(v).list;
+    for (var i = 0; i < list.length; i++) if (list[i].type === "photo") return list[i].src;
+    return null;
+  }
+  function openRecapCard() {
+    var v = crawlView, RC = window.RecapCard;
+    if (!v || !RC) return;
+    var data = RC.cardData(v, { destination: currentTrip && currentTrip.destination });
+    var src = crawlFirstPhoto(v), photo = null, size = "portrait", withPhoto = !!src, file = null, url = null, gen = 0;
+    var canShareFile = function (f) { try { return !!(f && navigator.share && navigator.canShare && navigator.canShare({ files: [f] })); } catch (e) { return false; } };
+    var body = '<div class="rc-opts"><div class="seg" role="group" aria-label="Shape of the card">' +
+        '<button type="button" data-size="portrait" aria-pressed="true">Portrait</button><button type="button" data-size="wide" aria-pressed="false">Wide</button></div>' +
+        (src ? '<label class="rc-photo"><input type="checkbox" id="rcPhoto" checked>Include a photo from the crawl</label>' : '') + '</div>' +
+      '<div class="rc-prev" id="rcPrev"><div class="rc-wait">Drawing the card…</div></div>' +
+      '<div class="cr-form-actions"><button type="button" class="btn btn-primary" id="rcShare" disabled>Share</button></div>' +
+      '<p class="rc-note">Drawn on this device from the crawl. Nothing is uploaded and no link is made — the picture goes only where you send it.</p>' +
+      '<div class="status" id="rcStatus"></div>';
+    var sheet = openSheet({ title: "Recap card", body: body, onClose: function () { gen = -1; if (url) { URL.revokeObjectURL(url); url = null; } } });
+    var btn = sheet.querySelector("#rcShare"), prev = sheet.querySelector("#rcPrev"), status = sheet.querySelector("#rcStatus");
+    async function render() {
+      var mine = ++gen;
+      btn.disabled = true;
+      setStatus(status, "");
+      if (withPhoto && !photo) photo = await RC.loadImage(src);
+      if (mine !== gen) return;
+      var canvas = document.createElement("canvas");
+      RC.draw(canvas, data, size, withPhoto ? photo : null);
+      var blob;
+      try { blob = await RC.toBlob(canvas); } catch (e) { if (mine === gen) setStatus(status, "Couldn’t draw the card on this device.", "error"); return; }
+      if (mine !== gen) return;
+      if (url) URL.revokeObjectURL(url);
+      url = URL.createObjectURL(blob);
+      file = new File([blob], RC.fileName(data, size), { type: "image/png" });
+      prev.innerHTML = '<img id="rcImg" alt="' + escapeHtml("Recap card for " + data.name) + '" src="' + escapeHtml(url) + '">';
+      btn.textContent = canShareFile(file) ? "Share" : "Save image";
+      btn.disabled = false;
+      if (withPhoto && src && !photo) setStatus(status, "The photo couldn’t be loaded, so the card is without it.");
+    }
+    function save() {
+      var a = document.createElement("a");
+      a.href = url; a.download = file.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      toast("Recap card saved");
+    }
+    sheet.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-size]");
+      if (!b || b.getAttribute("data-size") === size) return;
+      size = b.getAttribute("data-size");
+      Array.prototype.forEach.call(sheet.querySelectorAll("[data-size]"), function (x) { x.setAttribute("aria-pressed", String(x.getAttribute("data-size") === size)); });
+      render();
+    });
+    var box = sheet.querySelector("#rcPhoto");
+    if (box) box.addEventListener("change", function () { withPhoto = box.checked; render(); });
+    btn.addEventListener("click", function () {
+      if (!file) return;
+      if (!canShareFile(file)) { save(); return; }
+      navigator.share({ files: [file], title: data.name }).catch(function (e) {
+        if (e && e.name === "AbortError") return;     // they closed the sheet
+        save();
+      });
+    });
+    render();
   }
 
   // ---- the map (Leaflet, vendored, loaded on first use) ----
@@ -4176,8 +4364,13 @@
   }
 
   function onCrawlClick(e) {
-    var t = e.target.closest("[data-visit],[data-pour],[data-pour-del],[data-move],[data-remove]");
+    var t = e.target.closest("[data-visit],[data-pour],[data-pour-edit],[data-pour-del],[data-move],[data-remove]");
     if (!t || crawlIsDemo()) return;
+    if (t.hasAttribute("data-pour-edit")) {
+      var pe = (crawlView.pours || []).filter(function (p) { return p.id === t.getAttribute("data-pour-edit"); })[0];
+      if (pe) openPourSheet(pe.stopId, pe);
+      return;
+    }
     if (t.hasAttribute("data-visit")) { toggleVisit(t.getAttribute("data-visit")); return; }
     if (t.hasAttribute("data-pour")) { openPourSheet(t.getAttribute("data-pour")); return; }
     if (t.hasAttribute("data-pour-del")) { deletePour(t.getAttribute("data-pour-del")); return; }
@@ -4248,11 +4441,12 @@
     } catch (e) { setStatus(status, (e && e.message) || "Couldn’t add that photo.", "error"); }
   }
 
-  function openPourSheet(sid) {
+  /** Log a beer at a stop - or, given `pour`, change one already logged. */
+  function openPourSheet(sid, pour) {
     var v = crawlView, s = v.crawl.stops.filter(function (x) { return x.id === sid; })[0];
     if (!s) return;
     var menu = v.menus && v.menus[sid], beers = (menu && menu.beers) || [], pick = v.crawl.picks && v.crawl.picks[sid];
-    var rating = 0;
+    var rating = pour && pour.rating ? pour.rating : 0;
     var body = (beers.length ? '<div class="cr-beerchips">' + beers.slice(0, 12).map(function (b, i) { return '<button type="button" data-beer="' + i + '">' + escapeHtml(b.name) + '</button>'; }).join("") + '</div>' : '') +
       '<div class="rc-grid">' +
         '<label class="rc-field wide"><span>Beer</span><input id="pourBeer" maxlength="80" autocomplete="off" placeholder="' + escapeHtml(pick ? pick.order : "What you’re drinking") + '"></label>' +
@@ -4261,9 +4455,16 @@
           [1, 2, 3, 4, 5].map(function (n) { return '<button type="button" data-r="' + n + '" aria-label="' + n + ' of 5">★</button>'; }).join("") + '</div></div>' +
         '<label class="rc-field wide"><span>Note</span><input id="pourNote" maxlength="200" autocomplete="off" placeholder="Optional"></label>' +
       '</div>' +
-      '<div class="cr-form-actions"><button type="button" class="btn btn-primary" id="pourSave">Log it</button></div><div class="status" id="pourStatus"></div>';
-    var sheet = openSheet({ title: "Log a beer · " + s.name, body: body, focus: beers.length ? null : "#pourBeer" });
+      '<div class="cr-form-actions"><button type="button" class="btn btn-primary" id="pourSave">' + (pour ? "Save" : "Log it") + '</button></div><div class="status" id="pourStatus"></div>';
+    var sheet = openSheet({ title: (pour ? "Change · " : "Log a beer · ") + s.name, body: body, focus: beers.length || pour ? null : "#pourBeer" });
     var drawStars = function () { Array.prototype.forEach.call(sheet.querySelectorAll("[data-r]"), function (b) { var on = Number(b.getAttribute("data-r")) <= rating; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); }); };
+    if (pour) {
+      // Set as values, never through markup: these are someone's typing.
+      sheet.querySelector("#pourBeer").value = pour.beer || "";
+      sheet.querySelector("#pourStyle").value = pour.style || "";
+      sheet.querySelector("#pourNote").value = pour.note || "";
+      drawStars();
+    }
     sheet.addEventListener("click", function (e) {
       var chip = e.target.closest("[data-beer]");
       if (chip) { var b = beers[Number(chip.getAttribute("data-beer"))]; sheet.querySelector("#pourBeer").value = b.name; sheet.querySelector("#pourStyle").value = b.style || ""; return; }
@@ -4274,11 +4475,13 @@
       var btn = this, beer = sheet.querySelector("#pourBeer").value.trim();
       if (!beer) { setStatus(sheet.querySelector("#pourStatus"), "Which beer?", "error"); sheet.querySelector("#pourBeer").focus(); return; }
       btn.disabled = true;
-      var data = await crawlWrite("POST", "/pours", { stopId: sid, beer: beer, style: sheet.querySelector("#pourStyle").value.trim(), rating: rating || null, note: sheet.querySelector("#pourNote").value.trim() });
+      var fields = { beer: beer, style: sheet.querySelector("#pourStyle").value.trim(), rating: rating || null, note: sheet.querySelector("#pourNote").value.trim() };
+      var data = pour ? await crawlWrite("PATCH", "/pours/" + encodeURIComponent(pour.id), fields)
+        : await crawlWrite("POST", "/pours", Object.assign({ stopId: sid }, fields));
       btn.disabled = false;
-      if (!data) { setStatus(sheet.querySelector("#pourStatus"), $("crStatus").textContent || "Couldn’t log that.", "error"); setStatus($("crStatus"), ""); return; }
+      if (!data) { setStatus(sheet.querySelector("#pourStatus"), $("crStatus").textContent || "Couldn’t save that.", "error"); setStatus($("crStatus"), ""); return; }
       closeSheet();
-      toast("Logged " + beer);
+      toast((pour ? "Saved " : "Logged ") + beer);
       crawlView.pours = data.pours || []; crawlSig = ""; renderCrawl();
       loadCrawls(currentTripId);
     });
