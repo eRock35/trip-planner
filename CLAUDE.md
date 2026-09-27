@@ -880,6 +880,14 @@ separately from those counts so each account counts once per brewery, holding
 only which check-in or pour holds that account's voice. Past check-ins and
 pours were counted by the backfill.
 
+**How the backfill actually ran (2026-09-27).** Calling the route needs the
+cron key, which lives only in Secret Manager and on the Scheduler job; the
+Cloud Build account cannot read it (rightly), and pasting it into a build
+would leave it in the build history. So the hourly `check-watches` tick runs
+the backfill **once**: with the cron key and no `control/crowd-backfill.doneAt`,
+it runs `backfillCrowd()` and records `{doneAt, result}` there. A signed-in
+call to that route never triggers it. To run it again, delete that document.
+
 ## Sharing a trip (2026-09-23)
 
 Erik asked for this so his wife could use the same trips. A trip still has one

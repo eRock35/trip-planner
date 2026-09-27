@@ -3264,6 +3264,30 @@ app.post('/api/trips/:id/watches/:watchId/check', requireLogin, identity.require
 // anymore. Capped per run so one slow tick can't balloon into a huge bill.
 const MAX_CHECKS_PER_RUN = 20;
 
+// The crowd backfill, once, on the next scheduler tick (2026-09-27). The
+// route above needs the cron key, and the cron key lives only in Secret
+// Manager and on the Scheduler job - so rather than handling it anywhere
+// else, the job that already carries it runs the backfill the first time it
+// finds `control/crowd-backfill` without a `doneAt`, and records the result
+// there. Cron key only: a signed-in reader's call to this route never runs
+// it. Idempotent anyway, so a second run would change nothing.
+app.post('/api/cron/check-watches', async (req, res, next) => {
+  const key = req.get('X-Cron-Key');
+  if (!(CRON_SECRET && key && key === CRON_SECRET)) return next();
+  try {
+    const ref = db.collection('control').doc('crowd-backfill');
+    const doc = await ref.get();
+    if (!doc.exists || !doc.data().doneAt) {
+      const result = await backfillCrowd({ dry: false });
+      await ref.set({ doneAt: new Date().toISOString(), result });
+      console.log('crowd backfill (scheduled, once)', JSON.stringify(result));
+    }
+  } catch (err) {
+    console.error('crowd backfill (scheduled) failed', err.message);
+  }
+  return next();
+});
+
 // Diagnostic: exercise the Anthropic call twice, once with the web_search
 // tool and once without, and write both outcomes to Firestore. Cloud Logging
 // is not readable by this project's service account, so a 500 from the chat

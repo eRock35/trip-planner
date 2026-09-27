@@ -92,6 +92,17 @@ const snapshot = () => JSON.stringify([Array.from(tp.entries()).filter(([k]) => 
   ok('a backfilled pour removed through the app takes its count and its voice back', alicePours.status === 200 && JSON.parse(counters())[K].pours === 1
      && JSON.parse(counters())[K].ratingSum === 5 && tp.has('crowd-voices/' + a1v) === false && tp.has('crowd-voices/' + lc1.crowd[RB.id].v));
 
+  // The scheduled once-only run: the watch cron with the key runs it and
+  // records it; a signed-in reader on the same route never does.
+  tp.delete('control/crowd-backfill');
+  await realFetch(B + '/api/cron/check-watches', { method: 'POST', headers: { ...J, cookie: admin } });
+  ok('a signed-in call to the watch cron does not run the backfill', !tp.has('control/crowd-backfill'));
+  await realFetch(B + '/api/cron/check-watches', { method: 'POST', headers: { ...J, 'X-Cron-Key': 'cron-test-key' } });
+  const once = tp.get('control/crowd-backfill');
+  ok('the watch cron with the key runs it once and records it', once && once.doneAt && once.result && once.result.checkins);
+  await realFetch(B + '/api/cron/check-watches', { method: 'POST', headers: { ...J, 'X-Cron-Key': 'cron-test-key' } });
+  ok('...and not again', tp.get('control/crowd-backfill').doneAt === once.doneAt);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });
