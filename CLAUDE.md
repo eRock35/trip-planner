@@ -899,8 +899,10 @@ together — `memberIds` is what the trips list queries with `array-contains`,
 
 - **By email, not by link.** A uid is `base64url(lowercased email)`
   (`identity.uidFor`), so an address can be shared before its owner has an
-  account: the moment they sign up or sign in with it, the trip is in their
-  list. There is no mail service, so the sheet's "Send link" hands a message to
+  account: the moment they sign up or sign in with it - and, since
+  2026-09-27, confirm the address (see "Shared trips wait on a confirmed
+  address") - the trip is in their list. This app sends no mail of its own, so
+  the sheet's "Send link" hands a message to
   the phone's share sheet (or copies it). That link opens the trip only for
   the account it was shared with; anyone else gets the usual 404.
 - **Members can do everything except two things.** `loadOwnedTrip` now
@@ -1235,6 +1237,34 @@ What still leaks, said plainly:
   slow, not impossible. The fuller fix is Hopscotch's: keep per-voter
   records (the voice documents are most of the way there) and publish over
   an even prefix. Not built.
+
+### Shared trips wait on a confirmed address (2026-09-27)
+
+The shared account now verifies email (see `eriks-projects/CLAUDE.md`,
+"Email verification"). Here that means:
+
+- **A trip shared to an address opens only once that account has confirmed
+  it** (`identity.isVerified`: a clicked link, or an account from before
+  2026-09-27 23:00 UTC). `roleIn(data, uid, memberOk)` is given
+  `memberMayOpen(req.user)` by `loadOwnedTrip`, the trips list and the
+  lifetime passport; unconfirmed, the shared half of the list is not even
+  queried and a shared trip is the stranger's 404. **The owner is never
+  gated** - a trip you started is yours.
+- The trips list tells an unconfirmed account "Trips shared with you appear
+  once you confirm your email." with a "Send the link again" button
+  (`POST /api/auth/verify/send`). `/api/auth/me` - which shadows
+  identity's - reports `emailVerified`, and the shared banner reads it.
+- **The free AI credit waits on it too**: `requireBudget` answers 403
+  `code: 'verify-email'`, and every AI button shows the sentence
+  (`showSpendBlocked` takes 403 now). `ownerAccount()` asks the same
+  (`mustVerifyForFreeAi`), so the hourly sweep skips an unconfirmed free
+  owner's watches instead of spending on them.
+- This narrows "Not built: accepting a shared trip" below: registering
+  someone's address first no longer hands you their shared trips, because
+  you cannot confirm an inbox you do not have. The pending/accept flow is
+  still not built.
+- `test/verify-gates.js` holds it. The harness stores a newly registered
+  account confirmed unless a suite calls `h.autoVerify(false)`.
 
 ### Not built: accepting a shared trip
 

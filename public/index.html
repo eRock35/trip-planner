@@ -181,6 +181,13 @@
   .callout-body { flex: 1 1 auto; min-width: 0; font-size: 15px; line-height: 1.4; }
   .callout-body b { display: block; margin-bottom: 2px; }
   .link-btn { background: none; border: none; color: var(--tint); font-weight: 600; font-size: 15px; padding: 6px 0 0; min-height: 32px; }
+  /* Trips shared to an unconfirmed address are held back (2026-09-27). */
+  .verify-note { margin: 0 0 14px; padding: 12px 14px; border-radius: 12px; background: var(--card);
+                 color: var(--label-2s); font-size: 14px; line-height: 1.4; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .verify-note span { flex: 1 1 14em; }
+  .verify-note button { min-height: 44px; padding: 0 12px; border: 0; border-radius: 10px; background: var(--tint-soft);
+                        color: var(--tint-text); font: inherit; font-weight: 600; cursor: pointer; }
+  .verify-note button:disabled { opacity: .7; cursor: default; }
   .empty { text-align: center; color: var(--label-2); font-size: 15px; padding: 40px 20px 32px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
   .empty svg { width: 44px; height: 44px; color: var(--label-3); margin-bottom: 4px; }
   .empty b { color: var(--label); font-size: 17px; font-weight: 600; }
@@ -2003,10 +2010,11 @@
   // A 403 here means "signed in, but AI isn't approved for you"; a different
   // problem from not being logged in, so say so rather than sending them to a
   // login page they're already past.
-  /** The two ways a model call is refused now that nobody approves anyone:
-   *  402, your credit is gone, and 503, the app has spent its day across
-   *  everyone. Both arrive with a body that explains itself, so this shows
-   *  what the server said rather than guessing at it. */
+  /** The ways a model call is refused now that nobody approves anyone:
+   *  402, your credit is gone; 403 `verify-email`, the free credit waits on a
+   *  confirmed address (2026-09-27); and 503, the app has spent its day
+   *  across everyone. Each arrives with a body that explains itself, so this
+   *  shows what the server said rather than guessing at it. */
   async function showSpendBlocked(statusEl, res) {
     var data = await res.json().catch(function () { return {}; });
     refreshAuthStatus();                       // the meter just moved
@@ -2278,6 +2286,25 @@
     if (!document.hidden) tripListTimer = setTimeout(tickTripList, 60000 - (now % 60000) + 150);
   }
 
+  /** Trips shared to an address open only once it is confirmed, so an
+   *  unconfirmed account is told why the list may be missing some. */
+  function verifyNote() {
+    if (!me || me.emailVerified !== false) return null;
+    var box = document.createElement("div"); box.className = "verify-note";
+    var text = document.createElement("span");
+    text.textContent = "Trips shared with you appear once you confirm your email.";
+    var btn = document.createElement("button"); btn.type = "button"; btn.textContent = "Send the link again";
+    btn.addEventListener("click", async function () {
+      btn.disabled = true; btn.textContent = "Sending…";
+      try {
+        var r = await fetch("/api/auth/verify/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        btn.textContent = r.ok ? "Sent — check your inbox" : "Try again later";
+      } catch (e) { btn.textContent = "Try again later"; }
+    });
+    box.appendChild(text); box.appendChild(btn);
+    return box;
+  }
+
   async function loadTripsList() {
     var list = $("tripsList");
     list.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
@@ -2296,12 +2323,14 @@
         var btn = document.createElement("button"); btn.type = "button"; btn.className = "btn btn-primary"; btn.textContent = "Start a trip";
         btn.addEventListener("click", function () { newTripBtn.click(); });
         box.appendChild(btn); list.appendChild(box);
+        var vn0 = verifyNote(); if (vn0) list.insertBefore(vn0, list.firstChild);
         return;
       }
       var groups = [["Planning", trips.filter(function (t) { return t.status !== "locked"; })], ["Locked in", trips.filter(function (t) { return t.status === "locked"; })]];
       list.innerHTML = "";
       listCountdowns = [];
       var planningList = null;
+      var vn = verifyNote(); if (vn) list.appendChild(vn);
       groups.forEach(function (g, gi) {
         // Planning is drawn even when empty, because "Start another trip"
         // lives in it: a new trip starts as a plan, so that is where the
@@ -2662,7 +2691,7 @@
     try {
       var res = await fetch("/api/trips/" + id + "/ideas", { method: "POST" });
       if (res.status === 401) { showAuthRequired(status); return; }
-      if (res.status === 402 || res.status === 503) { await showSpendBlocked(status, res); return; }
+      if (res.status === 402 || res.status === 403 || res.status === 503) { await showSpendBlocked(status, res); return; }
       var data = await res.json().catch(function () { return {}; });
       if (!res.ok || data.error) throw new Error(data.error || "failed");
       if (currentTripId !== id) return;
@@ -2697,7 +2726,7 @@
     setStatus(chatStatus, working);
     try {
       var res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      if (res.status === 402 || res.status === 503) { entry.answer = await showSpendBlocked(chatStatus, res); renderChat(); return; }
+      if (res.status === 402 || res.status === 403 || res.status === 503) { entry.answer = await showSpendBlocked(chatStatus, res); renderChat(); return; }
       if (res.status === 401) { showAuthRequired(chatStatus); entry.answer = "Please sign in first."; renderChat(); return; }
       var data = await res.json().catch(function () { return {}; });
       // Gmail not connected, or Google ended the connection: say why in the
@@ -2926,7 +2955,7 @@
     try {
       var res = await fetch(tripApi("/packing/suggest"), { method: "POST" });
       if (res.status === 401) { showAuthRequired(status); return; }
-      if (res.status === 402 || res.status === 503) { await showSpendBlocked(status, res); return; }
+      if (res.status === 402 || res.status === 403 || res.status === 503) { await showSpendBlocked(status, res); return; }
       var data = await res.json().catch(function () { return {}; });
       if (!res.ok || data.error) throw new Error(data.error || "Couldn’t suggest a list right now.");
       if (currentTripId !== id) return;
@@ -3200,7 +3229,7 @@
     try {
       var res = await fetch(tripApi("/budget/suggest"), { method: "POST" });
       if (res.status === 401) { showAuthRequired(status); return; }
-      if (res.status === 402 || res.status === 503) { await showSpendBlocked(status, res); return; }
+      if (res.status === 402 || res.status === 403 || res.status === 503) { await showSpendBlocked(status, res); return; }
       var data = await res.json().catch(function () { return {}; });
       if (!res.ok || data.error) throw new Error(data.error || "Couldn’t estimate right now.");
       if (currentTripId !== id) return;
@@ -3244,7 +3273,7 @@
       if (res.status === 401) { showAuthRequired(importStatus); return; }
       // Out of credit: the same words every other Claude button shows, and
       // the way to more, rather than a dead end.
-      if (res.status === 402 || res.status === 503) {
+      if (res.status === 402 || res.status === 403 || res.status === 503) {
         await showSpendBlocked(importStatus, res);
         $("bgTopUpRow").hidden = res.status !== 402;
         return;
@@ -4550,7 +4579,7 @@
     try {
       var res = await fetch(crawlApi(cid, path), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
       if (res.status === 401) { showAuthRequired(status); return; }
-      if (res.status === 402 || res.status === 503) { await showSpendBlocked(status, res); $("crTopUpRow").hidden = res.status !== 402; return; }
+      if (res.status === 402 || res.status === 403 || res.status === 503) { await showSpendBlocked(status, res); $("crTopUpRow").hidden = res.status !== 402; return; }
       var data = await res.json().catch(function () { return {}; });
       // These drip whitespace while they work, so a failure is a 200 with { error }.
       if (!res.ok || data.error) throw new Error(data.error || "failed");
@@ -4989,7 +5018,7 @@
         body: JSON.stringify({ question: text }),
         signal: controller ? controller.signal : undefined
       });
-      if (res.status === 402 || res.status === 503) {
+      if (res.status === 402 || res.status === 403 || res.status === 503) {
         entry.answer = await showSpendBlocked(chatStatus, res);
         renderChat();
         return;
@@ -5123,7 +5152,7 @@
         checkBtn.disabled = true; checkBtn.textContent = "Checking…";
         try {
           var res = await fetch("/api/trips/" + currentTripId + "/watches/" + w.id + "/check", { method: "POST" });
-          if (res.status === 402 || res.status === 503) {
+          if (res.status === 402 || res.status === 403 || res.status === 503) {
             await showSpendBlocked($("wStatus"), res);
             checkBtn.disabled = false; checkBtn.textContent = "Check now"; return;
           }
@@ -5301,6 +5330,7 @@
   ], { reset: async function () { synthetic().forEach(function (n) { n.remove(); }); } });
 })();
 </script>
+<script src="/verify-banner.js" data-mount="/api/auth" defer></script>
 <script src="/beacon.js" data-app="trip" async></script>
 </body>
 </html>

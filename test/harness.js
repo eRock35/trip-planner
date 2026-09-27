@@ -9,6 +9,7 @@ class FakeFirestore {
   constructor(opts = {}) { this.dbId = opts.databaseId || '(default)'; }
   collection(name) {
     const store = bag(this.dbId);
+    const dbId = this.dbId;
     const mk = (filters = [], order = null, lim = 0) => ({
       where(f, op, v) { return mk(filters.concat([[f, op, v]]), order, lim); },
       orderBy(f, dir) { return mk(filters, [f, dir], lim); },
@@ -63,6 +64,11 @@ class FakeFirestore {
               for (const f of o.mergeFields) if (Object.prototype.hasOwnProperty.call(v, f)) out[f] = JSON.parse(JSON.stringify(v[f]));
               store.set(key, out);
             } else store.set(key, o && o.merge ? applyIncrements(store.get(key), v) : JSON.parse(JSON.stringify(v)));
+            // See autoVerify below: a new shared account, written whole by
+            // register, reads as confirmed unless a suite turned that off.
+            if (AUTO_VERIFY.on && !o && dbId === 'identity' && name === 'users' && v && v.createdAt && !('emailVerifiedAt' in v)) {
+              store.set(key, Object.assign({}, store.get(key), { emailVerifiedAt: v.createdAt }));
+            }
           },
           async update(v) { noNestedArrays(v); store.set(key, Object.assign({}, store.get(key) || {}, v)); },
           async delete() { store.delete(key); },
@@ -186,4 +192,16 @@ function applyIncrements(existing, patch) {
   return out;
 }
 
-module.exports = { bag, install, session, DBS, FieldValue };
+/**
+ * Email verification (2026-09-27). A shared account registered after the
+ * cutoff is unconfirmed until its link is clicked, and an unconfirmed account
+ * gets no free AI credit and no trips shared to its address. Every suite
+ * written before that registers accounts and then uses them as the people
+ * they are, so by default an account register writes is stored confirmed -
+ * as if the link had been clicked. The suite that tests the gates themselves
+ * (test/verify-gates.js) calls autoVerify(false) and confirms by hand.
+ */
+const AUTO_VERIFY = { on: true };
+function autoVerify(on) { AUTO_VERIFY.on = Boolean(on); }
+
+module.exports = { bag, install, session, DBS, FieldValue, autoVerify };

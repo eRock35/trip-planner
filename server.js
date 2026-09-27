@@ -236,6 +236,10 @@ async function ownerAccount(uid) {
   if (!uid) return null;
   const shared = await identityStore.store.get('users', uid).catch(() => null);
   const account = shared ? { id: uid, ...shared } : { id: uid };
+  // The same rule requireBudget applies to a request: the free allowance is
+  // spent only by a confirmed address (2026-09-27). Asked here too, or an
+  // unconfirmed account's watches would spend it hourly from the sweep.
+  if (identityLib.mustVerifyForFreeAi(account)) return null;
   const budget = identityLib.budgetFor(account);
   if (budget.unlimited || budget.remainingUsd > 0) return account;
   return null;
@@ -258,6 +262,10 @@ app.get('/api/auth/me', identity.attachUser, attachProfile, (req, res) => {
     // aiAccess and isAdmin are this app's business). Anything identity
     // reports that the page needs has to be repeated here or it is invisible.
     budget: identityLib.budgetFor(req.user),
+    // The shared banner and the trips list's "shared with you" note read
+    // this (2026-09-27): trips shared to an address open only once it is
+    // confirmed.
+    emailVerified: identityLib.isVerified(req.user),
     byok: {
       supported: identity.byokEnabled(),
       present: Boolean(req.user.byok && req.user.byok.blob),
@@ -394,7 +402,7 @@ async function loadOwnedTrip(req, res) {
     return null;
   }
   const data = doc.data();
-  const role = roleIn(data, req.user && req.user.uid);
+  const role = roleIn(data, req.user && req.user.uid, memberMayOpen(req.user));
   if (!role) {
     res.status(404).json({ error: 'Trip not found.' });
     return null;
@@ -412,8 +420,9 @@ async function loadOwnedTrip(req, res) {
  *
  * SHARED BY EMAIL, NOT BY LINK. An account's uid is the base64url of its
  * lowercased email (identity.uidFor), so an address can be added before that
- * person has an account at all: the moment they sign up or sign in with it,
- * the trip is in their list. Nothing is sent to them - there is no mail
+ * person has an account at all: the moment they sign up or sign in with it
+ * and confirm the address (memberMayOpen, 2026-09-27), the trip is in their
+ * list. Nothing about the trip is sent to them - this app has no mail
  * service - so the page offers a message to send them itself. The link in
  * that message opens the trip only for the account it was shared with; a
  * forwarded link is a 404 to anyone else.
@@ -426,11 +435,25 @@ async function loadOwnedTrip(req, res) {
  * since the watches run on their trip. */
 const MAX_MEMBERS = 10;
 const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
-function roleIn(data, uid) {
+/**
+ * @param memberOk  false when the account has not confirmed its address:
+ *                  a trip shared TO an address opens only for someone who has
+ *                  proved they own it (2026-09-27). Before that, registering
+ *                  someone's address before they did handed you every trip
+ *                  shared with them. The owner is never gated - a trip you
+ *                  started is yours whatever your mailbox says.
+ */
+function roleIn(data, uid, memberOk = true) {
   if (!uid || !data) return null;
   if (data.ownerId === uid) return 'owner';
-  if (Array.isArray(data.memberIds) && data.memberIds.includes(uid)) return 'member';
+  if (memberOk && Array.isArray(data.memberIds) && data.memberIds.includes(uid)) return 'member';
   return null;
+}
+
+/** May this account see trips shared to its address? Only once the address
+ *  is confirmed (or the account predates the rule - see identity.isVerified). */
+function memberMayOpen(user) {
+  return identityLib.isVerified(user);
 }
 /** The address a uid was made from. uids are base64url(lowercased email),
  *  so this is exact for every account this app has created. */
@@ -614,14 +637,17 @@ app.get('/api/trips', requireLogin, async (req, res) => {
     // Two queries rather than one: Firestore cannot OR an equality on
     // ownerId with array-contains on memberIds. The shared one has no
     // orderBy so it needs no composite index; the merge sorts both.
+    // The shared half only for a confirmed address (memberMayOpen): the page
+    // says why the list may be missing trips shared with you.
+    const memberOk = memberMayOpen(req.user);
     const [mine, shared] = await Promise.all([
       db.collection('trips').where('ownerId', '==', req.user.uid).orderBy('updatedAt', 'desc').limit(100).get(),
-      db.collection('trips').where('memberIds', 'array-contains', req.user.uid).limit(100).get(),
+      memberOk ? db.collection('trips').where('memberIds', 'array-contains', req.user.uid).limit(100).get() : { docs: [] },
     ]);
     const seen = new Set();
     const all = [];
     for (const d of mine.docs.concat(shared.docs)) {
-      if (seen.has(d.id)) continue;
+      if (seen.has(d.id) || !roleIn(d.data(), req.user.uid, memberOk)) continue;
       seen.add(d.id);
       all.push(tripSummary(d.id, d.data(), req.user.uid));
     }
@@ -2622,14 +2648,15 @@ const passportCache = new Map();            // uid -> {at, sig, body}
 app.get('/api/passport', requireLogin, async (req, res) => {
   try {
     const uid = req.user.uid;
+    const memberOk = memberMayOpen(req.user);
     const [mine, shared] = await Promise.all([
       db.collection('trips').where('ownerId', '==', uid).orderBy('updatedAt', 'desc').limit(100).get(),
-      db.collection('trips').where('memberIds', 'array-contains', uid).limit(100).get(),
+      memberOk ? db.collection('trips').where('memberIds', 'array-contains', uid).limit(100).get() : { docs: [] },
     ]);
     const seen = new Set();
     const docs = [];
     for (const d of mine.docs.concat(shared.docs)) {
-      if (seen.has(d.id) || !roleIn(d.data(), uid)) continue;
+      if (seen.has(d.id) || !roleIn(d.data(), uid, memberOk)) continue;
       seen.add(d.id);
       docs.push(d);
     }

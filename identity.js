@@ -585,6 +585,157 @@ const uidFor = (email) => b64url(normalise(email));
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /* ------------------------------------------------------------------ *
+ * Email verification (2026-09-27)
+ * ------------------------------------------------------------------ */
+
+// Nothing used to prove that whoever registers an address owns it, while
+// several features trusted the address: a trip shared to it, the football
+// research allowlist, the owner flag, and the free AI allowance (one per
+// address, so throwaway addresses were free money). Now an account carries
+// `emailVerifiedAt` once its owner clicks a link mailed to that address.
+//
+// Accounts made before VERIFY_CUTOFF are grandfathered: they were made by the
+// people who own those addresses (the hole was found and closed the same
+// day), and locking every existing user out of their credit to prove it
+// again would punish exactly the wrong people. The owner is verified by
+// definition. A record with no readable createdAt fails closed - register
+// always writes one, so only a hand-made record can lack it.
+const VERIFY_CUTOFF = '2026-09-27T23:00:00Z';
+const VERIFY_TTL_SECONDS = 48 * 60 * 60;
+// A forwarded send is signed with a timestamp; older than this is refused.
+const DISPATCH_WINDOW_MS = 5 * 60 * 1000;
+// How long register (or "send again") waits on the mail before answering.
+// Billed per request: the send is awaited inside it, never left running.
+const VERIFY_SEND_TIMEOUT_MS = 4000;
+// The one service with a mail key, and the one place a link lands.
+const MAIL_ORIGIN = 'https://strongtechnicalconsulting.com';
+const SITE_DOMAIN = 'strongtechnicalconsulting.com';
+
+/**
+ * Has this account proved it owns its address?
+ * @param opts.before  an ISO instant to grandfather accounts made before,
+ *                     instead of VERIFY_CUTOFF (football's research gate uses
+ *                     its own, earlier cutoff).
+ */
+function isVerified(user, opts = {}) {
+  if (!user) return false;
+  if (user.admin === true) return true;
+  if (user.emailVerifiedAt) return true;
+  const cutoff = Date.parse(opts.before || VERIFY_CUTOFF);
+  const made = Date.parse(user.createdAt || '');
+  return Number.isFinite(made) && Number.isFinite(cutoff) && made < cutoff;
+}
+
+/** REQUIRE_VERIFIED_FOR_FREE_AI=0 switches the free-credit gate off without
+ *  a code deploy. Read at call time. */
+function freeAiNeedsVerifying() {
+  return String(process.env.REQUIRE_VERIFIED_FOR_FREE_AI || '1').trim() !== '0';
+}
+
+/** Would this person's next model call come out of the FREE allowance?
+ *  Not the owner, not their own key, not a member, not someone who bought
+ *  credit: all of those paid or bring their own, and are not gated. */
+function drawsOnFreeAllowance(user) {
+  if (!user) return false;
+  if (budgetFor(user).unlimited) return false;
+  if (isMember(user)) return false;
+  return !(Number(user.toppedUpUsd || 0) > 0);
+}
+
+/** The one question every place that spends the free allowance asks. */
+function mustVerifyForFreeAi(user) {
+  return Boolean(user) && freeAiNeedsVerifying() && drawsOnFreeAllowance(user) && !isVerified(user);
+}
+
+/** A key for one purpose, derived from the shared session secret, so a
+ *  verification token can never be read as a session (or a signature on a
+ *  forwarded send as either). */
+function derivedKey(secret, purpose) {
+  return crypto.createHmac('sha256', String(secret || '')).update(purpose).digest();
+}
+const VERIFY_PURPOSE = 'identity email verify v1';
+const DISPATCH_PURPOSE = 'identity mail dispatch v1';
+
+/** The link's token: uid, the address at send time, and an expiry. The
+ *  address is carried so a link cannot confirm an account whose address has
+ *  since changed (by an admin migration) to something the clicker never saw. */
+function makeVerifyToken(uid, email, secret, now = Date.now()) {
+  if (!secret) throw new Error('No session secret: cannot sign a verification link.');
+  const payload = { p: 'verify', sub: uid, em: normalise(email), exp: Math.floor(now / 1000) + VERIFY_TTL_SECONDS };
+  return makeToken(payload, derivedKey(secret, VERIFY_PURPOSE));
+}
+
+function readVerifyToken(token, secret) {
+  if (!secret) return null;
+  const p = readToken(token, derivedKey(secret, VERIFY_PURPOSE));
+  if (!p || p.p !== 'verify' || typeof p.em !== 'string' || !p.exp) return null;
+  return { uid: p.sub, email: p.em, exp: p.exp };
+}
+
+/** A forwarded send's signature: HMAC over `uid.ts` under the dispatch key. */
+function dispatchSignature(uid, ts, secret) {
+  return crypto.createHmac('sha256', derivedKey(secret, DISPATCH_PURPOSE)).update(`${uid}.${ts}`).digest('base64url');
+}
+
+function dispatchSignatureOk(uid, ts, sig, secret) {
+  if (!secret || typeof sig !== 'string' || !sig) return false;
+  const h = (v) => crypto.createHash('sha256').update(String(v)).digest();
+  return crypto.timingSafeEqual(h(dispatchSignature(uid, ts, secret)), h(sig));
+}
+
+/** Where a confirmed reader may be sent back to: an https URL on this domain
+ *  or a subdomain of it, nothing else - otherwise the link is an open
+ *  redirect wearing this domain's name. Anything else is ignored. */
+function safeNext(raw, domain = SITE_DOMAIN) {
+  if (!raw || typeof raw !== 'string' || raw.length > 500) return null;
+  let u;
+  try { u = new URL(raw); } catch (e) { return null; }
+  if (u.protocol !== 'https:' || u.username || u.password || u.port) return null;
+  const host = u.hostname.toLowerCase();
+  if (host !== domain && !host.endsWith('.' + domain)) return null;
+  return u.href;
+}
+
+function verifyLink(token, next, origin = MAIL_ORIGIN) {
+  let link = `${String(origin).replace(/\/+$/, '')}/verify?t=${encodeURIComponent(token)}`;
+  const n = safeNext(next);
+  if (n) link += `&next=${encodeURIComponent(n)}`;
+  return link;
+}
+
+/** e***@example.com - enough to recognise your own address on a screen
+ *  someone may be looking over, not enough to read it off. */
+function maskEmail(email) {
+  const e = String(email || '');
+  const at = e.lastIndexOf('@');
+  if (at < 1) return '';
+  return `${e[0]}***${e.slice(at)}`;
+}
+
+const escHtml = (s) => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+function verifyEmailBody({ link }) {
+  const l = escHtml(link);
+  return {
+    subject: 'Confirm your email',
+    text: 'Confirm this address for your account on strongtechnicalconsulting.com:\n\n'
+      + `${link}\n\n`
+      + 'It turns on the free AI credit and anything someone has shared with you. '
+      + 'The link works for 48 hours. If you did not create an account, ignore this and nothing happens.',
+    html: `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="color-scheme" content="light"></head><body style="margin:0;background:#f2f2f7;">
+<div style="max-width:560px;margin:0 auto;padding:28px 20px 40px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1d1d1f;line-height:1.55;font-size:17px;">
+<h1 style="font-size:23px;font-weight:700;margin:0 0 14px;">Confirm your email</h1>
+<p style="margin:0 0 18px;">Tap the button to confirm this address for your account on strongtechnicalconsulting.com. It turns on the free AI credit and anything someone has shared with you.</p>
+<p style="margin:0 0 22px;"><a href="${l}" style="display:inline-block;background:#0a66c2;color:#fff;text-decoration:none;font-weight:600;padding:13px 22px;border-radius:12px;">Confirm my email</a></p>
+<p style="margin:0 0 8px;font-size:14px;color:#6e6e73;">The link works for 48 hours.</p>
+<p style="margin:0;font-size:14px;color:#6e6e73;">If you did not create an account, ignore this and nothing happens.</p>
+<p style="margin:22px 0 0;font-size:13px;color:#6e6e73;word-break:break-all;">Or paste this into your browser:<br>${l}</p>
+</div></body></html>`,
+  };
+}
+
+/* ------------------------------------------------------------------ *
  * The module
  * ------------------------------------------------------------------ */
 
@@ -595,6 +746,12 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * @param opts.baseDomain  registrable domain the cookie and rpID are scoped to
  * @param opts.rpName      name shown in the OS Face ID prompt
  * @param opts.mountPath   route prefix, default '/api/id'
+ * @param opts.sendMail    ({to, subject, html, text, signal}) => Promise. Only
+ *                         the service holding the mail key passes it (the
+ *                         landing). Without it, a verification send is
+ *                         forwarded there, signed, and the landing mails the
+ *                         address on the record - never one a caller chose.
+ * @param opts.verifyOrigin where verification links point (the landing).
  */
 function create(opts) {
   const {
@@ -604,6 +761,8 @@ function create(opts) {
     baseDomain = '',
     rpName = 'Erik Strong',
     mountPath = '/api/id',
+    sendMail = null,
+    verifyOrigin = MAIL_ORIGIN,
   } = opts;
 
   let warnedAboutSecret = false;
@@ -932,6 +1091,19 @@ function create(opts) {
     // must run a model for nobody (a scheduled sweep) has no business behind
     // this middleware; it decides that for itself, out loud.
     if (!req.user) return res.status(401).json({ error: 'Sign in first.' });
+    // The free allowance is one per ADDRESS, so it is only real once the
+    // address is proved (2026-09-27). Anyone paying, on their own key or the
+    // owner is not asked: they are not drawing on the free $2.
+    if (mustVerifyForFreeAi(req.user)) {
+      log('budget.unverified', req, { ok: false });
+      return res.status(403).json({
+        error: `Confirm your email to use the free AI credit. We sent a link to ${req.user.email}.`,
+        code: 'verify-email',
+        // Relative to the host, and under this app's own mount - a lab app
+        // is mounted at /<slug>, which req.baseUrl carries.
+        resend: `${req.baseUrl || ''}${mountPath}/verify/send`,
+      });
+    }
     const b = budgetFor(req.user);
     if (b.unlimited || b.remainingUsd > 0) return next();
     log('budget.exhausted', req, { detail: `spent ${b.spentUsd.toFixed(2)} of ${b.allowanceUsd.toFixed(2)}`, ok: false });
@@ -1139,6 +1311,108 @@ function create(opts) {
     guard: sameOriginOnly,
   });
 
+  /* ---------- email verification ---------- */
+
+  const HOUR_MS = 60 * 60 * 1000;
+  const verifySendsByAccount = createLimiter({ max: 3, windowMs: HOUR_MS });
+  const verifySendsByIp = createLimiter({ max: 20, windowMs: HOUR_MS });
+  // The landing's own count, across every app that forwards to it.
+  const verifyDispatchByUid = createLimiter({ max: 5, windowMs: HOUR_MS });
+
+  /** Where "Email confirmed" offers to take the reader: the app they were in.
+   *  Null off this domain (a local test host), which safeNext decides. */
+  function appNext(req) {
+    const host = String((req.get ? req.get('host') : req.headers && req.headers.host) || '').toLowerCase();
+    return safeNext(`https://${host}${req.baseUrl || ''}/`);
+  }
+
+  /** Compose and send, on the one service that can. The TO address is the
+   *  record's, always. */
+  async function mailVerification(uid, user, next) {
+    const link = verifyLink(makeVerifyToken(uid, user.email, secret()), next, verifyOrigin);
+    const body = verifyEmailBody({ link });
+    await sendMail({
+      to: user.email, subject: body.subject, html: body.html, text: body.text,
+      signal: AbortSignal.timeout(VERIFY_SEND_TIMEOUT_MS),
+    });
+  }
+
+  /**
+   * Send (or ask the landing to send) a verification link.
+   *
+   * Returns a word saying what happened, for logs and tests; the ROUTE never
+   * passes it on - "send again" answers the same whatever happened, so it
+   * cannot be used to learn anything or to tell a limit from a send.
+   * Never throws: a failed mail must never fail a registration.
+   */
+  async function sendVerification(req, user, uid) {
+    try {
+      if (!user || !uid || !user.email) return 'skipped';
+      if (isVerified(user)) return 'verified';
+      const ip = clientIp(req);
+      if (verifySendsByAccount.blocked(uid) || verifySendsByIp.blocked(ip)) return 'limited';
+      verifySendsByAccount.hit(uid);
+      verifySendsByIp.hit(ip);
+      const next = appNext(req);
+      if (sendMail) {
+        await mailVerification(uid, user, next);
+        await log('email.verify.sent', req, { uid, email: user.email });
+        return 'sent';
+      }
+      const key = secret();
+      if (!key) return 'skipped';
+      // A local dev server does not mail production unless told where to.
+      const configured = String(process.env.IDENTITY_MAIL_URL || '').trim();
+      if (!configured && isLocalHost(req)) return 'skipped';
+      const base = (configured || MAIL_ORIGIN).replace(/\/+$/, '');
+      const ts = Date.now();
+      const r = await fetch(`${base}/api/id/verify/dispatch`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': `identity/${appName || 'app'}`,
+          'X-Identity-Signature': dispatchSignature(uid, ts, key),
+        },
+        body: JSON.stringify({ uid, ts, next }),
+        signal: AbortSignal.timeout(VERIFY_SEND_TIMEOUT_MS),
+      });
+      if (!r.ok) {
+        console.error(`[identity] verification dispatch answered ${r.status}`);
+        return 'failed';
+      }
+      await log('email.verify.forwarded', req, { uid, email: user.email });
+      return 'forwarded';
+    } catch (err) {
+      console.error('[identity] verification send failed:', err && err.message);
+      return 'failed';
+    }
+  }
+
+  /**
+   * Check a link's token and mark the account verified. Already verified is
+   * a no-op success. The owner flag is granted HERE, not at registration:
+   * only once the ADMIN_EMAIL address is proved, and only while no owner
+   * exists - the existing owner is never touched.
+   *
+   * @returns {ok, email?, already?, admin?}
+   */
+  async function confirmEmail(token, req = null) {
+    const t = readVerifyToken(token, secret());
+    if (!t) return { ok: false };
+    const user = await getUser(t.uid).catch(() => null);
+    if (!user || user.disabled || normalise(user.email) !== t.email) return { ok: false };
+    if (user.emailVerifiedAt) return { ok: true, already: true, email: user.email };
+    await patchUser(t.uid, { emailVerifiedAt: new Date().toISOString() });
+    let admin = false;
+    const owner = normalise(process.env.ADMIN_EMAIL);
+    if (owner && t.email === owner && user.admin !== true && !(await anyOwner())) {
+      await patchUser(t.uid, { admin: true });
+      admin = true;
+    }
+    await log('email.verified', req, { uid: t.uid, email: user.email, detail: admin ? 'owner granted' : null });
+    return { ok: true, email: user.email, admin };
+  }
+
   /* ---------- routes ---------- */
 
   function mount(expressApp) {
@@ -1164,19 +1438,55 @@ function create(opts) {
         lastSeenAt: new Date().toISOString(),
         createdBy: appName,
       };
-      // Whoever registers with the configured owner address is the owner. Set
-      // here so a fresh deployment produces a working admin without anyone
-      // hand-editing the database.
-      // Only while no owner exists (2026-09-27): addresses are not verified,
-      // so once there is an owner, registering an app's ADMIN_EMAIL (or the
-      // owner's address after a deleted account) must not mint a second one.
-      const owner = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-      if (owner && email === owner && !(await anyOwner())) record.admin = true;
+      // The owner flag is NOT granted here any more (2026-09-27). Registering
+      // the ADMIN_EMAIL address proves nothing; clicking the link mailed to
+      // it does, so confirmEmail() grants it - still only while no owner
+      // exists, so a fresh deployment still produces a working admin.
       await store.set(USERS, uid, record);
       issueSession(res, req, uid, 'password', record);
       await log('register', req, { uid, email });
-      res.json({ ok: true, email });
+      // Awaited, with a short timeout, and it never fails the registration.
+      await sendVerification(req, record, uid);
+      res.json({ ok: true, email, emailVerified: false });
     });
+
+    // "Send the link again". The same answer whatever happened - already
+    // verified, limited, sent, or the mail service down - so it tells nobody
+    // anything and cannot be used to tell a limit from a send.
+    expressApp.post(`${mountPath}/verify/send`, sameOriginOnly, async (req, res) => {
+      const found = await sessionUser(req).catch(() => null);
+      if (!found) return res.status(401).json({ error: 'Sign in first.' });
+      await sendVerification(req, found.user, found.s.uid);
+      res.json({ ok: true });
+    });
+
+    // Only on the service that can send mail. Every other app forwards here,
+    // signed with a key derived from the shared session secret; the body
+    // names an account, never an address, so this can only ever mail the
+    // address an account was registered with.
+    if (sendMail) {
+      expressApp.post(`${mountPath}/verify/dispatch`, async (req, res) => {
+        const body = req.body || {};
+        const uid = typeof body.uid === 'string' ? body.uid : '';
+        const ts = Number(body.ts);
+        const sig = String((req.get && req.get('x-identity-signature')) || '');
+        const fresh = Number.isFinite(ts) && Math.abs(Date.now() - ts) <= DISPATCH_WINDOW_MS;
+        if (!uid || uid.length > 400 || !fresh || !dispatchSignatureOk(uid, body.ts, sig, secret())) {
+          return res.status(401).json({ error: 'Not signed.' });
+        }
+        if (!verifyDispatchByUid.hit(uid)) return res.json({ ok: true });
+        try {
+          const user = await getUser(uid);
+          if (user && !user.disabled && user.email && !isVerified(user)) {
+            await mailVerification(uid, user, safeNext(body.next));
+            await log('email.verify.sent', req, { uid, email: user.email, detail: 'dispatched' });
+          }
+        } catch (err) {
+          console.error('[identity] dispatch send failed:', err && err.message);
+        }
+        res.json({ ok: true });
+      });
+    }
 
     // Guessing is limited per account and per address (2026-09-27). It had a
     // 400 ms pause and nothing else, which is ~200,000 guesses a day at one
@@ -1239,6 +1549,9 @@ function create(opts) {
         access: req.user.access || {},
         requests: req.user.requests || {},
         admin: req.user.admin === true,
+        // Whether the address is proved (or grandfathered, or the owner's).
+        // The shared banner reads this; false shows it.
+        emailVerified: isVerified(req.user),
         // Whether the monthly fee is paid. The account page needs it to say
         // what a key or a top-up will cost BEFORE someone pastes a secret
         // into a box and gets a 402 for their trouble.
@@ -1657,6 +1970,10 @@ function create(opts) {
     budget,
     budgetFor,
     requireBudget,
+    isVerified,
+    mustVerifyForFreeAi,
+    sendVerification,
+    confirmEmail,
     apiKeyFor,
     clientFor,
     byokEnabled: byok.enabled,
@@ -1672,4 +1989,7 @@ function create(opts) {
 module.exports = {
   crossSiteWrite, sameOriginOnly, clientIp, createLimiter, passwordVersion,
   planFor,
+  isVerified, mustVerifyForFreeAi, drawsOnFreeAllowance, VERIFY_CUTOFF, VERIFY_TTL_SECONDS,
+  makeVerifyToken, readVerifyToken, dispatchSignature, dispatchSignatureOk, safeNext, verifyLink,
+  maskEmail, verifyEmailBody,
   webSearchFor, create, priceOf, PRICES, isMember, paysPlatformFee, paidTier, uidFor, makeHash, matches, accessLevel, hasAccess, pendingRequest, budgetFor, FREE_ALLOWANCE_USD, USERS, EVENTS, USAGE, COOKIE, MIN_PASSWORD };

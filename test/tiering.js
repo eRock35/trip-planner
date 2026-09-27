@@ -36,6 +36,9 @@ const uidOf = (e) => Buffer.from(e.toLowerCase()).toString('base64url');
   const ids = h.bag('identity');
 
   const owner = jar(await post('/api/auth/register', { email: 'boss@example.com', password: 'a-long-password-1' }));
+  // Registering ADMIN_EMAIL no longer makes the owner: confirming it does
+  // (2026-09-27), on the landing, which this suite does not run. Stand in.
+  ids.set('users/' + uidOf('boss@example.com'), { ...ids.get('users/' + uidOf('boss@example.com')), admin: true });
   const free = jar(await post('/api/auth/register', { email: 'free@example.com', password: 'a-long-password-2' }));
   const granted = jar(await post('/api/auth/register', { email: 'granted@example.com', password: 'a-long-password-3' }));
   const member = jar(await post('/api/auth/register', { email: 'member@example.com', password: 'a-long-password-4' }));
