@@ -406,11 +406,18 @@ function setSessionCookie(res, req, value, baseDomain, maxAge) {
   ];
   const domain = cookieDomain(req, baseDomain);
   if (domain) bits.push(`Domain=${domain}`);
-  // Secure whenever the request arrived over https. Deriving it from the
-  // request rather than NODE_ENV means local http testing still works and
-  // production is still Secure, without a flag to get wrong.
-  if (req.protocol === 'https') bits.push('Secure');
+  // Secure everywhere except a plain-http local host. It used to follow
+  // req.protocol, which reads 'http' behind Cloud Run's TLS front end on any
+  // app without `trust proxy` (Trip Planner, until 2026-09-27) - so the
+  // domain-wide session cookie went out without Secure and a browser would
+  // send it over plain http to any subdomain.
+  if (req.protocol === 'https' || !isLocalHost(req)) bits.push('Secure');
   res.append('Set-Cookie', bits.join('; '));
+}
+
+function isLocalHost(req) {
+  const host = String((req && (req.hostname || (req.headers && req.headers.host))) || '').replace(/:\d+$/, '').toLowerCase();
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]' || host.endsWith('.localhost') || host === '';
 }
 
 function clearSessionCookie(res, req, baseDomain) {
@@ -500,6 +507,15 @@ function create(opts) {
   async function getUser(uid) {
     if (!uid) return null;
     return store.get(USERS, uid);
+  }
+
+  async function anyOwner() {
+    try {
+      const all = await store.list(USERS);
+      return all.some((u) => u && u.admin === true);
+    } catch (e) {
+      return true; // cannot tell: grant nothing
+    }
   }
 
   async function byEmail(email) {
@@ -947,8 +963,11 @@ function create(opts) {
       // Whoever registers with the configured owner address is the owner. Set
       // here so a fresh deployment produces a working admin without anyone
       // hand-editing the database.
+      // Only while no owner exists (2026-09-27): addresses are not verified,
+      // so once there is an owner, registering an app's ADMIN_EMAIL (or the
+      // owner's address after a deleted account) must not mint a second one.
       const owner = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-      if (owner && email === owner) record.admin = true;
+      if (owner && email === owner && !(await anyOwner())) record.admin = true;
       await store.set(USERS, uid, record);
       issueSession(res, req, uid, 'password');
       await log('register', req, { uid, email });

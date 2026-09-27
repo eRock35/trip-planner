@@ -161,7 +161,21 @@ function tally() {
  * Each number appears only when at least THRESHOLD actions back it, so a
  * figure can never describe one person's evening. null when there is
  * nothing to show at all.
+ *
+ * COARSE ON PURPOSE (2026-09-27). The threshold decides when a number first
+ * appears; on its own it never stopped differencing - read the average
+ * before and after one person's pour and (n+1)*after - n*before is their
+ * stars. Hopscotch answers that with an even-sized prefix of drinkers, which
+ * needs the list of who; these are running sums with nobody's name on them,
+ * so the cheap version instead: every count is shown rounded DOWN to a
+ * multiple of COUNT_STEP, and the average to the nearest HALF star. One more
+ * check-in or pour usually moves nothing at all, and when it does, a count
+ * that steps by five and a half-star average do not say what that one person
+ * gave. What is left is in CLAUDE.md ("Crowd numbers are coarse").
  */
+const COUNT_STEP = 5;
+const floorStep = (n) => Math.floor(n / COUNT_STEP) * COUNT_STEP;
+const halfStar = (avg) => Math.round(avg * 2) / 2;
 function summary(entry, stop) {
   if (!entry || !entry.crowd || typeof entry.crowd !== 'object' || !countable(stop)) return null;
   const b = entry.crowd[nameKey(stop.name)];
@@ -169,19 +183,22 @@ function summary(entry, stop) {
   const num = (v) => (Number.isFinite(Number(v)) ? Math.max(0, Math.round(Number(v))) : 0);
   const checkins = num(b.checkins), ratingN = num(b.ratingN), ratingSum = num(b.ratingSum), pours = num(b.pours);
   const out = { checkins: null, rating: null, ratings: null, topBeer: null };
-  if (checkins >= THRESHOLD) out.checkins = checkins;
+  if (checkins >= THRESHOLD) out.checkins = floorStep(checkins);
   if (ratingN >= THRESHOLD) {
     const avg = ratingSum / ratingN;
-    if (avg >= 1 && avg <= 5) { out.rating = Math.round(avg * 10) / 10; out.ratings = ratingN; }
+    if (avg >= 1 && avg <= 5) { out.rating = halfStar(avg); out.ratings = floorStep(ratingN); }
   }
+  // The most-poured beer by its STEPPED count, a tie going to the name: one
+  // more pour of a beer changes which one is named only when it crosses a
+  // step, never because it is one ahead.
   let top = null;
   for (const row of Object.values(b.beers && typeof b.beers === 'object' ? b.beers : {})) {
-    const n = num(row && row.n), name = String((row && row.name) || '').replace(/[<>]/g, '').slice(0, 80).trim();
+    const n = floorStep(num(row && row.n)), name = String((row && row.name) || '').replace(/[<>]/g, '').slice(0, 80).trim();
     if (!name || n < THRESHOLD) continue;
-    if (!top || n > top.n) top = { name, n };
+    if (!top || n > top.n || (n === top.n && name.localeCompare(top.name) < 0)) top = { name, n };
   }
   if (top && pours >= THRESHOLD) out.topBeer = top;
   return out.checkins || out.rating || out.topBeer ? out : null;
 }
 
-module.exports = { THRESHOLD, MAX_BEER_ROWS, nameKey, beerKey, countable, checkinMark, pourMark, tally, summary, voiceId, pourSlot, checkinOf };
+module.exports = { THRESHOLD, COUNT_STEP, MAX_BEER_ROWS, nameKey, beerKey, countable, checkinMark, pourMark, tally, summary, voiceId, pourSlot, checkinOf };

@@ -41,6 +41,39 @@ const db = new Firestore({ projectId: PROJECT_ID, databaseId: FIRESTORE_DB });
 
 const app = express();
 
+// Behind Cloud Run's TLS front end every request reaches the container as
+// plain http, with the real scheme in X-Forwarded-Proto. Without this,
+// req.protocol read 'http', so the passkey routes expected an origin of
+// http://trip... that no browser ever sends, and Face ID could not work here
+// (2026-09-27). One hop: Cloud Run's front end is the only proxy in front.
+app.set('trust proxy', 1);
+
+// Express does not parse cookies, and the shared passkey module reads its
+// signed challenge cookies from req.cookies - which was never set here, so
+// every Face ID verify answered "That took too long". The same few lines
+// friction and DataViz use. No dependency for it.
+//
+// A value that is not valid percent-encoding is DROPPED, from req.cookies and
+// from the header itself, before anything else reads it. The shared identity
+// module's own parser calls decodeURIComponent unguarded inside an async
+// middleware, so one request with `Cookie: x=%E0%A4%A` was an unhandled
+// rejection - which on Node 22 stops the process (found 2026-09-27). This
+// runs first, so no parser behind it ever sees such a value.
+app.use((req, _res, next) => {
+  const kept = [];
+  req.cookies = {};
+  for (const part of (req.headers.cookie || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i <= 0) continue;
+    try {
+      req.cookies[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+      kept.push(part.trim());
+    } catch (e) { /* malformed: not ours, and not passed on */ }
+  }
+  if (req.headers.cookie !== undefined) req.headers.cookie = kept.join('; ');
+  next();
+});
+
 // Request bodies. Everything here is small JSON, and express.json()'s default
 // 100 KB ceiling is a cheap guard on every route that reads one. Three routes
 // carry a file and need more: a receipt photo, a card statement, a trip photo.
@@ -69,8 +102,15 @@ const photoJson = express.json({ limit: '12mb' });
 // Only the landing page may put this app in a frame - it shows a live
 // preview you can swipe through. Nothing else should be able to: a gated app
 // inside a hostile page is the setup for clickjacking a signed-in session.
+//
+// nosniff on everything (a JSON body or an uploaded photo is never to be
+// read as a script), and HSTS: the app is only ever served over https, and a
+// browser that has seen it once will not try plain http again. Browsers
+// ignore HSTS on an http response, so local testing is unaffected.
 app.use((req, res, next) => {
   res.set('Content-Security-Policy', "frame-ancestors 'self' https://strongtechnicalconsulting.com https://www.strongtechnicalconsulting.com");
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Strict-Transport-Security', 'max-age=31536000');
   next();
 });
 
@@ -284,13 +324,27 @@ app.post('/api/admin/reset-password', requireLogin, accounts.requireAdmin, async
 
 accounts.mount(app);
 
-function requireLoginOrCron(req, res, next) {
+/**
+ * Does this request carry the cron key? Compared in constant time: both
+ * sides are hashed first, so neither the key's characters nor its length can
+ * be read off how long a wrong guess takes. No key configured means nobody
+ * has it - an empty header never matches an unset secret.
+ */
+function cronKeyOk(req) {
   const key = req.get('X-Cron-Key');
-  if (CRON_SECRET && key && key === CRON_SECRET) {
+  if (!CRON_SECRET || typeof key !== 'string' || !key) return false;
+  const digest = (v) => crypto.createHash('sha256').update(String(v)).digest();
+  return crypto.timingSafeEqual(digest(key), digest(CRON_SECRET));
+}
+
+/** The scheduler's routes: the cron key, and nothing else. A session is not
+ *  enough - see "The cron route is the scheduler's" in CLAUDE.md. */
+function requireCron(req, res, next) {
+  if (cronKeyOk(req)) {
     req.isCron = true;
     return next();
   }
-  return requireLogin(req, res, next);
+  return res.status(401).json({ error: 'This route is for the scheduler.' });
 }
 
 // Loads the trip and refuses unless it belongs to the caller. Every route that
@@ -399,11 +453,41 @@ const weather = weatherLib.create();
 
 // Nominatim's usage policy: no more than one request a second, from the whole
 // application. Volume here is tiny, but the policy is not about volume.
+//
+// The line is capped (2026-09-27). Every lookup waits its turn a second
+// apart, so a line of sixty is a minute for the person at the back of it -
+// and the brewery search's "near" box is typed text anyone signed in can
+// send. Past GEOCODE_QUEUE_MAX waiting, a lookup is refused at once with a
+// sentence rather than joining; every caller already treats a failed lookup
+// as "no place right now", and none of them stores that answer.
+const GEOCODE_QUEUE_MAX = Number(process.env.GEOCODE_QUEUE_MAX || 8);
 let geocodeChain = Promise.resolve();
+let geocodeWaiting = 0;
 function geocodePolitely(query) {
-  const run = geocodeChain.then(() => weather.geocode(query));
+  if (geocodeWaiting >= GEOCODE_QUEUE_MAX) {
+    return Promise.reject(Object.assign(new Error('The map search is busy. Try again in a minute.'), { sentence: true, status: 503, busy: true }));
+  }
+  geocodeWaiting += 1;
+  const run = geocodeChain.then(() => weather.geocode(query)).finally(() => { geocodeWaiting -= 1; });
   geocodeChain = run.catch(() => {}).then(() => new Promise((r) => setTimeout(r, 1100)));
   return run;
+}
+
+/**
+ * Searches one person may send to the map in a minute, from the brewery
+ * search's "near" box: GEOCODE_PER_USER a minute, per instance. A trip's own
+ * destination is looked up once and stored, so it does not count.
+ */
+const GEOCODE_PER_USER = Number(process.env.GEOCODE_PER_USER || 10);
+const geocodeRecent = new Map();   // uid -> [ms, ...] in the last minute
+function geocodeAllowed(uid, now = Date.now()) {
+  const recent = (geocodeRecent.get(uid) || []).filter((t) => now - t < 60000);
+  if (recent.length >= GEOCODE_PER_USER) { geocodeRecent.set(uid, recent); return false; }
+  recent.push(now);
+  geocodeRecent.set(uid, recent);
+  // Bounded: forget everyone idle for a minute once the map grows.
+  if (geocodeRecent.size > 5000) for (const [k, v] of geocodeRecent) if (!v.some((t) => now - t < 60000)) geocodeRecent.delete(k);
+  return true;
 }
 
 /** A trip's place: stored on the trip, looked up again only when the
@@ -1136,7 +1220,15 @@ const gmail = gmailLib.create({});
 // decrypt rather than quietly working.
 const tokenVault = byokLib.create({ secret: () => process.env.BYOK_ENCRYPTION_KEY || '' });
 
-const gmailReady = () => gmail.enabled() && tokenVault.enabled();
+// SESSION_SECRET signs the OAuth state. Without it the state would be an HMAC
+// under an empty key - forgeable by anyone who reads this file - so the
+// feature reports itself unavailable instead (2026-09-27).
+const gmailReady = () => gmail.enabled() && tokenVault.enabled() && Boolean(SESSION_SECRET);
+/** The OAuth state's MAC; null when there is no key to sign with. */
+function stateMac(payload) {
+  if (!SESSION_SECRET) return null;
+  return crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
+}
 
 /** What the account page needs to describe the connection honestly. */
 app.get('/api/gmail', requireLogin, async (req, res) => {
@@ -1166,7 +1258,8 @@ app.get('/api/gmail', requireLogin, async (req, res) => {
 app.get('/api/gmail/connect', requireLogin, (req, res) => {
   if (!gmailReady()) return res.status(503).json({ error: 'Gmail is not configured on this deployment.' });
   const payload = `${req.user.uid}.${Date.now()}`;
-  const mac = crypto.createHmac('sha256', process.env.SESSION_SECRET || '').update(payload).digest('base64url');
+  const mac = stateMac(payload);
+  if (!mac) return res.status(503).json({ error: 'Gmail is not configured on this deployment.' });
   res.redirect(gmail.authUrl(`${payload}.${mac}`));
 });
 
@@ -1179,7 +1272,8 @@ app.get('/api/gmail/callback', requireLogin, async (req, res) => {
     if (req.query.error) return fail('declined');
 
     const [uid, at, mac] = String(req.query.state || '').split('.');
-    const expected = crypto.createHmac('sha256', process.env.SESSION_SECRET || '').update(`${uid}.${at}`).digest('base64url');
+    const expected = stateMac(`${uid}.${at}`);
+    if (!expected) return fail('unavailable');
     // Length first: timingSafeEqual throws on a mismatch rather than
     // returning false.
     if (!mac || mac.length !== expected.length
@@ -2138,7 +2232,14 @@ function applyTally(t, tl) {
  * voice, as "c:<trip>/<crawl>/<stop>" or "p:<trip>/<crawl>/<pour>". No uid,
  * no email. The key is derived from SESSION_SECRET and separated from its
  * other uses by a label, like the OAuth state's HMAC. */
-const VOICE_KEY = crypto.createHmac('sha256', SESSION_SECRET || 'unset').update('trip-planner crowd voice v1').digest();
+//
+// No SESSION_SECRET, no key (2026-09-27): it used to fall back to the literal
+// 'unset', which anyone reading this public repo could use to recompute whose
+// voice is whose. Without a key the crowd counters are switched off - new
+// check-ins and pours are saved but left unrecorded, exactly like the ones
+// from before the counters, so the backfill counts them once a key is set -
+// and the backfill route answers 503.
+const VOICE_KEY = SESSION_SECRET ? crypto.createHmac('sha256', SESSION_SECRET).update('trip-planner crowd voice v1').digest() : null;
 const voicesCol = () => db.collection('crowd-voices');
 const crawlRefOf = (tripId, cid) => db.collection('trips').doc(tripId).collection('crawls').doc(cid);
 const holderOf = (kind, tripId, cid, id) => `${kind}:${tripId}/${cid}/${id}`;
@@ -2206,6 +2307,9 @@ async function dropCrawl(crawlRef) {
 async function checkinCrowd(t, ctx, d, stop, want, uid) {
   const raw = (d.crowd || {})[stop.id];
   const was = crowdLib.checkinOf(raw);
+  // A new count needs a voice, and a voice needs the key. Taking one AWAY
+  // does not: an undo still gives back what was counted.
+  if (want && !was && !VOICE_KEY) return undefined;
   let now = null;
   if (want) {
     if (was) now = was;
@@ -2238,6 +2342,9 @@ async function pourCrowd(t, ctx, pourId, pour, stop, entry, old) {
   if (!base) return null;
   const same = old && old.k === base.k && crowdLib.pourSlot(old) === crowdLib.pourSlot(base);
   if (same) return Object.assign({}, base, { v: old.v || null });
+  // No key, no new voice: a new pour stays unrecorded (undefined) for the
+  // backfill; an edit that moves a counted pour elsewhere is not counted.
+  if (!VOICE_KEY) return old === undefined ? undefined : null;
   const v = pourVoice(pour.by, stop.id, base);
   return (await voiceFree(t, v, holderOf('p', ctx.tripId, ctx.cid, pourId))) ? Object.assign({}, base, { v }) : null;
 }
@@ -2484,11 +2591,11 @@ async function backfillCrowd(opts) {
 /** The cron key (for a one-off run from the deploy machine), or a signed-in
  *  admin. Anyone else gets the admin surface's 404. */
 function requireAdminOrCron(req, res, next) {
-  const key = req.get('X-Cron-Key');
-  if (CRON_SECRET && key && key === CRON_SECRET) return next();
+  if (cronKeyOk(req)) return next();
   return requireLogin(req, res, () => accounts.requireAdmin(req, res, next));
 }
 app.post('/api/admin/crowd-backfill', requireAdminOrCron, async (req, res) => {
+  if (!VOICE_KEY) return res.status(503).json({ error: 'The crowd counters are off: SESSION_SECRET is not set on this service.' });
   try {
     const result = await backfillCrowd({ dry: req.query.dry === '1' });
     console.log('crowd backfill', JSON.stringify(result));
@@ -2556,10 +2663,14 @@ app.get('/api/passport', requireLogin, async (req, res) => {
 app.get('/api/trips/:id/breweries/nearby', requireLogin, ownedTrip, async (req, res) => {
   try {
     const near = clip(req.query.near, 120);
+    if (near && !geocodeAllowed(req.user.uid)) {
+      return res.status(429).json({ error: 'That’s a lot of searches in a minute. Wait a moment and try again.' });
+    }
     let place;
     try {
       place = near ? await geocodePolitely(near) : await placeFor(req.owned.ref, req.owned.data);
     } catch (err) {
+      if (err && err.busy) return res.status(503).json({ error: err.message });
       console.error('breweries nearby: geocode', err.message);
       return res.status(503).json({ error: 'Couldn’t look that place up right now. Try again in a moment.' });
     }
@@ -2797,7 +2908,9 @@ app.post('/api/trips/:id/crawls/:cid/pours', requireLogin, ownedTrip, ownedCrawl
     // pours of one beer at the same table are one voice.
     await db.runTransaction(async (t) => {
       const mark = await pourCrowd(t, ctx, ref.id, pour, stop, entry, undefined);
-      t.set(ref, Object.assign({}, pour, { crowd: mark }));
+      // undefined: the counters are off (no key) - leave no record at all,
+      // which Firestore would refuse as a value anyway.
+      t.set(ref, mark === undefined ? pour : Object.assign({}, pour, { crowd: mark }));
       applyPour(t, ctx, ref.id, stopId, null, mark);
       t.set(req.crawl.ref, { updatedAt: pour.at }, { merge: true });
     });
@@ -3105,12 +3218,15 @@ const MAX_TURN_CONTINUATIONS = 4;
 /** The client this request should use: the caller's own key if they have one
  *  on file, otherwise the app's. Built here rather than at startup, because
  *  one process serves everyone. */
-function clientFor(user) {
-  return identity.clientFor(user, anthropic, (apiKey) => new Anthropic({ apiKey }));
+function clientFor(user, fallback) {
+  return identity.clientFor(user, fallback || anthropic, (apiKey) => new Anthropic({ apiKey }));
 }
 
-async function completeTurn(params, user) {
-  const client = await clientFor(user);
+/** `fallback` is the client to use when the user has no key of their own:
+ *  the app's (charged to whoever is signed in) unless a caller with nobody
+ *  signed in - the sweep - hands one charged to the right person. */
+async function completeTurn(params, user, fallback) {
+  const client = await clientFor(user, fallback);
   const messages = params.messages.slice();
   let response;
   for (let i = 0; i <= MAX_TURN_CONTINUATIONS; i++) {
@@ -3131,7 +3247,7 @@ function withPrice(w) {
   try { return Object.assign(w, { price: priceHistory.forWatch(w) }); } catch (e) { return Object.assign(w, { price: null }); }
 }
 
-async function runWatchCheck(tripData, watchDoc, account) {
+async function runWatchCheck(tripData, watchDoc, account, client) {
   const w = watchDoc.data();
   const prompt =
     'Trip: "' + (tripData.name || 'Untitled trip') + '"' +
@@ -3157,7 +3273,7 @@ async function runWatchCheck(tripData, watchDoc, account) {
     max_tokens: 2048,
     tools: [plan.webSearch],
     messages: [{ role: 'user', content: prompt }],
-  }, account);
+  }, account, client);
   const text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n\n');
 
   const now = new Date().toISOString();
@@ -3269,11 +3385,11 @@ const MAX_CHECKS_PER_RUN = 20;
 // Manager and on the Scheduler job - so rather than handling it anywhere
 // else, the job that already carries it runs the backfill the first time it
 // finds `control/crowd-backfill` without a `doneAt`, and records the result
-// there. Cron key only: a signed-in reader's call to this route never runs
-// it. Idempotent anyway, so a second run would change nothing.
-app.post('/api/cron/check-watches', async (req, res, next) => {
-  const key = req.get('X-Cron-Key');
-  if (!(CRON_SECRET && key && key === CRON_SECRET)) return next();
+// there. Cron key only, like everything on this route. Idempotent anyway, so
+// a second run would change nothing. Without SESSION_SECRET there are no
+// voices to give out, so it waits (unrecorded) until there are.
+app.post('/api/cron/check-watches', requireCron, async (req, res, next) => {
+  if (!VOICE_KEY) return next();
   try {
     const ref = db.collection('control').doc('crowd-backfill');
     const doc = await ref.get();
@@ -3294,7 +3410,12 @@ app.post('/api/cron/check-watches', async (req, res, next) => {
 // route is otherwise a dead end - the user sees "Chat request failed" and the
 // reason never leaves the container. Isolating the tool matters because that
 // is the only thing chat uses that a working scan does not.
-app.post('/api/cron/check-watches', requireLoginOrCron, async (req, res, next) => {
+//
+// Cron key only (2026-09-27). It was behind requireLoginOrCron, which let any
+// signed-in account - a free one included - make three Sonnet calls with web
+// search on the shared key, with no budget or daily ceiling in front of them.
+// Whoever holds the cron key is the operator, so nobody is charged for it.
+app.post('/api/cron/check-watches', requireCron, async (req, res, next) => {
   if (req.query.selftest !== '1') return next();
   const probe = async (label, tools) => {
     const started = Date.now();
@@ -3354,14 +3475,38 @@ app.post('/api/cron/check-watches', requireLoginOrCron, async (req, res, next) =
   res.json(out);
 });
 
-app.post('/api/cron/check-watches', requireLoginOrCron, async (req, res) => {
+/**
+ * The sweep's Anthropic client for one owner: the app's key, metered, with
+ * every call charged to `ownerId`.
+ *
+ * The app-wide client charges whoever the current request is signed in as,
+ * and the scheduler is signed in as nobody - so until 2026-09-27 every sweep
+ * check was recorded with no uid and came out of nobody's allowance: an
+ * owner with $0.01 left kept being checked hourly on the shared key for as
+ * long as they kept watches. identity.meter takes an explicit uid; one
+ * client per owner carries it. An owner on their own key still runs on it
+ * (identity.clientFor picks that first) and is charged nothing.
+ */
+const sweepClients = new Map();
+function sweepClientFor(ownerId) {
+  if (!sweepClients.has(ownerId)) {
+    if (sweepClients.size > 500) sweepClients.clear();
+    sweepClients.set(ownerId, identity.meter(new Anthropic(), { uid: ownerId, route: 'watch-sweep' }));
+  }
+  return sweepClients.get(ownerId);
+}
+
+// Counts only (2026-09-27). It used to answer with every due watch's result
+// and trip id, from every user, to anyone signed in - the route was behind
+// requireLoginOrCron. Nothing reads the body but the scheduler's log.
+app.post('/api/cron/check-watches', requireCron, async (req, res) => {
   try {
     const tripsSnap = await db.collection('trips').where('status', '==', 'planning').get();
     const now = Date.now();
     let checked = 0;
+    let failed = 0;
     let skippedNoCredit = 0;
-    const results = [];
-    // Owner -> approved? cached per run, so N trips for one owner is one read.
+    // Owner -> may spend? cached per run, so N trips for one owner is one read.
     const approvalCache = new Map();
 
     for (const tripDoc of tripsSnap.docs) {
@@ -3389,9 +3534,9 @@ app.post('/api/cron/check-watches', requireLoginOrCron, async (req, res) => {
         const lastMs = w.lastCheckedAt ? new Date(w.lastCheckedAt).getTime() : 0;
         if (now - lastMs < dueMs) continue;
         try {
-          const result = await runWatchCheck(tripDoc.data(), watchDoc, ownerRecord);
-          results.push({ tripId: tripDoc.id, watchId: watchDoc.id, result });
+          await runWatchCheck(tripDoc.data(), watchDoc, ownerRecord, sweepClientFor(ownerId));
         } catch (e) {
+          failed += 1;
           console.error('watch check failed', tripDoc.id, watchDoc.id, e);
         }
         checked += 1;
@@ -3399,8 +3544,8 @@ app.post('/api/cron/check-watches', requireLoginOrCron, async (req, res) => {
     }
 
     await db.collection('control').doc('watch-cron').set(
-      { lastRunAt: new Date().toISOString(), checked, skippedNoCredit }, { merge: true });
-    res.json({ checked, skippedNoCredit, results });
+      { lastRunAt: new Date().toISOString(), checked, failed, skippedNoCredit }, { merge: true });
+    res.json({ checked, failed, skippedNoCredit });
   } catch (err) {
     console.error('POST /api/cron/check-watches', err);
     res.status(500).json({ error: 'Batch check failed.' });

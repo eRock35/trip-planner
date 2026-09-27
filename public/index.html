@@ -4077,14 +4077,15 @@
     }).join("");
   }
 
-  /** "4.2★ from 31 ratings · 27 check-ins by Trip Planner crawlers" - the
-   *  server sends only numbers at least five people-actions back (crowd.js),
-   *  and the page checks again rather than trust a shape. */
+  /** "4.5★ from 30 ratings · 25 check-ins by Trip Planner crawlers" - the
+   *  server sends only numbers at least five people-actions back, counts in
+   *  steps of five and the average to the half star (crowd.js), and the page
+   *  checks again rather than trust a shape. */
   function crowdHtml(cw) {
     if (!cw) return "";
-    var ok = function (n) { return typeof n === "number" && isFinite(n) && n >= 5; };
+    var ok = function (n) { return typeof n === "number" && isFinite(n) && n >= 5 && n % 5 === 0; };
     var bits = [];
-    if (typeof cw.rating === "number" && ok(cw.ratings)) bits.push('<b>' + escapeHtml(cw.rating.toFixed(1)) + '<span class="star" aria-hidden="true">★</span></b> from ' + escapeHtml(plural(cw.ratings, "rating", "ratings")));
+    if (typeof cw.rating === "number" && isFinite(cw.rating) && ok(cw.ratings)) bits.push('<b>' + escapeHtml((Math.round(cw.rating * 2) / 2).toFixed(1)) + '<span class="star" aria-hidden="true">★</span></b> from ' + escapeHtml(plural(cw.ratings, "rating", "ratings")));
     if (ok(cw.checkins)) bits.push(escapeHtml(plural(cw.checkins, "check-in", "check-ins")));
     var line = bits.length ? bits.join(" · ") + " by Trip Planner crawlers" : "";
     var top = cw.topBeer && cw.topBeer.name && ok(cw.topBeer.n) ? 'Most poured here: <b>' + escapeHtml(cw.topBeer.name) + '</b>' : "";

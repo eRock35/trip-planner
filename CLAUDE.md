@@ -751,10 +751,11 @@ tick box to include it. A picture of people is theirs to choose to send.
 
 `crowd.js`. The shared menu-cache document gains
 `crowd: {<nameKey>: {checkins, pours, ratingSum, ratingN, beers: {<beerKey>:
-{name, n}}}}`. A stop shows "4.3★ from 31 ratings · 27 check-ins by Trip
+{name, n}}}}`. A stop shows "4.5★ from 30 ratings · 25 check-ins by Trip
 Planner crawlers" and "Most poured here: X", **each number only once at least
-five (`THRESHOLD`) back it**. The server applies the threshold (`summary()`)
-and the page checks it again.
+five (`THRESHOLD`) back it**, counts in steps of five and the average to the
+half star (see "Crowd numbers are coarse" under the 2026-09-27 fixes). The
+server applies both (`summary()`) and the page checks them again.
 
 - **Nothing that says who.** No uid, email, trip or crawl id, time, note or
   style. The only strings are the brewery name (hashed, as the key) and a beer
@@ -1058,11 +1059,11 @@ for routine use" problem this app exists to avoid.
 a slow tick or a burst of due watches can't balloon into a large, unbounded
 Anthropic bill.
 
-Auth on that one route: `requireLoginOrCron` — either a normal session, or
-the `X-Cron-Key` header matching the `cron-secret` Secret Manager value
-(same pattern as `college-football-app`'s cron routes). The Scheduler job
-itself still needs creating — see "Still to do" below; the deployer service
-account has lacked `cloudscheduler.jobs.create` on every project so far.
+Auth on that one route: `requireCron` — the `X-Cron-Key` header matching
+the `cron-secret` Secret Manager value, compared in constant time, **and
+nothing else**. It used to be `requireLoginOrCron`, which let any signed-in
+account run the sweep and read every user's results (see the 2026-09-27
+fixes). The Scheduler job exists (see "Deployed") and sends the key.
 
 ## Deploy
 
@@ -1143,6 +1144,108 @@ Cloud Run Admin API v2). See `college-football-app`'s
   America/New_York, POSTing to `/api/cron/check-watches` with the
   `X-Cron-Key` header. Verified end to end with a forced run — it returned
   clean and wrote `control/watch-cron` (`checked: 0`, no watches yet).
+
+## Security fixes (2026-09-27)
+
+From an audit; each one is held by a test (`test/hardening.js`,
+`test/no-secret.js`, `test/trip-crowd.js`).
+
+- **The watch cron is the scheduler's.** `POST /api/cron/check-watches` was
+  behind `requireLoginOrCron`, so any signed-in free account could run the
+  sweep and got back `results` - every due watch's answer, with trip and
+  watch ids, from every user. It is `requireCron` now (the cron key only;
+  a session is a 401) and answers **counts only**: `{checked, failed,
+  skippedNoCredit}`. The Scheduler job is unchanged - it already sent the
+  key - and so is the once-only crowd backfill that rides on it.
+- **`?selftest=1` is the cron key's too.** It makes three Sonnet calls with
+  web search and was behind login alone, with no budget or daily ceiling.
+  Nothing calls it; kept for the operator, who holds the key.
+- **The sweep charges the owner.** The app-wide client charges whoever the
+  request is signed in as, and the scheduler is nobody, so every sweep check
+  was recorded with no uid and came out of no allowance - an owner with a
+  cent left was checked hourly on the shared key for as long as they kept
+  watches. `sweepClientFor(ownerId)` is `identity.meter(new Anthropic(),
+  {uid: ownerId, route: 'watch-sweep'})`, one per owner, handed to
+  `runWatchCheck` as the fallback client (an owner on their own key still
+  runs on it, uncharged). `ownerAccount()` still skips owners with no credit.
+  **Left in the shared module:** `recordUsage` decides whether spend counts
+  toward the free tier's daily ceiling from the *request's* user, so sweep
+  spend always counts as free-tier even for a paying owner. Harmless while
+  the ceiling is off (it is); the fix belongs in `identity.js` (take the tier
+  from the charged uid's record when one is given).
+- **Every cron-key check is constant-time** (`cronKeyOk`: both sides hashed,
+  then `timingSafeEqual`), on the cron route, the backfill route, and the
+  once-only hook. No `=== CRON_SECRET` is left, and the suite checks that.
+- **Face ID works here now.** Three things were missing: `trust proxy`
+  (`req.protocol` read `http` behind Cloud Run, so the passkey module
+  expected an `http://` origin no browser sends), cookie parsing (the passkey
+  module reads its challenge cookies from `req.cookies`, which nothing set -
+  every verify said "That took too long"), and HSTS. All three are in
+  `server.js` now, no new dependency. `test/hardening.js` enrols and signs in
+  with a software authenticator (real P-256 keys, CBOR, the challenge
+  cookies) behind `X-Forwarded-Proto: https`.
+- **A malformed cookie no longer stops the server.** Found while testing the
+  above: the shared identity module's cookie parser calls
+  `decodeURIComponent` unguarded inside an async middleware, so one request
+  with `Cookie: x=%E0%A4%A` was an unhandled rejection, which ends a Node 22
+  process - anyone, signed in or not, could restart the service at will.
+  This app's cookie middleware runs first and drops malformed pairs from the
+  header itself; `accounts.js`'s parser skips them too. The same guard
+  belongs in the shared `identity.js` (`parseCookies`), for every app.
+- **`nosniff` on every response**, beside the existing frame-ancestors CSP.
+- **No empty keys.** Without `SESSION_SECRET`, the Gmail OAuth state was an
+  HMAC under `''` and the crowd's voice ids an HMAC under `'unset'`, both
+  forgeable by anyone reading this public repo. Now Gmail reports itself
+  unavailable (connect 503, a callback refused before Google is asked), and
+  the crowd counters switch off: check-ins and pours still save, but count
+  nothing and leave **no record**, so a later backfill with a key counts
+  them; the backfill route answers 503 and the scheduled once-only run waits
+  rather than marking itself done.
+- **The brewery search's "near" box is rate-limited.** It fed typed text into
+  the app-wide one-a-second Nominatim line. Now ten searches a minute per
+  person (`GEOCODE_PER_USER`, per instance; a 429 with a sentence), and the
+  line itself is capped at eight waiting (`GEOCODE_QUEUE_MAX`): past that a
+  lookup is refused at once ("The map search is busy") rather than queued.
+  Every caller already treats a failed lookup as "no place right now" and
+  none stores that answer, so weather and rates degrade the same way.
+
+### Crowd numbers are coarse
+
+The five-action threshold decided when a number first appears; it never
+stopped differencing - read "4.2★ from 5", someone pours, read "4.3★ from 6",
+and 6 x 4.3 - 5 x 4.2 is their rating. Hopscotch fixed this with an even
+prefix of drinkers ordered by first pour (`beer-app` CLAUDE.md, "The
+differencing rule"), which needs the list of who. These counters are running
+sums with nobody's name on them - by design - so that rule does not fit.
+Instead `summary()` shows every count **rounded down to a multiple of five**
+and the average **to the nearest half star**; the most-poured beer is chosen
+by its stepped count, a tie going to the name.
+
+What still leaks, said plainly:
+
+- **An extreme rating can tip the half star.** At 5 ratings averaging 4.2, a
+  sixth of 2, 3 or 4 all read 4.0, but a 1 reads 3.5 and a 5 reads 4.5. A
+  watcher who sees the number move and knows who just checked in learns
+  "low" or "high", not the exact stars, and only when the average sits near
+  a boundary.
+- **Crossing a step.** A count moving from 5 to 10 says five actions
+  happened, not whose.
+- **A long history.** Each reading is still a constraint on the sums; enough
+  readings around known arrivals narrow them. Coarse numbers make that
+  slow, not impossible. The fuller fix is Hopscotch's: keep per-voter
+  records (the voice documents are most of the way there) and publish over
+  an even prefix. Not built.
+
+### Not built: accepting a shared trip
+
+Sharing trusts `uidFor(email)`: a trip shared to an address belongs, as a
+member, to whoever registers that address first, and addresses are not
+verified. The fix that fits an app with no mail sender is an invitation the
+invitee accepts from a signed-in session (pending until then, owner sees
+pending/accepted, the owner can revoke a pending one). It narrows the risk
+to "someone registered the address before the real person" - which only a
+verified address closes, and verification needs mail (or a passkey/Gmail
+proof). Assessed on 2026-09-27, not implemented.
 
 ## Billed per request — never keep working after the response (2026-09-23)
 

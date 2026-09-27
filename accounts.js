@@ -72,7 +72,9 @@ function parseCookies(req) {
   (req.headers.cookie || '').split(';').forEach((part) => {
     const eq = part.indexOf('=');
     if (eq < 0) return;
-    out[part.slice(0, eq).trim()] = decodeURIComponent(part.slice(eq + 1).trim());
+    // A malformed value is skipped: decodeURIComponent throws on one, and a
+    // throw here must not become a failed request (or worse, see server.js).
+    try { out[part.slice(0, eq).trim()] = decodeURIComponent(part.slice(eq + 1).trim()); } catch (e) { /* skip */ }
   });
   return out;
 }

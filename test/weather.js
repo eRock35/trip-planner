@@ -99,14 +99,25 @@ const ok = (n, c, x) => { if (c) { pass++; console.log('PASS  ' + n); } else { f
   await new Promise((r) => setTimeout(r, 900));
   const reg = await realFetch(B + '/api/auth/register', { method: 'POST', headers: J, body: JSON.stringify({ email: 'boss@example.com', password: 'a-long-password-1' }) });
   const me = (reg.headers.getSetCookie() || []).map((c) => c.split(';')[0]).join('; ');
-  const trip = await (await realFetch(B + '/api/trips', { method: 'POST', headers: { ...J, cookie: me }, body: JSON.stringify({ name: 'Beach', destination: 'Santa Rosa Beach, FL', dateRange: 'Sep 23-26, 2026' }) })).json();
+  // A trip a few days from NOW, not a fixed date: the route reads the real
+  // clock, and a fixed "Sep 23-26, 2026" stopped being a forecast the day
+  // after it ended. Three days inside one month, starting tomorrow or on the
+  // 1st of next month, so the range stays one "Mon D-D, YYYY".
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  let start = new Date(Date.now() + 86400000);
+  start = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()));
+  if (new Date(start.getTime() + 3 * 86400000).getUTCMonth() !== start.getUTCMonth()) start = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
+  const end = new Date(start.getTime() + 3 * 86400000);
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const range = `${MON[start.getUTCMonth()]} ${start.getUTCDate()}-${end.getUTCDate()}, ${start.getUTCFullYear()}`;
+  const trip = await (await realFetch(B + '/api/trips', { method: 'POST', headers: { ...J, cookie: me }, body: JSON.stringify({ name: 'Beach', destination: 'Santa Rosa Beach, FL', dateRange: range }) })).json();
 
   let r = await realFetch(`${B}/api/trips/${trip.id}/weather`, { headers: { cookie: me } });
   out = await r.json();
   ok('the route answers with a forecast for the trip', r.status === 200 && out.status === 'forecast', JSON.stringify(out).slice(0, 120));
   ok('...and stores the place on the trip', h.bag('trip-planner').get('trips/' + trip.id).geo.name === 'Santa Rosa Beach, Florida');
   const got = await (await realFetch(`${B}/api/trips/${trip.id}`, { headers: { cookie: me } })).json();
-  ok('the trip itself now says when it is', got.dates && got.dates.start === '2026-09-23' && got.dates.end === '2026-09-26', JSON.stringify(got.dates));
+  ok('the trip itself now says when it is', got.dates && got.dates.start === iso(start) && got.dates.end === iso(end), JSON.stringify(got.dates));
 
   const before = seen.nominatim;
   await realFetch(`${B}/api/trips/${trip.id}/weather`, { headers: { cookie: me } });

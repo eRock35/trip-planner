@@ -152,7 +152,7 @@ const n = (v) => Number(v || 0);
   await call('POST', C5 + '/pours', { stopId: RB.id, beer: 'HAZY DAZE ', rating: 5 }, U[3]);
   r = await call('GET', C1);
   const cr = r.body.crowd[RB.id];
-  ok('the fifth check-in and rating: shown, as an average', cr && cr.checkins === 5 && cr.ratings === 5 && cr.rating === 4.2, JSON.stringify(cr));
+  ok('the fifth check-in and rating: shown, as an average to the half star (4.2 reads 4.0)', cr && cr.checkins === 5 && cr.ratings === 5 && cr.rating === 4, JSON.stringify(cr));
   ok('...with the most-poured beer, spelled as the menu spells it', cr && cr.topBeer && cr.topBeer.name === 'Hazy Daze' && cr.topBeer.n === 5, JSON.stringify(cr));
   ok('...and the other stop, never checked in, shows nothing', r.body.crowd[FH.id] === null);
   ok('summary(): 4 of everything is null, 5 is shown', crowdLib.summary({ crowd: { [crowdLib.nameKey('X')]: { checkins: 4, ratingN: 4, ratingSum: 20, pours: 4 } } }, { id: 'x', name: 'X' }) === null
@@ -160,6 +160,27 @@ const n = (v) => Number(v || 0);
   ok('summary(): hostile stored numbers are clamped, markup stripped',
      (() => { const s = crowdLib.summary({ crowd: { [crowdLib.nameKey('X')]: { checkins: -40, ratingN: 5, ratingSum: 9999, pours: 9, beers: { a: { name: '<img src=x onerror=alert(1)>', n: 9 } } } } }, { id: 'x', name: 'X' });
        return s && s.checkins === null && s.rating === null && !/[<>]/.test(JSON.stringify(s)); })());
+
+  /* ---------- coarse numbers: differencing one person out (2026-09-27) ---------- */
+  const X = { id: 'x', name: 'X' }, KX = crowdLib.nameKey('X');
+  const sum = (bk) => crowdLib.summary({ crowd: { [KX]: bk } }, X);
+  ok('summary(): counts step down to a multiple of five (7 check-ins read 5, 13 ratings read 10)',
+     sum({ checkins: 7, ratingN: 13, ratingSum: 52, pours: 13 }).checkins === 5 && sum({ checkins: 7, ratingN: 13, ratingSum: 52, pours: 13 }).ratings === 10);
+  ok('summary(): the average is to the half star (4.2 -> 4, 4.3 -> 4.5, 3.74 -> 3.5)',
+     sum({ ratingN: 5, ratingSum: 21 }).rating === 4 && sum({ ratingN: 10, ratingSum: 43 }).rating === 4.5 && sum({ ratingN: 50, ratingSum: 187 }).rating === 3.5);
+  // The attack the rounding is for: read, one person pours, read again.
+  // Before, 21/5 -> 4.2 and 26/6 -> 4.3 gave the sixth rating away exactly.
+  // Now the counts do not move at all, and 2, 3 and 4 stars all read 4.0 -
+  // what is left (an extreme rating can still tip the half star) is written
+  // down in CLAUDE.md rather than claimed away here.
+  const shown6 = [1, 2, 3, 4, 5].map((r6) => sum({ checkins: 6, ratingN: 6, ratingSum: 21 + r6, pours: 6 }));
+  ok('one more check-in and rating: the counts do not move', shown6.every((x) => x.checkins === 5 && x.ratings === 5), JSON.stringify(shown6));
+  ok('...and the average no longer names the rating: 2, 3 and 4 stars read the same', shown6[1].rating === 4 && shown6[2].rating === 4 && shown6[3].rating === 4, JSON.stringify(shown6.map((x) => x.rating)));
+  ok('summary(): the most-poured beer is chosen by its stepped count, a tie to the name - one pour ahead names nothing new',
+     sum({ pours: 20, beers: { a: { name: 'Zed IPA', n: 6 }, b: { name: 'Amber', n: 5 } } }).topBeer.name === 'Amber'
+     && sum({ pours: 20, beers: { a: { name: 'Zed IPA', n: 10 }, b: { name: 'Amber', n: 9 } } }).topBeer.name === 'Zed IPA'
+     && sum({ pours: 20, beers: { a: { name: 'Zed IPA', n: 10 }, b: { name: 'Amber', n: 9 } } }).topBeer.n === 10);
+  ok('summary(): a beer with 7 pours reads 5, not 7', sum({ pours: 9, beers: { a: { name: 'Hazy', n: 7 } } }).topBeer.n === 5);
 
   /* ---------- a made-up name under a real id ---------- */
   const before = JSON.stringify(bucket(RB.id, RB.name));
@@ -171,7 +192,7 @@ const n = (v) => Number(v || 0);
   ok('a stop under a real id with another name never touches the real bucket', JSON.stringify(bucket(RB.id, RB.name)) === before, JSON.stringify(bucket(RB.id, RB.name)));
   ok('...its own bucket has no named beer (the menu is not its menu), and six pours by one account are one voice', !Object.keys(bucket(RB.id, fake.name).beers || {}).length && n(bucket(RB.id, fake.name).pours) === 1 && n(bucket(RB.id, fake.name).ratingN) === 1);
   r = await call('GET', C1);
-  ok('...and the real stop still shows the real numbers', r.body.crowd[RB.id].rating === 4.2 && r.body.crowd[RB.id].checkins === 5);
+  ok('...and the real stop still shows the real numbers', r.body.crowd[RB.id].rating === 4 && r.body.crowd[RB.id].checkins === 5);
   r = await call('GET', CF, undefined, stranger);
   ok('...while the fake stop reads only its own (one voice: nothing shown)', r.body.crowd[RB.id] === null, JSON.stringify(r.body.crowd));
 
