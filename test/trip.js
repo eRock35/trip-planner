@@ -73,11 +73,16 @@ const uidOf = (e) => Buffer.from(e.toLowerCase()).toString('base64url');
   r = await post('/api/admin/reset-password', { userId: uidOf('guest@example.com') }, admin);
   const out = await r.json();
   ok('the admin can issue a temporary password', r.status === 200 && out.password, JSON.stringify(out).slice(0, 80));
+  // The reset writes a new hash, and since 2026-09-27 that ends every session
+  // issued against the old password (shared/identity.js, `pwv`).
+  r = await fetch(B + '/api/auth/me', { headers: { cookie: guest } });
+  ok('the reset signs out the sessions from before it', (await r.json()).signedIn === false);
   r = await post('/api/auth/login', { email: 'guest@example.com', password: out.password });
   ok('the temporary password actually signs in (it went to identity)', r.status === 200, String(r.status));
+  const guestAgain = jar(r);
   r = await post('/api/auth/login', { email: 'guest@example.com', password: 'a-long-password-2' });
   ok('the old password no longer works', r.status === 401);
-  r = await post('/api/admin/reset-password', { userId: uidOf('guest@example.com') }, guest);
+  r = await post('/api/admin/reset-password', { userId: uidOf('guest@example.com') }, guestAgain);
   ok('a non-admin cannot reset anyone', r.status === 403 || r.status === 404, String(r.status));
 
   r = await fetch(B + '/analytics.js');

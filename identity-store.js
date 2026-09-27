@@ -43,6 +43,15 @@ const store = {
   async merge(collection, id, patch) {
     await client().collection(collection).doc(id).set(patch, { merge: true });
   },
+  /** Replace the named TOP-LEVEL fields of an existing document and touch
+   *  nothing else (Firestore update). Unlike `merge`, a map given here
+   *  replaces the stored map whole, so a key removed from `access` really
+   *  goes. What identity uses for every change to a user record, so a spend
+   *  charge made meanwhile by `bump` is never written over. Field names must
+   *  not contain dots: update() reads those as paths. */
+  async patch(collection, id, fields) {
+    await client().collection(collection).doc(id).update(fields);
+  },
   async remove(collection, id) {
     await client().collection(collection).doc(id).delete();
   },

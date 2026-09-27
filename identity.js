@@ -292,9 +292,115 @@ function parseCookies(req) {
   header.split(';').forEach((part) => {
     const i = part.indexOf('=');
     if (i < 0) return;
-    out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    try { out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim()); } catch (e) { /* a malformed cookie is no cookie */ }
   });
   return out;
+}
+
+/* ------------------------------------------------------------------ *
+ * Writes must come from the page that is making them (2026-09-27)
+ * ------------------------------------------------------------------ */
+
+// Every app lives on a subdomain of one registrable domain, so to a browser
+// they are all "same-site": a SameSite=Lax cookie goes along with a form a
+// page on ANY sibling posts. Without a check, a page on one app could
+// auto-submit a hidden form to another app's /api/id/password - which lets a
+// passkey-proved session set a new password without the old one - or delete
+// the account, swap the API key, and so on, in the signed-in reader's browser.
+//
+// The browser says where a request came from, so a write is refused when:
+//   - Sec-Fetch-Site is present and is not same-origin or none, or
+//   - Origin is present and its host is not this request's host, or
+//   - it carries a body that is not JSON. A plain HTML form can only send
+//     urlencoded, multipart or text/plain, so this closes the form route even
+//     for a browser too old to send either header.
+// A request with neither header and no body (curl, a test, a body-less
+// fetch like logout) passes: it cannot be carrying somebody else's cookie by
+// way of a form. Every app's own pages send JSON from their own origin.
+//
+// Kept in step with the landing's crossSiteWrite() in server.js; this is the
+// same rule with the JSON requirement added.
+function crossSiteWrite(req) {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return false;
+  const get = (h) => (req.get ? req.get(h) : req.headers[h.toLowerCase()]);
+  const site = get('sec-fetch-site');
+  if (site && site !== 'same-origin' && site !== 'none') return true;
+  const origin = get('origin');
+  if (origin) {
+    try {
+      if (new URL(origin).host !== String(get('host') || '')) return true;
+    } catch (e) { return true; }          // "null" and anything unparseable
+  }
+  const type = get('content-type');
+  if (type && !/^application\/([a-z0-9.+-]*\+)?json\s*(;|$)/i.test(String(type).trim())) return true;
+  return false;
+}
+
+/** Express middleware form of crossSiteWrite. */
+function sameOriginOnly(req, res, next) {
+  if (!crossSiteWrite(req)) return next();
+  return res.status(403).json({ error: 'That request has to come from this site’s own page.' });
+}
+
+/* ------------------------------------------------------------------ *
+ * Guessing limits (2026-09-27)
+ * ------------------------------------------------------------------ */
+
+/** The address that reached Cloud Run's front end. The RIGHTMOST
+ *  X-Forwarded-For entry is the one Google's front end appended; anything to
+ *  its left is whatever the client wrote. Read here rather than from req.ip
+ *  because apps differ in `trust proxy`, and `true` makes req.ip the leftmost,
+ *  forgeable entry - which would turn a per-IP limit into no limit. */
+function clientIp(req) {
+  const xff = String((req.headers && req.headers['x-forwarded-for']) || '');
+  const parts = xff.split(',').map((s) => s.trim()).filter(Boolean);
+  if (parts.length) return parts[parts.length - 1].slice(0, 64);
+  return String(req.ip || (req.socket && req.socket.remoteAddress) || 'unknown').slice(0, 64);
+}
+
+/** A sliding-window counter per key, in memory. Per instance, so a real
+ *  distributed attack is only slowed - that is the point: it turns a scripted
+ *  run of millions of guesses into a few dozen per quarter hour. */
+function createLimiter({ max, windowMs, now = () => Date.now() }) {
+  const hits = new Map();
+  function prune(key, t) {
+    const list = (hits.get(key) || []).filter((x) => t - x < windowMs);
+    if (list.length) hits.set(key, list); else hits.delete(key);
+    return list;
+  }
+  return {
+    /** Count one; false when the key was already at the limit. */
+    hit(key) {
+      const t = now();
+      const list = prune(key, t);
+      if (list.length >= max) return false;
+      list.push(t);
+      hits.set(key, list);
+      if (hits.size > 20000) hits.clear();
+      return true;
+    },
+    blocked(key) { return prune(key, now()).length >= max; },
+    clear(key) { hits.delete(key); },
+  };
+}
+
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_FAILS_PER_ACCOUNT = 10;
+const LOGIN_FAILS_PER_IP = 30;
+
+/* ------------------------------------------------------------------ *
+ * Which password a session was issued against (2026-09-27)
+ * ------------------------------------------------------------------ */
+
+/** A short, keyed fingerprint of the stored password hash. Rides in the
+ *  session token as `pwv`; any new password - changed, reset by link, reset
+ *  by an admin, in any app - changes the hash and so ends every session that
+ *  was issued against the old one. Keyed with the session secret so the
+ *  cookie says nothing about the hash itself. */
+function passwordVersion(record, key) {
+  const p = record && record.password;
+  if (!p || !p.hash) return '';
+  return crypto.createHmac('sha256', String(key || '')).update(`pwv|${p.salt || ''}|${p.hash}`).digest('hex').slice(0, 16);
 }
 
 /** The cookie is set on the PARENT domain so every subdomain sees it. Locally
@@ -509,6 +615,28 @@ function create(opts) {
     return store.get(USERS, uid);
   }
 
+  /**
+   * Write only the named top-level fields of a user record (2026-09-27).
+   *
+   * Every change here used to read the whole record and write it all back.
+   * The spend ledger is moved by an atomic increment on that same record,
+   * often from another app at the same moment, and a whole-record write
+   * carries the balance it READ - so a charge landing between the read and
+   * the write was erased. Signing in was enough to do it.
+   *
+   * `store.patch` (Firestore update) replaces the named fields and nothing
+   * else, maps included, which is what access and requests need when a key
+   * is removed. Without it, `merge` is exact for anything that only adds or
+   * overwrites; a removal (`opts.removes`) falls back to the old read-write,
+   * on a store that offers nothing better.
+   */
+  async function patchUser(uid, fields, opts = {}) {
+    if (typeof store.patch === 'function') return store.patch(USERS, uid, fields);
+    if (typeof store.merge === 'function' && !opts.removes) return store.merge(USERS, uid, fields);
+    const current = await store.get(USERS, uid);
+    return store.set(USERS, uid, { ...(current || {}), ...fields });
+  }
+
   async function anyOwner() {
     try {
       const all = await store.list(USERS);
@@ -524,12 +652,47 @@ function create(opts) {
 
   /* ---------- sessions ---------- */
 
-  function issueSession(res, req, uid, via = 'password') {
+  /**
+   * @param record  the user record as it now stands, when the caller has it.
+   *                Its password hash is fingerprinted into the token (`pwv`),
+   *                so the session ends the moment that password is replaced.
+   *                Without one the token carries only `iat`, and is ended by
+   *                a `passwordChangedAt` later than it (see sessionValidFor).
+   */
+  function issueSession(res, req, uid, via = 'password', record = null) {
     const key = secret();
     if (!key) throw Object.assign(new Error('Sign-in is not configured on this deployment.'), { status: 503 });
-    const exp = Math.floor(Date.now() / 1000) + SESSION_TTL;
-    const token = makeToken({ sub: uid, exp, via }, key);
+    const now = Date.now();
+    const exp = Math.floor(now / 1000) + SESSION_TTL;
+    const payload = { sub: uid, exp, via, iat: now };
+    const pwv = record ? passwordVersion(record, key) : '';
+    if (pwv) payload.pwv = pwv;
+    const token = makeToken(payload, key);
     setSessionCookie(res, req, token, baseDomain, SESSION_TTL);
+  }
+
+  /**
+   * Does this session still stand for this account, after any password
+   * change? (2026-09-27)
+   *
+   * A token with `pwv` must match the password on file now. Any change - by
+   * the person, by a reset link, by an admin, in any app - changes the hash,
+   * so every other session ends with no list of sessions to walk.
+   *
+   * A token without one was issued before this rule (or by a caller that had
+   * no record to hand). It stands until it expires, UNLESS the password was
+   * changed after it was issued: every place that writes a password also
+   * writes `passwordChangedAt`, and a legacy token's issue time is exactly
+   * its expiry less the 30-day lifetime. So nobody is signed out by this
+   * change itself, and a password change ends old sessions from today on.
+   */
+  function sessionValidFor(s, user) {
+    if (!s || !user) return false;
+    if (s.pwv) return s.pwv === passwordVersion(user, secret());
+    const issued = Number(s.iat) || (Number(s.exp) - SESSION_TTL) * 1000;
+    const changed = Date.parse(user.passwordChangedAt || '');
+    if (Number.isFinite(changed) && Number.isFinite(issued) && changed > issued) return false;
+    return true;
   }
 
   function session(req) {
@@ -548,19 +711,38 @@ function create(opts) {
     }
     const payload = readToken(parseCookies(req)[COOKIE], key);
     if (!payload) return null;
-    return { uid: payload.sub, via: payload.via === 'passkey' ? 'passkey' : 'password' };
+    return {
+      uid: payload.sub,
+      via: payload.via === 'passkey' ? 'passkey' : 'password',
+      pwv: typeof payload.pwv === 'string' ? payload.pwv : null,
+      iat: Number(payload.iat) || null,
+      exp: Number(payload.exp) || null,
+    };
+  }
+
+  /** The session AND the account it names, or null - checked against the
+   *  password on file, so a session from before a password change is no
+   *  session at all. What every route that acts on the account uses. */
+  async function sessionUser(req) {
+    const s = session(req);
+    if (!s) return null;
+    const user = await getUser(s.uid).catch(() => null);
+    if (!user || user.disabled || !sessionValidFor(s, user)) return null;
+    return { s, user };
   }
 
   /** Loads req.user when there is a valid session. Never rejects - routes that
    *  need a user use requireUser; routes that merely want to know use this. */
   async function attachUser(req, _res, next) {
-    const s = session(req);
-    if (s) {
-      const user = await getUser(s.uid).catch(() => null);
-      if (user && !user.disabled) {
-        req.user = { id: s.uid, via: s.via, ...user };
-        delete req.user.password; // never let the hash reach a handler by accident
-      }
+    // Never rejects (2026-09-27): this runs on every request of every app, as
+    // an async middleware Express 4 does not await, so a throw here was an
+    // unhandled rejection - which ends a Node 22 process. A malformed cookie
+    // was enough. Anything that goes wrong just means "not signed in".
+    let found = null;
+    try { found = await sessionUser(req); } catch (e) { found = null; }
+    if (found) {
+      req.user = { id: found.s.uid, via: found.s.via, ...found.user };
+      delete req.user.password; // never let the hash reach a handler by accident
     }
     next();
   }
@@ -612,9 +794,8 @@ function create(opts) {
    * route that spends, not just the obvious one - the budget is only real if
    * nothing can route around it.
    *
-   * A request with no user passes through: whether anonymous use is allowed is
-   * each app's own decision, made by its own gate. This one only enforces a
-   * personal allowance, and there isn't one to enforce.
+   * A request with no shared-account user is refused with a 401 (since
+   * 2026-09-27): a call the shared ledger cannot charge is not made.
    */
   /* ---------- the ceiling on everyone at once ---------- */
 
@@ -743,8 +924,16 @@ function create(opts) {
   }
 
   function requireBudget(req, res, next) {
+    // No account, no model call (2026-09-27). This used to wave a request
+    // with no user through, on the reasoning that anonymous use was each
+    // app's own call - which meant any route that reached here without a
+    // shared-account session (an app's own door, a site password, a gate
+    // someone forgot) spent on Erik's key with nobody to charge. A route that
+    // must run a model for nobody (a scheduled sweep) has no business behind
+    // this middleware; it decides that for itself, out loud.
+    if (!req.user) return res.status(401).json({ error: 'Sign in first.' });
     const b = budgetFor(req.user);
-    if (!req.user || b.unlimited || b.remainingUsd > 0) return next();
+    if (b.unlimited || b.remainingUsd > 0) return next();
     log('budget.exhausted', req, { detail: `spent ${b.spentUsd.toFixed(2)} of ${b.allowanceUsd.toFixed(2)}`, ok: false });
     return res.status(402).json({
       error: 'You have used your credit.',
@@ -789,7 +978,17 @@ function create(opts) {
       // daily allowance would lock out the very people it is there to serve,
       // and would make the number mean nothing. Spend with nobody to charge
       // counts, because that is the shared key paying for it.
-      if (!spendsOwnMoney(currentUser())) {
+      //
+      // The tier is the PAYER's (2026-09-27). It was read from the request's
+      // user alone, so a call charged to a named uid with no request behind
+      // it - Trip Planner's hourly sweep metering each watch to its owner -
+      // counted a paying member's spend as free tier. When a uid is named and
+      // is not the request's user, their record decides.
+      let payer = currentUser();
+      if (uid && (!payer || payer.id !== uid)) {
+        payer = await getUser(uid).then((u) => (u ? { id: uid, ...u } : null)).catch(() => null);
+      }
+      if (!spendsOwnMoney(payer)) {
         try { await store.bump(CONTROL, capDocId(), { usd: row.costUsd, calls: 1 }); } catch (e) { /* same */ }
       }
     }
@@ -917,22 +1116,27 @@ function create(opts) {
     rpName,
     baseDomain,
     mountPath: `${mountPath}/passkey`,
-    issueSession: (res, ownerId, req) => issueSession(res, req, ownerId, 'passkey'),
-    currentOwner: (req) => {
-      const s = session(req);
-      return s ? s.uid : null;
+    // Async since 2026-09-27: the session is fingerprinted with the account's
+    // current password, so the record is read first. webauthn awaits it.
+    issueSession: async (res, ownerId, req) => {
+      const user = await getUser(ownerId).catch(() => null);
+      issueSession(res, req, ownerId, 'passkey', user);
+    },
+    currentOwner: async (req) => {
+      const found = await sessionUser(req);
+      return found ? found.s.uid : null;
     },
     // Enrolling needs the PASSWORD, not just a session - otherwise a borrowed
     // session could mint permanent access that outlives it.
     canEnrol: async (req) => {
-      const s = session(req);
-      if (!s) return null;
-      const user = await getUser(s.uid);
-      if (!user) return null;
+      const found = await sessionUser(req);
+      if (!found) return null;
       const supplied = (req.body || {}).password;
-      if (supplied && matches(supplied, user.password)) return s.uid;
+      if (supplied && matches(supplied, found.user.password)) return found.s.uid;
       return null;
     },
+    // Every passkey write is held to the same-origin rule as the rest.
+    guard: sameOriginOnly,
   });
 
   /* ---------- routes ---------- */
@@ -941,7 +1145,7 @@ function create(opts) {
     expressApp.use(trackRequests);
     expressApp.use(attachUser);
 
-    expressApp.post(`${mountPath}/register`, async (req, res) => {
+    expressApp.post(`${mountPath}/register`, sameOriginOnly, async (req, res) => {
       const email = normalise((req.body || {}).email);
       const password = String((req.body || {}).password || '');
       if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'That does not look like an email address.' });
@@ -969,30 +1173,57 @@ function create(opts) {
       const owner = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
       if (owner && email === owner && !(await anyOwner())) record.admin = true;
       await store.set(USERS, uid, record);
-      issueSession(res, req, uid, 'password');
+      issueSession(res, req, uid, 'password', record);
       await log('register', req, { uid, email });
       res.json({ ok: true, email });
     });
 
-    expressApp.post(`${mountPath}/login`, async (req, res) => {
-      const email = normalise((req.body || {}).email);
-      const password = String((req.body || {}).password || '');
-      const user = await byEmail(email);
-      if (!user || user.disabled || !matches(password, user.password)) {
-        // A deliberate pause, and an answer that does not say which half was
-        // wrong - otherwise this endpoint enumerates who has an account.
-        await new Promise((r) => setTimeout(r, 400));
-        await log('login.failed', req, { uid: uidFor(email), email, ok: false });
-        return res.status(401).json({ error: 'That email and password did not match.' });
+    // Guessing is limited per account and per address (2026-09-27). It had a
+    // 400 ms pause and nothing else, which is ~200,000 guesses a day at one
+    // account from one machine. Only failures count; a success clears the
+    // account's count. The answer while limited is the same whether or not
+    // the account exists, so the limit is no oracle either.
+    const loginFailsByAccount = createLimiter({ max: LOGIN_FAILS_PER_ACCOUNT, windowMs: LOGIN_WINDOW_MS });
+    const loginFailsByIp = createLimiter({ max: LOGIN_FAILS_PER_IP, windowMs: LOGIN_WINDOW_MS });
+    const tooMany = (res) => {
+      res.set('Retry-After', String(Math.ceil(LOGIN_WINDOW_MS / 1000)));
+      return res.status(429).json({ error: 'Too many attempts. Wait a few minutes and try again.' });
+    };
+
+    expressApp.post(`${mountPath}/login`, sameOriginOnly, async (req, res) => {
+      try {
+        const email = normalise((req.body || {}).email);
+        const password = String((req.body || {}).password || '');
+        const uid = uidFor(email);
+        const ip = clientIp(req);
+        if (loginFailsByAccount.blocked(uid) || loginFailsByIp.blocked(ip)) {
+          await log('login.throttled', req, { uid, email, ok: false });
+          return tooMany(res);
+        }
+        const user = await byEmail(email);
+        if (!user || user.disabled || !matches(password, user.password)) {
+          loginFailsByAccount.hit(uid);
+          loginFailsByIp.hit(ip);
+          // A deliberate pause, and an answer that does not say which half was
+          // wrong - otherwise this endpoint enumerates who has an account.
+          await new Promise((r) => setTimeout(r, 400));
+          await log('login.failed', req, { uid, email, ok: false });
+          return res.status(401).json({ error: 'That email and password did not match.' });
+        }
+        loginFailsByAccount.clear(uid);
+        issueSession(res, req, uid, 'password', user);
+        // Only the field that changed. Writing the whole record back would
+        // carry the balance read above over any charge made since.
+        await patchUser(uid, { lastSeenAt: new Date().toISOString() }).catch(() => {});
+        await log('login', req, { uid, email });
+        res.json({ ok: true, email });
+      } catch (err) {
+        console.error('identity login', err);
+        res.status(err.status || 500).json({ error: err.status ? err.message : 'Could not sign in.' });
       }
-      const uid = uidFor(email);
-      issueSession(res, req, uid, 'password');
-      await store.set(USERS, uid, { ...user, lastSeenAt: new Date().toISOString() });
-      await log('login', req, { uid, email });
-      res.json({ ok: true, email });
     });
 
-    expressApp.post(`${mountPath}/logout`, async (req, res) => {
+    expressApp.post(`${mountPath}/logout`, sameOriginOnly, async (req, res) => {
       await log('logout', req);
       clearSessionCookie(res, req, baseDomain);
       res.json({ ok: true });
@@ -1099,7 +1330,7 @@ function create(opts) {
       });
     });
 
-    expressApp.post(`${mountPath}/billing/membership`, requireUser, async (req, res) => {
+    expressApp.post(`${mountPath}/billing/membership`, sameOriginOnly, requireUser, async (req, res) => {
       try {
         if (!stripeLib.membershipEnabled()) {
           return res.status(503).json({ error: 'Membership is not set up on this deployment.' });
@@ -1121,7 +1352,7 @@ function create(opts) {
       }
     });
 
-    expressApp.post(`${mountPath}/billing/credit`, requireUser, async (req, res) => {
+    expressApp.post(`${mountPath}/billing/credit`, sameOriginOnly, requireUser, async (req, res) => {
       try {
         if (!stripeLib.enabled()) {
           return res.status(503).json({ error: 'Billing is not set up on this deployment.' });
@@ -1155,7 +1386,7 @@ function create(opts) {
       }
     });
 
-    expressApp.post(`${mountPath}/billing/portal`, requireUser, async (req, res) => {
+    expressApp.post(`${mountPath}/billing/portal`, sameOriginOnly, requireUser, async (req, res) => {
       try {
         if (!stripeLib.enabled()) {
           return res.status(503).json({ error: 'Billing is not set up on this deployment.' });
@@ -1177,32 +1408,49 @@ function create(opts) {
     // password-proved one must produce the current password, or a stolen
     // cookie could take the account for good. There is no mail sender on any
     // of these services, so Face ID is the only reset door that exists.
-    expressApp.post(`${mountPath}/password`, async (req, res) => {
-      const s = session(req);
-      if (!s) return res.status(401).json({ error: 'Sign in first.' });
-      const user = await getUser(s.uid);
-      if (!user) return res.status(401).json({ error: 'Sign in first.' });
+    expressApp.post(`${mountPath}/password`, sameOriginOnly, async (req, res) => {
+      try {
+        const found = await sessionUser(req);
+        if (!found) return res.status(401).json({ error: 'Sign in first.' });
+        const { s, user } = found;
 
-      const next = String((req.body || {}).next || '');
-      if (next.length < MIN_PASSWORD) {
-        return res.status(400).json({ error: `Use at least ${MIN_PASSWORD} characters.` });
+        // `newPassword`/`currentPassword` are what Trip Planner's page sends
+        // (this route shadows the one that used to read them there).
+        const body = req.body || {};
+        const next = String(body.next || body.newPassword || '');
+        if (next.length < MIN_PASSWORD) {
+          return res.status(400).json({ error: `Use at least ${MIN_PASSWORD} characters.` });
+        }
+        // The same per-account count as sign-in: guessing the current
+        // password with a stolen session is guessing the password.
+        if (s.via !== 'passkey' && loginFailsByAccount.blocked(s.uid)) return tooMany(res);
+        const proved =
+          s.via === 'passkey' ||
+          matches(String(body.current || body.currentPassword || ''), user.password);
+        if (!proved) {
+          loginFailsByAccount.hit(s.uid);
+          await new Promise((r) => setTimeout(r, 400));
+          await log('password.change.refused', req, { uid: s.uid, email: user.email, ok: false });
+          return res.status(401).json({ error: 'That did not prove who you are.' });
+        }
+        const fields = { password: makeHash(next), passwordChangedAt: new Date().toISOString() };
+        await patchUser(s.uid, fields);
+        // The new hash ends every session issued against the old one - which
+        // includes the one making this request. Re-issue it, proved the same
+        // way, so the person who changed it stays signed in here while every
+        // other browser is signed out.
+        issueSession(res, req, s.uid, s.via, { ...user, ...fields });
+        await log('password.change', req, { uid: s.uid, email: user.email, detail: `via ${s.via}` });
+        res.json({ ok: true });
+      } catch (err) {
+        console.error('identity password', err);
+        res.status(err.status || 500).json({ error: err.status ? err.message : 'Could not change the password.' });
       }
-      const proved =
-        s.via === 'passkey' ||
-        matches(String((req.body || {}).current || ''), user.password);
-      if (!proved) {
-        await new Promise((r) => setTimeout(r, 400));
-        await log('password.change.refused', req, { uid: s.uid, email: user.email, ok: false });
-        return res.status(401).json({ error: 'That did not prove who you are.' });
-      }
-      await store.set(USERS, s.uid, { ...user, password: makeHash(next), passwordChangedAt: new Date().toISOString() });
-      await log('password.change', req, { uid: s.uid, email: user.email, detail: `via ${s.via}` });
-      res.json({ ok: true });
     });
 
     /* ---- bring your own key ---- */
 
-    expressApp.post(`${mountPath}/byok`, async (req, res) => {
+    expressApp.post(`${mountPath}/byok`, sameOriginOnly, async (req, res) => {
       try {
         if (!req.user) return res.status(401).json({ error: 'Sign in first.' });
         if (!byok.enabled()) {
@@ -1224,7 +1472,7 @@ function create(opts) {
         if (!check.ok) return res.status(400).json({ error: check.error });
 
         const record = { blob: byok.encrypt(req.user.id, supplied), last4: byok.last4(supplied), addedAt: new Date().toISOString() };
-        await store.set(USERS, req.user.id, Object.assign({}, await getUser(req.user.id), { byok: record }));
+        await patchUser(req.user.id, { byok: record });
         await log('byok.added', req, { uid: req.user.id, detail: '...' + record.last4 });
         // Never echo the key back, not even the one they just sent.
         res.json({ ok: true, byok: { present: true, last4: record.last4, addedAt: record.addedAt } });
@@ -1234,15 +1482,13 @@ function create(opts) {
       }
     });
 
-    expressApp.delete(`${mountPath}/byok`, async (req, res) => {
+    expressApp.delete(`${mountPath}/byok`, sameOriginOnly, async (req, res) => {
       try {
         if (!req.user) return res.status(401).json({ error: 'Sign in first.' });
         const current = await getUser(req.user.id);
-        if (current) {
-          const next = Object.assign({}, current);
-          delete next.byok;
-          await store.set(USERS, req.user.id, next);
-        }
+        // null rather than a removed field: one field written, nothing read
+        // back over a charge. Every reader tests `byok && byok.blob`.
+        if (current && current.byok) await patchUser(req.user.id, { byok: null });
         // Any cached client built from it dies with it, or the key would keep
         // working for as long as the process lived.
         keyClients.clear();
@@ -1258,23 +1504,27 @@ function create(opts) {
     // you can only ask for the app you are actually on, so there is nothing to
     // forge. Re-asking is allowed and refreshes the timestamp, which is what
     // makes the notifier mention it again.
-    expressApp.post(`${mountPath}/access/request`, async (req, res) => {
-      const s = session(req);
-      if (!s) return res.status(401).json({ error: 'Sign in first.' });
-      const user = await getUser(s.uid);
-      if (!user) return res.status(401).json({ error: 'Sign in first.' });
-      if (hasAccess(user, appName)) {
-        return res.status(400).json({ error: 'You already have access to this one.' });
+    expressApp.post(`${mountPath}/access/request`, sameOriginOnly, async (req, res) => {
+      try {
+        const found = await sessionUser(req);
+        if (!found) return res.status(401).json({ error: 'Sign in first.' });
+        const { s, user } = found;
+        if (hasAccess(user, appName)) {
+          return res.status(400).json({ error: 'You already have access to this one.' });
+        }
+        const requests = { ...(user.requests || {}) };
+        requests[appName] = {
+          at: new Date().toISOString(),
+          note: String((req.body || {}).note || '').slice(0, 300),
+          state: 'pending',
+        };
+        await patchUser(s.uid, { requests });
+        await log('access.requested', req, { uid: s.uid, email: user.email, detail: appName });
+        res.json({ ok: true, requested: appName });
+      } catch (err) {
+        console.error('identity access/request', err);
+        res.status(500).json({ error: 'Could not send that request.' });
       }
-      const requests = { ...(user.requests || {}) };
-      requests[appName] = {
-        at: new Date().toISOString(),
-        note: String((req.body || {}).note || '').slice(0, 300),
-        state: 'pending',
-      };
-      await store.set(USERS, s.uid, { ...user, requests });
-      await log('access.requested', req, { uid: s.uid, email: user.email, detail: appName });
-      res.json({ ok: true, requested: appName });
     });
 
     /* ---------- the account itself ---------- */
@@ -1283,15 +1533,19 @@ function create(opts) {
     // derives the uid every app's data is keyed by, so changing it would
     // orphan every trip, project and slip that person owns. Renaming an
     // address is therefore an admin job with a migration, not a text field.
-    expressApp.post(`${mountPath}/profile`, async (req, res) => {
-      const s = session(req);
-      if (!s) return res.status(401).json({ error: 'Sign in first.' });
-      const user = await getUser(s.uid);
-      if (!user) return res.status(401).json({ error: 'Sign in first.' });
-      const displayName = String((req.body || {}).displayName || '').trim().slice(0, 80);
-      await store.set(USERS, s.uid, { ...user, displayName });
-      await log('profile.changed', req, { uid: s.uid, email: user.email });
-      res.json({ ok: true, displayName });
+    expressApp.post(`${mountPath}/profile`, sameOriginOnly, async (req, res) => {
+      try {
+        const found = await sessionUser(req);
+        if (!found) return res.status(401).json({ error: 'Sign in first.' });
+        const { s, user } = found;
+        const displayName = String((req.body || {}).displayName || '').trim().slice(0, 80);
+        await patchUser(s.uid, { displayName });
+        await log('profile.changed', req, { uid: s.uid, email: user.email });
+        res.json({ ok: true, displayName });
+      } catch (err) {
+        console.error('identity profile', err);
+        res.status(500).json({ error: 'Could not save that.' });
+      }
     });
 
     /**
@@ -1317,11 +1571,10 @@ function create(opts) {
      * is the assumption every app here already makes by deriving uid from
      * email in the first place.
      */
-    expressApp.delete(`${mountPath}/account`, async (req, res) => {
-      const s = session(req);
-      if (!s) return res.status(401).json({ error: 'Sign in first.' });
-      const user = await getUser(s.uid);
-      if (!user) return res.status(401).json({ error: 'Sign in first.' });
+    expressApp.delete(`${mountPath}/account`, sameOriginOnly, async (req, res) => {
+      const found = await sessionUser(req);
+      if (!found) return res.status(401).json({ error: 'Sign in first.' });
+      const { s, user } = found;
 
       const supplied = (req.body || {}).password;
       const proved = s.via === 'passkey' || (supplied && matches(supplied, user.password));
@@ -1355,8 +1608,12 @@ function create(opts) {
     spentTodayUsd,
     dailyCapUsd,
     session,
+    sessionUser,
+    sessionValidFor,
     issueSession,
     getUser,
+    patchUser,
+    sameOriginOnly,
     byEmail,
     uidFor,
     accessLevel,
@@ -1376,7 +1633,7 @@ function create(opts) {
       } else {
         delete access[appKey];
       }
-      await store.set(USERS, uid, { ...user, access, requests });
+      await patchUser(uid, { access, requests }, { removes: true });
       return access;
     },
 
@@ -1389,7 +1646,7 @@ function create(opts) {
       const requests = { ...(user.requests || {}) };
       if (!requests[appKey]) throw Object.assign(new Error('No such request.'), { status: 404 });
       requests[appKey] = { ...requests[appKey], state: 'denied', decidedAt: new Date().toISOString() };
-      await store.set(USERS, uid, { ...user, requests });
+      await patchUser(uid, { requests });
       return requests;
     },
 
@@ -1413,5 +1670,6 @@ function create(opts) {
 }
 
 module.exports = {
+  crossSiteWrite, sameOriginOnly, clientIp, createLimiter, passwordVersion,
   planFor,
   webSearchFor, create, priceOf, PRICES, isMember, paysPlatformFee, paidTier, uidFor, makeHash, matches, accessLevel, hasAccess, pendingRequest, budgetFor, FREE_ALLOWANCE_USD, USERS, EVENTS, USAGE, COOKIE, MIN_PASSWORD };

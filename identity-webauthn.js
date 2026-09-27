@@ -59,6 +59,36 @@ function setCookie(res, name, value, maxAge) {
   });
 }
 
+/* ---------- writes come from the site's own page ---------- */
+
+// Every app is a subdomain of one registrable domain, so a page on any of
+// them is "same-site" to the others and SameSite=Lax cookies ride along on a
+// form it auto-submits. A passkey write (enrolment, removal, sign-in) is
+// refused unless the browser says it came from this origin: Sec-Fetch-Site
+// same-origin or none, an Origin naming this host, and a JSON body (or none)
+// - which a plain HTML form cannot send. The same rule as identity's
+// sameOriginOnly and the landing's crossSiteWrite; keep them in step.
+function crossSiteWrite(req) {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return false;
+  const get = (h) => (req.get ? req.get(h) : req.headers[h.toLowerCase()]);
+  const site = get('sec-fetch-site');
+  if (site && site !== 'same-origin' && site !== 'none') return true;
+  const origin = get('origin');
+  if (origin) {
+    try {
+      if (new URL(origin).host !== String(get('host') || '')) return true;
+    } catch (e) { return true; }
+  }
+  const type = get('content-type');
+  if (type && !/^application\/([a-z0-9.+-]*\+)?json\s*(;|$)/i.test(String(type).trim())) return true;
+  return false;
+}
+
+function sameOriginOnly(req, res, next) {
+  if (!crossSiteWrite(req)) return next();
+  return res.status(403).json({ error: 'That request has to come from this site’s own page.' });
+}
+
 /* ---------- rp identity ---------- */
 
 // A passkey is scoped to its rpID. Using the registrable domain rather than
@@ -86,12 +116,17 @@ function rpInfo(req, baseDomain) {
  * @param opts.currentOwner   (req) => ownerId | null
  * @param opts.canEnrol       async (req) => ownerId | null   -- proves identity
  * @param opts.mountPath      route prefix, default '/api/auth/passkey'
+ * @param opts.guard          middleware in front of every write, default the
+ *                            same-origin rule above
+ *
+ * issueSession and currentOwner may return promises; both are awaited.
  */
 function create(opts) {
   const {
     store, secret, rpName, baseDomain = '',
     issueSession, currentOwner, canEnrol,
     mountPath = '/api/auth/passkey',
+    guard = sameOriginOnly,
   } = opts;
 
   const list = () => store.list(COLLECTION);
@@ -116,7 +151,7 @@ function create(opts) {
     // Enrolling proves identity through canEnrol - a password, typically.
     // A session alone is not enough: a borrowed one could otherwise leave
     // itself permanent access that outlives the session it came from.
-    app.post(`${mountPath}/register/options`, async (req, res) => {
+    app.post(`${mountPath}/register/options`, guard, async (req, res) => {
       try {
         const ownerId = await canEnrol(req);
         if (!ownerId) return res.status(401).json({ error: 'That did not prove who you are.' });
@@ -143,7 +178,7 @@ function create(opts) {
     // The verify step cannot carry a password - its body is the credential.
     // The options step already demanded one, and the signed five-minute
     // cookies tie this call back to it, including which account it was for.
-    app.post(`${mountPath}/register/verify`, async (req, res) => {
+    app.post(`${mountPath}/register/verify`, guard, async (req, res) => {
       try {
         const { rpID, origin } = rpInfo(req, baseDomain);
         const challenge = readChallenge((req.cookies || {}).pk_reg, secret());
@@ -177,7 +212,7 @@ function create(opts) {
       }
     });
 
-    app.post(`${mountPath}/login/options`, async (req, res) => {
+    app.post(`${mountPath}/login/options`, guard, async (req, res) => {
       try {
         const { rpID } = rpInfo(req, baseDomain);
         const creds = (await list()).filter((c) => c.rpID === rpID);
@@ -195,7 +230,7 @@ function create(opts) {
       }
     });
 
-    app.post(`${mountPath}/login/verify`, async (req, res) => {
+    app.post(`${mountPath}/login/verify`, guard, async (req, res) => {
       try {
         const { rpID, origin } = rpInfo(req, baseDomain);
         const challenge = readChallenge((req.cookies || {}).pk_auth, secret());
@@ -228,7 +263,7 @@ function create(opts) {
         await store.set(COLLECTION, id, Object.assign({}, stored, patch));
 
         setCookie(res, 'pk_auth', '', 0);
-        issueSession(res, stored.ownerId, req);
+        await issueSession(res, stored.ownerId, req);
         res.json({ ok: true, ownerId: stored.ownerId });
       } catch (err) {
         console.error('passkey login/verify', err);
@@ -237,7 +272,7 @@ function create(opts) {
     });
 
     app.get(`${mountPath}s`, async (req, res) => {
-      const owner = currentOwner(req);
+      const owner = await currentOwner(req);
       if (!owner) return res.status(401).json({ error: 'not signed in' });
       const creds = (await list()).filter((c) => c.ownerId === owner);
       res.json({
@@ -247,8 +282,8 @@ function create(opts) {
       });
     });
 
-    app.delete(`${mountPath}s/:id`, async (req, res) => {
-      const owner = currentOwner(req);
+    app.delete(`${mountPath}s/:id`, guard, async (req, res) => {
+      const owner = await currentOwner(req);
       if (!owner) return res.status(401).json({ error: 'not signed in' });
       const cred = await store.get(COLLECTION, req.params.id);
       // 404 rather than 403 on someone else's credential, so the API will not
@@ -262,4 +297,4 @@ function create(opts) {
   return { mount, list, rpInfo: (req) => rpInfo(req, baseDomain), COLLECTION };
 }
 
-module.exports = { create, rpInfo, COLLECTION, CHALLENGE_TTL };
+module.exports = { create, rpInfo, crossSiteWrite, sameOriginOnly, COLLECTION, CHALLENGE_TTL };

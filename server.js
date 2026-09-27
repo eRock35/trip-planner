@@ -305,8 +305,9 @@ app.post('/api/admin/reset-password', requireLogin, accounts.requireAdmin, async
 
     // Returned exactly once and never stored in the clear.
     const password = require('crypto').randomBytes(9).toString('base64url');
-    await identityStore.store.set('users', userId, {
-      ...target,
+    // Only the changed fields: a whole-record write could erase a spend
+    // charge landing on the same account at the same moment.
+    await identity.patchUser(userId, {
       password: identityLib.makeHash(password),
       passwordChangedAt: new Date().toISOString(),
     });
