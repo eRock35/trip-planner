@@ -50,6 +50,30 @@ const hash = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0,
 function nameKey(name) { const n = norm(name); return n ? 'n' + hash(n) : null; }
 function beerKey(name) { const n = norm(name); return n ? 'b' + hash(n) : null; }
 
+/**
+ * ONE VOICE PER ACCOUNT (2026-09-27). Each account counts at most one
+ * check-in per brewery bucket, and one pour per beer per bucket (a beer not
+ * on the menu shares one slot, "other"). Who holds a voice is recorded
+ * OUTSIDE the shared document, at crowd-voices/<voiceId>, where voiceId is an
+ * HMAC of uid, brewery id, bucket and slot under a key derived from
+ * SESSION_SECRET: nothing there or here reads back to an account. The voice
+ * document holds only `holder`, the crawl stop or pour that has it, so it can
+ * be found and released; the mark on that stop or pour carries the id (`v`),
+ * so releasing never needs the uid - which is what lets a trip member undo a
+ * check-in someone else made.
+ */
+function voiceId(key, uid, breweryId, k, slot) {
+  return crypto.createHmac('sha256', key).update([String(uid), String(breweryId), String(k), String(slot)].join('\n')).digest('hex').slice(0, 40);
+}
+/** A pour's slot within its bucket: its menu beer, or one shared "other". */
+const pourSlot = (mark) => (mark && mark.b ? mark.b : 'other');
+/** Check-in marks were plain bucket keys before voices; read both. */
+function checkinOf(mark) {
+  if (!mark) return null;
+  if (typeof mark === 'string') return { k: mark, v: null };
+  return mark.k ? { k: mark.k, v: mark.v || null } : null;
+}
+
 /** Ids that must never feed the counters: the example trip's made-up stops. */
 function countable(stop) {
   return !!(stop && typeof stop.id === 'string' && stop.id && !/^demo-/i.test(stop.id) && nameKey(stop.name));
@@ -160,4 +184,4 @@ function summary(entry, stop) {
   return out.checkins || out.rating || out.topBeer ? out : null;
 }
 
-module.exports = { THRESHOLD, MAX_BEER_ROWS, nameKey, beerKey, countable, checkinMark, pourMark, tally, summary };
+module.exports = { THRESHOLD, MAX_BEER_ROWS, nameKey, beerKey, countable, checkinMark, pourMark, tally, summary, voiceId, pourSlot, checkinOf };

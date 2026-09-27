@@ -727,7 +727,8 @@ stop checked in, or its date passed), **Recap card** draws 1080x1350
 beers, **miles walked** (walk legs between two checked-in stops, not rides,
 nothing to a skipped stop), average rating, the top-rated pour, and the
 breweries as stamps ("+2 more" when they do not fit). Optionally the first
-Memories photo from the crawl, on by default with a tick box to leave it off.
+Memories photo from the crawl: **off by default** (Erik, 2026-09-27), with a
+tick box to include it. A picture of people is theirs to choose to send.
 
 - **Never a link.** Trips are private (owner and members; 404 to everyone
   else), and a card served from a URL would be the first thing about a trip a
@@ -775,14 +776,67 @@ and the page checks it again.
   **edited** (`PATCH /crawls/:cid/pours/:pid`, new: 3★ made 5★ adds 2 to the
   sum and 0 to the count), removed (twice is a 404 and moves nothing), a stop
   removed, a crawl deleted (`dropCrawl`), **a trip deleted** (its crawls and
-  pours are now deleted with it and take their counts back). Check-ins and
-  pours made before this shipped have no record, so they were never counted
-  and are never taken back.
+  pours are now deleted with it and take their counts back). A record of
+  `null` means "looked at, not counted"; NO record means the item predates
+  the counters, which only the backfill (below) counts.
 - **The menu lookup now writes with `mergeFields`** (`name, city, menu,
   fetchedAt`), not a plain `set`. A plain set would wipe every crawler's
   counters, and a `merge: true` would leave an old menu's fields behind.
 
 Tapping a logged beer now opens it for editing. That is what the PATCH is for.
+
+### One voice per account (2026-09-27)
+
+Erik's follow-up: one account could rate a brewery again and again across
+many crawls. Now each account counts at most **one check-in per brewery
+bucket** and **one pour per beer per bucket** (a beer not on the menu shares
+one slot, "other"). The pour's voice covers all of it: pour count, rating
+and the named-beer row. Further check-ins and pours are still recorded and
+drawn for the trip. They just are not counted.
+
+- **Who holds a voice is recorded outside the shared document**, at
+  `crowd-voices/<id>`, where `id` is an HMAC of uid, brewery id, bucket and
+  slot under a key derived from `SESSION_SECRET` ("trip-planner crowd voice
+  v1"). The document is `{holder, kind}`: holder is
+  `c:<trip>/<crawl>/<stop>` or `p:<trip>/<crawl>/<pour>`. It holds no uid or
+  email. The check-in or pour mark carries the voice id (`v`), so releasing
+  needs no uid, and a member can undo a check-in someone else made.
+- **Whose voice.** For a check-in, the person who tapped. For a pour, its
+  `by`, whoever edits it. Members of a shared trip each have their own. One
+  crawl's stop is still one check-in, since `visits` is shared.
+- **Taken and released in the same transaction as the write** (`voiceFree`,
+  `checkinCrowd`/`applyCheckin`, `pourCrowd`/`applyPour`). Undo, removing a
+  pour, removing a stop, deleting a crawl or trip, and an edit that moves a
+  pour to another beer all release. An edit of the same beer keeps the voice
+  and moves the sum. **Nothing is re-counted automatically** when a voice
+  frees up: a later check-in, pour or edit may take it. A voice whose holder
+  no longer carries it counts as free, so a missed release cannot strand one.
+- Rotating `SESSION_SECRET` changes every voice id. Held voices still release
+  (the marks carry their ids), but an account could then take a second voice
+  at a brewery it already counts at. Treat a rotation like a reset of the
+  one-voice rule.
+
+### Backfill (2026-09-27)
+
+`POST /api/admin/crowd-backfill[?dry=1]`, behind the cron key or a signed-in
+admin (everyone else gets the admin surface's 404). It walks every trip's
+crawls and puts each item through the same voice code a tap uses:
+
+- an item with no record (from before 2026-09-26) is counted if the account's
+  voice is free, otherwise recorded `null`;
+- a first-day mark with no voice gets its voice, or gives its count back if
+  that account's voice is already held elsewhere;
+- anything already recorded is left alone. **Running it twice is safe**: the
+  second run changes nothing.
+
+A check-in never recorded who tapped, so its voice is the crawl's `createdBy`,
+falling back to the trip's owner. `demo-*` stops never count. Each crawl's
+check-ins and each pour is its own transaction, and the report is counted
+after commit. `?dry=1` writes nothing and reports exactly what a real run would do.
+It reads every trip, crawl and pour, so it is an occasional admin action, not
+a cron job. Run it from the deploy machine:
+`curl -X POST -H "X-Cron-Key: $CRON_SECRET" https://trip.strongtechnicalconsulting.com/api/admin/crowd-backfill?dry=1`,
+then again without `?dry=1`.
 
 ### The lifetime passport
 
@@ -808,10 +862,11 @@ along. "Next:" is the closest locked one. Computed on read, never stored.
   the next read.
 - Shown in the Crawls tab under the trip passport, for anyone signed in.
 
-Tests: `test/trip-crowd.js` (58 assertions: idempotence under concurrency,
-edit deltas, nothing identifying stored, the threshold, the name guard, demo
-excluded, strangers 404, stop/crawl/trip deletion taking counts back, the menu
-lookup keeping counters, the lifetime passport's access), `test/recap-card.js`.
+Tests: `test/trip-crowd.js` (idempotence under concurrency, edit deltas,
+nothing identifying stored, the threshold, the name guard, demo excluded,
+strangers 404, stop/crawl/trip deletion taking counts back, the menu lookup
+keeping counters, one voice per account and its release, the lifetime
+passport's access), `test/crowd-backfill.js`, `test/recap-card.js`.
 The harness gained `runTransaction` (serialised), `set(..., {mergeFields})`,
 and increments inside a map that did not exist yet. Rendered at 390px and
 1280px, light and dark. New text measured at 5.5:1 or better. The passports'
@@ -820,7 +875,10 @@ small grey labels moved to `--label-2s`: they were 3.4:1.
 **Privacy page:** `strongtechnicalconsulting.com/privacy` should say that
 check-ins and ratings feed anonymous per-brewery counts visible to all users,
 what is and is not stored, and that deleting a crawl or trip removes its
-contribution.
+contribution. It should also say that a keyed hash of the account is stored
+separately from those counts so each account counts once per brewery, holding
+only which check-in or pour holds that account's voice. Past check-ins and
+pours were counted by the backfill.
 
 ## Sharing a trip (2026-09-23)
 

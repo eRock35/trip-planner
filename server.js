@@ -2133,9 +2133,49 @@ function applyTally(t, tl) {
   for (const w of tl.writes(inc)) t.set(menuCache().doc(w.id), w.data, { merge: true });
 }
 
-/** Take a crawl's whole contribution away - its check-ins and every pour -
- *  and delete it with its pours, in one transaction. Used by delete crawl
- *  and, per crawl, by delete trip. */
+/* ---- one voice per account (crowd.js, "ONE VOICE PER ACCOUNT") ----
+ * crowd-voices/<HMAC> = {holder, kind}: the stop or pour that holds the
+ * voice, as "c:<trip>/<crawl>/<stop>" or "p:<trip>/<crawl>/<pour>". No uid,
+ * no email. The key is derived from SESSION_SECRET and separated from its
+ * other uses by a label, like the OAuth state's HMAC. */
+const VOICE_KEY = crypto.createHmac('sha256', SESSION_SECRET || 'unset').update('trip-planner crowd voice v1').digest();
+const voicesCol = () => db.collection('crowd-voices');
+const crawlRefOf = (tripId, cid) => db.collection('trips').doc(tripId).collection('crawls').doc(cid);
+const holderOf = (kind, tripId, cid, id) => `${kind}:${tripId}/${cid}/${id}`;
+const checkinVoice = (uid, stop, k) => crowdLib.voiceId(VOICE_KEY, uid, stop.id, k, 'checkin');
+const pourVoice = (uid, stopId, mark) => crowdLib.voiceId(VOICE_KEY, uid, stopId, mark.k, 'pour:' + crowdLib.pourSlot(mark));
+
+/**
+ * May `holder` take this voice? Read inside the caller's transaction. Free
+ * when nobody holds it, when `holder` already does, or when the recorded
+ * holder no longer carries it (deleted, undone, re-pointed by an edit) - so a
+ * voice can never be stranded by a path that forgot to release it. Nothing
+ * else is ever re-counted automatically: the voice waits for a later action.
+ */
+async function voiceFree(t, id, holder) {
+  const snap = await t.get(voicesCol().doc(id));
+  if (!snap.exists) return true;
+  const h = String((snap.data() || {}).holder || '');
+  if (h === holder) return true;
+  const m = /^([cp]):([^/]+)\/([^/]+)\/([^/]+)$/.exec(h);
+  if (!m) return true;
+  if (m[1] === 'c') {
+    const c = await t.get(crawlRefOf(m[2], m[3]));
+    const mark = c.exists ? crowdLib.checkinOf(((c.data() || {}).crowd || {})[m[4]]) : null;
+    return !(mark && mark.v === id);
+  }
+  const pr = await t.get(poursCol(crawlRefOf(m[2], m[3])).doc(m[4]));
+  const mark = pr.exists ? (pr.data() || {}).crowd : null;
+  return !(mark && mark.v === id);
+}
+/** Release what a mark held. The mark names its own voice, so no read and
+ *  no uid is needed - a member may undo a check-in someone else made. */
+function releaseVoice(t, mark) { if (mark && mark.v) t.delete(voicesCol().doc(mark.v)); }
+function takeVoice(t, mark, holder, kind) { if (mark && mark.v) t.set(voicesCol().doc(mark.v), { holder, kind }); }
+
+/** Take a crawl's whole contribution away - its check-ins and every pour,
+ *  and the voices they held - and delete it with its pours, in one
+ *  transaction. Used by delete crawl and, per crawl, by delete trip. */
 async function dropCrawl(crawlRef) {
   await db.runTransaction(async (t) => {
     const [snap, pours] = await Promise.all([t.get(crawlRef), t.get(poursCol(crawlRef))]);
@@ -2143,16 +2183,70 @@ async function dropCrawl(crawlRef) {
     const data = snap.data() || {};
     const tl = crowdLib.tally();
     const counted = data.crowd && typeof data.crowd === 'object' ? data.crowd : {};
-    for (const [sid, k] of Object.entries(counted)) if (k) tl.change(sid, 'checkin', k, null);
+    for (const [sid, raw] of Object.entries(counted)) {
+      const mark = crowdLib.checkinOf(raw);
+      if (mark) { tl.change(sid, 'checkin', mark, null); releaseVoice(t, mark); }
+    }
     for (const d of pours.docs) {
       const p = d.data() || {};
-      if (p.crowd) tl.change(p.stopId, 'pour', p.crowd, null);
+      if (p.crowd) { tl.change(p.stopId, 'pour', p.crowd, null); releaseVoice(t, p.crowd); }
       t.delete(d.ref);
     }
     applyTally(t, tl);
     t.delete(crawlRef);
   });
 }
+
+/**
+ * The check-in side of a crawl, made true in the caller's transaction: for
+ * the stop, `want` visited or not, `uid` whose voice a new count uses.
+ * Returns the crowd record to write for the stop (undefined: unchanged).
+ * Reads (the voice) happen before any write, as Firestore requires.
+ */
+async function checkinCrowd(t, ctx, d, stop, want, uid) {
+  const raw = (d.crowd || {})[stop.id];
+  const was = crowdLib.checkinOf(raw);
+  let now = null;
+  if (want) {
+    if (was) now = was;
+    else {
+      const k = crowdLib.checkinMark(stop);
+      if (k && uid) {
+        const v = checkinVoice(uid, stop, k);
+        if (await voiceFree(t, v, holderOf('c', ctx.tripId, ctx.cid, stop.id))) now = { k, v };
+      }
+    }
+  }
+  if (was === now) return raw === undefined && want ? null : undefined;
+  return { was, now };
+}
+function applyCheckin(t, ctx, stop, change) {
+  if (!change) return;
+  applyTally(t, crowdLib.tally().change(stop.id, 'checkin', change.was, change.now));
+  if (change.was && (!change.now || change.now.v !== change.was.v)) releaseVoice(t, change.was);
+  if (change.now && (!change.was || change.now.v !== change.was.v)) takeVoice(t, change.now, holderOf('c', ctx.tripId, ctx.cid, stop.id), 'checkin');
+}
+
+/**
+ * A pour's counted mark, from what it counted before (`old`: a mark, null
+ * for "looked at, not counted", undefined for "never looked at") to what it
+ * should count now. Keeps its voice when the slot is the same (a 3 made a 5);
+ * tries for the new slot's voice when it is not.
+ */
+async function pourCrowd(t, ctx, pourId, pour, stop, entry, old) {
+  const base = crowdLib.pourMark(stop, pour, entry);
+  if (!base) return null;
+  const same = old && old.k === base.k && crowdLib.pourSlot(old) === crowdLib.pourSlot(base);
+  if (same) return Object.assign({}, base, { v: old.v || null });
+  const v = pourVoice(pour.by, stop.id, base);
+  return (await voiceFree(t, v, holderOf('p', ctx.tripId, ctx.cid, pourId))) ? Object.assign({}, base, { v }) : null;
+}
+function applyPour(t, ctx, pourId, stopId, old, mark) {
+  applyTally(t, crowdLib.tally().change(stopId, 'pour', old || null, mark));
+  if (old && old.v && (!mark || mark.v !== old.v)) releaseVoice(t, old);
+  if (mark && mark.v && (!old || old.v !== mark.v)) takeVoice(t, mark, holderOf('p', ctx.tripId, ctx.cid, pourId), 'pour');
+}
+const hasOwn = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
 
 /** Everything the crawl's page draws, computed from the stops' order.
  *  `days` is the trip's itinerary, for what the crawl would clash with. */
@@ -2265,6 +2359,142 @@ async function deleteTripCrawls(tripRef) {
     for (const d of snap.docs) await dropCrawl(d.ref).catch((err) => console.error('delete trip: crawl', d.id, err.message));
   } catch (err) { console.error('delete trip: crawls', err.message); }
 }
+
+// ---- backfill: counting what came before the counters -------------------------
+/**
+ * Check-ins and pours made before the counters shipped (2026-09-26) have no
+ * crowd record, so they were never counted; and those counted on the first
+ * day carry no voice. This walks every trip's crawls and puts each through
+ * the same code a tap does:
+ *
+ *   - no record at all        -> counted if its account's voice is free,
+ *                                else recorded as not counted (null);
+ *   - counted without a voice -> given its voice, or, when that account's
+ *                                voice is already held elsewhere, uncounted
+ *                                (one voice per account applies to them too);
+ *   - anything else           -> left alone.
+ *
+ * So it is safe to run twice: the second run finds every item recorded and
+ * changes nothing. Each crawl's check-ins, and each pour, is its own
+ * transaction that re-reads what it is about to change. A pour's voice is
+ * its `by`; a check-in never recorded who tapped, so it is the crawl's
+ * `createdBy`, else the trip's owner. The example trip lives in code, not
+ * Firestore, and `demo-*` stops are never countable. `?dry=1` reports
+ * without writing. Awaited to the end (billed per request).
+ */
+async function backfillCrowd(opts) {
+  const dry = !!(opts && opts.dry);
+  const out = { dry, trips: 0, crawls: 0, checkins: { counted: 0, notCounted: 0, voiced: 0, uncounted: 0 }, pours: { counted: 0, notCounted: 0, voiced: 0, uncounted: 0 } };
+  const bump = (bucket, was, now) => {
+    if (was === undefined) bucket[now ? 'counted' : 'notCounted'] += 1;
+    else bucket[now ? 'voiced' : 'uncounted'] += 1;
+  };
+  // Voices a DRY run would have given out: it writes none, so without this
+  // it would find each one still free and report more than a real run does.
+  // Only for dry runs - a real transaction can be retried by Firestore, and
+  // must not find its own first attempt's claim here.
+  const claimed = new Set();
+  const free = async (t, v, holder) => {
+    if (dry && claimed.has(v)) return false;
+    const yes = await voiceFree(t, v, holder);
+    if (yes && dry) claimed.add(v);
+    return yes;
+  };
+  const trips = await db.collection('trips').get();
+  for (const td of trips.docs) {
+    if (td.id === demo.DEMO_ID) continue;
+    out.trips += 1;
+    const trip = td.data() || {};
+    const crawls = await crawlsCol(td.ref).get();
+    for (const cd of crawls.docs) {
+      out.crawls += 1;
+      const ctx = { tripId: td.id, cid: cd.id };
+      // Each transaction returns what it did and the report is counted after
+      // it commits, so a transaction Firestore retries is not reported twice.
+      const did = await db.runTransaction(async (t) => {
+        const snap = await t.get(cd.ref);
+        if (!snap.exists) return [];
+        const d = snap.data() || {};
+        const visits = d.visits || {}, rec = d.crowd || {};
+        const uid = d.createdBy || trip.ownerId;
+        const todo = [];
+        for (const stop of Array.isArray(d.stops) ? d.stops : []) {
+          if (!stop || !visits[stop.id]) continue;
+          const raw = rec[stop.id];
+          const legacy = crowdLib.checkinOf(raw);
+          if (hasOwn(rec, stop.id) && !(legacy && !legacy.v)) continue;
+          // Reads first, for every stop, then the writes.
+          const k = crowdLib.checkinMark(stop);
+          let now = null;
+          if (k && uid && (!legacy || legacy.k === k)) {
+            const v = checkinVoice(uid, stop, k);
+            if (await free(t, v, holderOf('c', ctx.tripId, ctx.cid, stop.id))) now = { k, v };
+          }
+          todo.push({ stop, was: legacy, now, first: !hasOwn(rec, stop.id) });
+        }
+        if (!todo.length) return [];
+        const write = { crowd: {} };
+        for (const x of todo) {
+          write.crowd[x.stop.id] = x.now;
+          if (!dry) {
+            if (x.was && x.now) takeVoice(t, x.now, holderOf('c', ctx.tripId, ctx.cid, x.stop.id), 'checkin');
+            else applyCheckin(t, ctx, x.stop, { was: x.was, now: x.now });
+          }
+        }
+        if (!dry) t.set(cd.ref, write, { merge: true });
+        return todo;
+      });
+      for (const x of did) bump(out.checkins, x.first ? undefined : x.was, x.now);
+      const pours = await poursCol(cd.ref).get();
+      for (const pd of pours.docs) {
+        const first = pd.data() || {};
+        if (hasOwn(first, 'crowd') && !(first.crowd && !first.crowd.v)) continue;
+        const done = await db.runTransaction(async (t) => {
+          const snap = await t.get(pd.ref);
+          if (!snap.exists) return null;
+          const pr = snap.data() || {};
+          const recorded = hasOwn(pr, 'crowd');
+          if (recorded && !(pr.crowd && !pr.crowd.v)) return null;
+          const stop = ((await t.get(cd.ref)).data() || {}).stops?.find((s) => s.id === pr.stopId);
+          const entry = stop ? await menuCache().doc(pr.stopId).get().then((x) => (x.exists ? x.data() : null)).catch(() => null) : null;
+          let mark = null;
+          if (stop && pr.by) {
+            const base = crowdLib.pourMark(stop, pr, entry);
+            // A counted legacy pour keeps what it counted if it can have the
+            // voice; a new one counts what is true now.
+            const want = recorded ? Object.assign({}, pr.crowd) : base;
+            if (want && want.k) {
+              const v = pourVoice(pr.by, stop.id, want);
+              if (await free(t, v, holderOf('p', ctx.tripId, ctx.cid, pd.id))) mark = Object.assign({}, want, { v });
+            }
+          }
+          const result = { was: recorded ? pr.crowd : undefined, mark };
+          if (dry) return result;
+          if (recorded && mark) takeVoice(t, mark, holderOf('p', ctx.tripId, ctx.cid, pd.id), 'pour');
+          else applyPour(t, ctx, pd.id, pr.stopId, recorded ? pr.crowd : null, mark);
+          t.set(pd.ref, { crowd: mark }, { merge: true });
+          return result;
+        });
+        if (done) bump(out.pours, done.was, done.mark);
+      }
+    }
+  }
+  return out;
+}
+/** The cron key (for a one-off run from the deploy machine), or a signed-in
+ *  admin. Anyone else gets the admin surface's 404. */
+function requireAdminOrCron(req, res, next) {
+  const key = req.get('X-Cron-Key');
+  if (CRON_SECRET && key && key === CRON_SECRET) return next();
+  return requireLogin(req, res, () => accounts.requireAdmin(req, res, next));
+}
+app.post('/api/admin/crowd-backfill', requireAdminOrCron, async (req, res) => {
+  try {
+    const result = await backfillCrowd({ dry: req.query.dry === '1' });
+    console.log('crowd backfill', JSON.stringify(result));
+    res.json(result);
+  } catch (err) { console.error('POST crowd-backfill', err); res.status(500).json({ error: 'The backfill stopped: ' + err.message }); }
+});
 
 // ---- the lifetime passport --------------------------------------------------
 /**
@@ -2482,8 +2712,10 @@ app.delete('/api/trips/:id/crawls/:cid/stops/:sid', requireLogin, ownedTrip, own
       const [snap, pours] = await Promise.all([t.get(req.crawl.ref), t.get(poursCol(req.crawl.ref).where('stopId', '==', sid))]);
       const counted = (snap.exists && snap.data().crowd) || {};
       const tl = crowdLib.tally();
-      if (counted[sid]) { tl.change(sid, 'checkin', counted[sid], null); patch.crowd = Object.assign({}, counted, { [sid]: null }); }
-      for (const d of pours.docs) { const p = d.data() || {}; if (p.crowd) tl.change(sid, 'pour', p.crowd, null); t.delete(d.ref); }
+      const mark = crowdLib.checkinOf(counted[sid]);
+      if (mark) { tl.change(sid, 'checkin', mark, null); releaseVoice(t, mark); }
+      if (hasOwn(counted, sid)) { patch.crowd = Object.assign({}, counted); delete patch.crowd[sid]; }
+      for (const d of pours.docs) { const p = d.data() || {}; if (p.crowd) { tl.change(sid, 'pour', p.crowd, null); releaseVoice(t, p.crowd); } t.delete(d.ref); }
       applyTally(t, tl);
       t.update(req.crawl.ref, patch);
     });
@@ -2516,13 +2748,16 @@ app.post('/api/trips/:id/crawls/:cid/visit/:sid', requireLogin, ownedTrip, owned
       const current = (d.visits || {})[sid] || null;
       const want = typeof b.visited === 'boolean' ? b.visited : !current;
       const value = want ? (current || new Date().toISOString()) : null;
-      // What this crawl has counted for the stop, and what it should have.
-      const was = (d.crowd || {})[sid] || null;
-      const now = want ? (was || crowdLib.checkinMark(stop)) : null;
+      // What this crawl has counted for the stop, and what it should have -
+      // a new count only if this account's voice for the brewery is free.
+      const ctx = { tripId: req.owned.doc.id, cid: req.crawl.id };
+      const change = await checkinCrowd(t, ctx, d, stop, want, req.user.uid);
       const write = { visits: { [sid]: value }, updatedAt: new Date().toISOString() };
-      if (was !== now) {
-        applyTally(t, crowdLib.tally().change(sid, 'checkin', was, now));
-        write.crowd = { [sid]: now };
+      if (change !== undefined) {
+        applyCheckin(t, ctx, stop, change);
+        // null: looked at and not counted (the voice is someone else's
+        // stop's) - a record, so the backfill leaves it alone.
+        write.crowd = { [sid]: change ? change.now : null };
       }
       t.set(req.crawl.ref, write, { merge: true });
     });
@@ -2556,13 +2791,16 @@ app.post('/api/trips/:id/crawls/:cid/pours', requireLogin, ownedTrip, ownedCrawl
     // named row there (crowd.js says why).
     const stop = req.crawl.data.stops.find((s) => s.id === stopId);
     const entry = await menuCache().doc(stopId).get().then((x) => (x.exists ? x.data() : null)).catch(() => null);
-    const mark = crowdLib.pourMark(stop, pour, entry);
     const ref = poursCol(req.crawl.ref).doc();
-    const batch = db.batch();
-    batch.set(ref, mark ? Object.assign({}, pour, { crowd: mark }) : pour);
-    for (const w of crowdLib.tally().change(stopId, 'pour', null, mark).writes(inc)) batch.set(menuCache().doc(w.id), w.data, { merge: true });
-    batch.set(req.crawl.ref, { updatedAt: pour.at }, { merge: true });
-    await batch.commit();
+    const ctx = { tripId: req.owned.doc.id, cid: req.crawl.id };
+    // Counted only if this account's voice for that beer here is free - two
+    // pours of one beer at the same table are one voice.
+    await db.runTransaction(async (t) => {
+      const mark = await pourCrowd(t, ctx, ref.id, pour, stop, entry, undefined);
+      t.set(ref, Object.assign({}, pour, { crowd: mark }));
+      applyPour(t, ctx, ref.id, stopId, null, mark);
+      t.set(req.crawl.ref, { updatedAt: pour.at }, { merge: true });
+    });
     res.json({ pour: Object.assign({ id: ref.id }, pour), pours: await poursOf(req.crawl.ref) });
   } catch (err) { console.error('POST pour', err); res.status(500).json({ error: 'Could not log that.' }); }
 });
@@ -2577,7 +2815,7 @@ app.delete('/api/trips/:id/crawls/:cid/pours/:pid', requireLogin, ownedTrip, own
       const snap = await t.get(ref);
       if (!snap.exists) return false;
       const p = snap.data() || {};
-      if (p.crowd) applyTally(t, crowdLib.tally().change(p.stopId, 'pour', p.crowd, null));
+      if (p.crowd) { applyTally(t, crowdLib.tally().change(p.stopId, 'pour', p.crowd, null)); releaseVoice(t, p.crowd); }
       t.delete(ref);
       t.set(req.crawl.ref, { updatedAt: new Date().toISOString() }, { merge: true });
       return true;
@@ -2611,13 +2849,19 @@ app.patch('/api/trips/:id/crawls/:cid/pours/:pid', requireLogin, ownedTrip, owne
       const p = snap.data() || {};
       const stop = (req.crawl.data.stops || []).find((s) => s.id === p.stopId);
       const next = Object.assign({}, p, patch);
-      const entry = p.crowd ? await menuCache().doc(p.stopId).get().then((x) => (x.exists ? x.data() : null)).catch(() => null) : null;
-      // A pour logged before the counters existed was never counted, so it
-      // is not counted on an edit either: "what changed" has no "before".
-      const mark = p.crowd ? crowdLib.pourMark(stop, next, entry) : null;
-      if (p.crowd) applyTally(t, crowdLib.tally().change(p.stopId, 'pour', p.crowd, mark));
       const at = new Date().toISOString();
-      t.set(ref, Object.assign({}, patch, { crowd: mark || null, editedAt: at }), { merge: true });
+      const write = Object.assign({}, patch, { editedAt: at });
+      // A pour from before the counters has no record at all: the backfill
+      // counts it, not an edit. Otherwise the counters move by the
+      // difference, keeping the voice when the beer is the same one.
+      if (hasOwn(p, 'crowd') && stop) {
+        const entry = await menuCache().doc(p.stopId).get().then((x) => (x.exists ? x.data() : null)).catch(() => null);
+        const ctx = { tripId: req.owned.doc.id, cid: req.crawl.id };
+        const mark = await pourCrowd(t, ctx, ref.id, next, stop, entry, p.crowd);
+        applyPour(t, ctx, ref.id, p.stopId, p.crowd, mark);
+        write.crowd = mark;
+      }
+      t.set(ref, write, { merge: true });
       t.set(req.crawl.ref, { updatedAt: at }, { merge: true });
       return true;
     });

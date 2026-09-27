@@ -54,6 +54,8 @@ const n = (v) => Number(v || 0);
   const me = await register('owner@example.com');
   const sarah = await register('sarah@example.com');
   const stranger = await register('stranger@example.com');
+  const U = [];
+  for (let i = 1; i <= 5; i++) U.push(await register('crawler' + i + '@example.com'));
   const call = async (method, p, b, c = me) => {
     const r = await realFetch(B + p, { method, headers: { ...J, cookie: c || '' }, body: b === undefined ? undefined : JSON.stringify(b) });
     const text = await r.text();
@@ -111,10 +113,15 @@ const n = (v) => Number(v || 0);
   await call('PATCH', C1 + '/pours/' + p1, { rating: 4, beer: 'Something <b>off</b> menu' });
   b = bucket(RB.id, RB.name);
   ok('renamed to a beer not on the menu: the menu beer\'s row gives its pour back', n(b.pours) === 1 && n(b.ratingSum) === 4 && b.beers[hk].n === 0, JSON.stringify(b));
-  r = await call('POST', C1 + '/pours', { stopId: RB.id, beer: "Erik's 40th birthday pint", rating: 2, note: 'with owner@example.com at 6pm' });
+  r = await call('POST', C1 + '/pours', { stopId: RB.id, beer: "Another typed pint", rating: 1 });
+  ok('the same account\'s second off-menu beer here is the same voice ("other"): not counted', n(bucket(RB.id, RB.name).ratingSum) === 4 && n(bucket(RB.id, RB.name).pours) === 1);
+  await call('DELETE', C1 + '/pours/' + r.body.pour.id);
+  ok('...and removing it takes back nothing, because it added nothing', n(bucket(RB.id, RB.name).ratingSum) === 4 && n(bucket(RB.id, RB.name).pours) === 1);
+  // Sarah, a member of the trip, has her own voice.
+  r = await call('POST', C1 + '/pours', { stopId: RB.id, beer: "Erik's 40th birthday pint", rating: 2, note: 'with owner@example.com at 6pm' }, sarah);
   const p2 = r.body.pour.id;
   const raw = JSON.stringify(brewery(RB.id));
-  ok('a typed beer not on the menu is never written by name', !/Erik|birthday|40th|off menu/i.test(raw) && n(bucket(RB.id, RB.name).ratingSum) === 6, raw.slice(0, 300));
+  ok('a typed beer not on the menu is never written by name (a member\'s voice counts)', !/Erik|birthday|40th|off menu/i.test(raw) && n(bucket(RB.id, RB.name).ratingSum) === 6, raw.slice(0, 300));
   r = await call('DELETE', C1 + '/pours/' + p2);
   ok('removing a pour takes its rating back', r.status === 200 && n(bucket(RB.id, RB.name).ratingSum) === 4 && n(bucket(RB.id, RB.name).pours) === 1);
   r = await call('DELETE', C1 + '/pours/' + p2);
@@ -131,15 +138,18 @@ const n = (v) => Number(v || 0);
   ok('...only the menu fields and counters', Object.keys(brewery(RB.id)).sort().join() === 'city,crowd,fetchedAt,menu,name');
 
   /* ---------- five before anything shows ---------- */
-  const crawls = [C1];
-  for (let i = 0; i < 3; i++) crawls.push(await newCrawl(await newTrip('Trip ' + i), [RB]));
-  for (const c of crawls.slice(1)) await call('POST', c + '/visit/' + RB.id, { visited: true });
-  for (const c of crawls) for (const rating of [4]) await call('POST', c + '/pours', { stopId: RB.id, beer: 'Hazy Daze', rating });
+  // Four accounts (the owner and three others), each on their own crawl.
+  await call('POST', C1 + '/pours', { stopId: RB.id, beer: 'Hazy Daze', rating: 4 });
+  for (const u of U.slice(0, 3)) {
+    const c = await newCrawl(await newTrip('Trip', u), [RB], u);
+    await call('POST', c + '/visit/' + RB.id, { visited: true }, u);
+    await call('POST', c + '/pours', { stopId: RB.id, beer: 'Hazy Daze', rating: 4 }, u);
+  }
   r = await call('GET', C1);
   ok('four check-ins and four ratings: still nothing shown', n(bucket(RB.id, RB.name).checkins) === 4 && r.body.crowd[RB.id] === null, JSON.stringify(r.body.crowd));
-  const C5 = await newCrawl(await newTrip('Fifth'), [RB]);
-  await call('POST', C5 + '/visit/' + RB.id, { visited: true });
-  await call('POST', C5 + '/pours', { stopId: RB.id, beer: 'HAZY DAZE ', rating: 5 });
+  const C5 = await newCrawl(await newTrip('Fifth', U[3]), [RB], U[3]);
+  await call('POST', C5 + '/visit/' + RB.id, { visited: true }, U[3]);
+  await call('POST', C5 + '/pours', { stopId: RB.id, beer: 'HAZY DAZE ', rating: 5 }, U[3]);
   r = await call('GET', C1);
   const cr = r.body.crowd[RB.id];
   ok('the fifth check-in and rating: shown, as an average', cr && cr.checkins === 5 && cr.ratings === 5 && cr.rating === 4.2, JSON.stringify(cr));
@@ -159,11 +169,11 @@ const n = (v) => Number(v || 0);
   await call('POST', CF + '/visit/' + RB.id, { visited: true }, stranger);
   for (let i = 0; i < 6; i++) await call('POST', CF + '/pours', { stopId: RB.id, beer: 'Hazy Daze', rating: 1 }, stranger);
   ok('a stop under a real id with another name never touches the real bucket', JSON.stringify(bucket(RB.id, RB.name)) === before, JSON.stringify(bucket(RB.id, RB.name)));
-  ok('...its own bucket has no named beer (the menu is not its menu)', !Object.keys(bucket(RB.id, fake.name).beers || {}).length && n(bucket(RB.id, fake.name).pours) === 6);
+  ok('...its own bucket has no named beer (the menu is not its menu), and six pours by one account are one voice', !Object.keys(bucket(RB.id, fake.name).beers || {}).length && n(bucket(RB.id, fake.name).pours) === 1 && n(bucket(RB.id, fake.name).ratingN) === 1);
   r = await call('GET', C1);
   ok('...and the real stop still shows the real numbers', r.body.crowd[RB.id].rating === 4.2 && r.body.crowd[RB.id].checkins === 5);
   r = await call('GET', CF, undefined, stranger);
-  ok('...while the fake stop reads only its own (one check-in: nothing)', r.body.crowd[RB.id] && r.body.crowd[RB.id].checkins === null && r.body.crowd[RB.id].rating === 1 && !r.body.crowd[RB.id].topBeer, JSON.stringify(r.body.crowd));
+  ok('...while the fake stop reads only its own (one voice: nothing shown)', r.body.crowd[RB.id] === null, JSON.stringify(r.body.crowd));
 
   /* ---------- strangers and the example trip ---------- */
   const snapshot = JSON.stringify(brewery(RB.id));
@@ -187,24 +197,26 @@ const n = (v) => Number(v || 0);
 
   /* ---------- taking it all back ---------- */
   const was = bucket(RB.id, RB.name);
-  r = await call('DELETE', C5 + '/stops/' + RB.id);
+  r = await call('DELETE', C5 + '/stops/' + RB.id, undefined, U[3]);
   b = bucket(RB.id, RB.name);
   ok('removing a stop takes back its check-in and its pours', r.status === 200 && (n(b.checkins) === n(was.checkins) - 1 && n(b.pours) === n(was.pours) - 1 && n(b.ratingSum) === n(was.ratingSum) - 5), `${r.status} ${JSON.stringify(b)}`);
-  const C6 = await newCrawl(tripA, [RB, FH]);
-  await call('POST', C6 + '/visit/' + RB.id, { visited: true });
-  await call('POST', C6 + '/pours', { stopId: RB.id, beer: 'River Stout', rating: 3 });
-  await call('POST', C6 + '/pours', { stopId: RB.id, beer: 'Hazy Daze', rating: 2 });
+  const C6 = await newCrawl(await newTrip('Sixth', U[4]), [RB, FH], U[4]);
+  await call('POST', C6 + '/visit/' + RB.id, { visited: true }, U[4]);
+  await call('POST', C6 + '/pours', { stopId: RB.id, beer: 'River Stout', rating: 3 }, U[4]);
+  await call('POST', C6 + '/pours', { stopId: RB.id, beer: 'Hazy Daze', rating: 2 }, U[4]);
   const mid = bucket(RB.id, RB.name);
-  r = await call('DELETE', C6);
+  r = await call('DELETE', C6, undefined, U[4]);
   b = bucket(RB.id, RB.name);
   ok('deleting a crawl takes back everything it added', r.status === 200 && n(b.checkins) === n(mid.checkins) - 1 && n(b.pours) === n(mid.pours) - 2 && n(b.ratingSum) === n(mid.ratingSum) - 5 && b.beers[crowdLib.beerKey('River Stout')].n === 0, JSON.stringify(b));
   ok('...its pours are gone with it', !Array.from(h.bag('sub').keys()).some((k) => k.indexOf(C6.split('/').pop()) >= 0));
-  const TX = await newTrip('To delete');
-  const CX = await newCrawl(TX, [RB]);
-  await call('POST', CX + '/visit/' + RB.id, { visited: true });
-  await call('POST', CX + '/pours', { stopId: RB.id, beer: 'Hazy Daze', rating: 1 });
+  // The same account again: deleting C6 released its voices.
+  const TX = await newTrip('To delete', U[4]);
+  const CX = await newCrawl(TX, [RB], U[4]);
+  await call('POST', CX + '/visit/' + RB.id, { visited: true }, U[4]);
+  await call('POST', CX + '/pours', { stopId: RB.id, beer: 'Hazy Daze', rating: 1 }, U[4]);
   const pre = bucket(RB.id, RB.name);
-  r = await call('DELETE', '/api/trips/' + TX);
+  ok('a deleted crawl\'s voices are free again: the same account counts on a new crawl', n(pre.checkins) === n(b.checkins) + 1 && n(pre.pours) === n(b.pours) + 1, JSON.stringify(pre));
+  r = await call('DELETE', '/api/trips/' + TX, undefined, U[4]);
   b = bucket(RB.id, RB.name);
   ok('deleting a trip takes back what its crawls added', r.status === 200 && n(b.checkins) === n(pre.checkins) - 1 && n(b.ratingSum) === n(pre.ratingSum) - 1 && n(b.pours) === n(pre.pours) - 1, JSON.stringify(b));
 
@@ -215,6 +227,52 @@ const n = (v) => Number(v || 0);
   r = await call('POST', C1 + '/menus', {});
   const after = brewery(RB.id);
   ok('a menu lookup replaces the menu and keeps every crawler\'s counters', /Fresh Pils/.test(JSON.stringify(after.menu)) && !/Hazy Daze/.test(JSON.stringify(after.menu)) && JSON.stringify(after.crowd) === keep, JSON.stringify(r.body).slice(0, 200));
+
+  /* ---------- one voice per account per brewery ---------- */
+  const XB = { id: 'b0000005-aaaa-4aaa-8aaa-000000000005', name: 'Crosstown Brewing', city: 'Asheville', state: 'North Carolina', country: 'United States', lat: 35.59, lng: -82.56 };
+  const xb = () => bucket(XB.id, XB.name);
+  const v1 = await register('voice1@example.com'), v2 = await register('voice2@example.com'), v3 = await register('voice3@example.com');
+  const T1 = await newTrip('Voice one', v1), T2 = await newTrip('Voice two', v1), T3 = await newTrip('Voice three', v1);
+  const X1 = await newCrawl(T1, [XB], v1), X2 = await newCrawl(T2, [XB], v1), X3 = await newCrawl(T3, [XB], v1);
+  for (const c of [X1, X2, X3]) await call('POST', c + '/visit/' + XB.id, { visited: true }, v1);
+  ok('one account checking in at one brewery on three crawls counts once', n(xb().checkins) === 1, JSON.stringify(xb()));
+  const px = [];
+  for (const c of [X1, X2, X3]) px.push((await call('POST', c + '/pours', { stopId: XB.id, beer: 'Off-menu lager', rating: 5 }, v1)).body.pour.id);
+  ok('...and three pours of the same beer there count once', n(xb().pours) === 1 && n(xb().ratingSum) === 5 && n(xb().ratingN) === 1, JSON.stringify(xb()));
+  const x2 = (await call('GET', X2, undefined, v1)).body;
+  ok('...the others are still checked in and logged, just not counted', x2.crawl.stops[0].visitedAt && x2.pours.length === 1);
+  await call('POST', '/api/trips/' + T1 + '/share', { email: 'voice2@example.com' }, v1);
+  const X1b = await newCrawl(T1, [XB], v2);
+  await call('POST', X1b + '/visit/' + XB.id, { visited: true }, v2);
+  await call('POST', X1 + '/pours', { stopId: XB.id, beer: 'Off-menu lager', rating: 3 }, v2);
+  ok('two members of one trip are two voices: two check-ins, two ratings', n(xb().checkins) === 2 && n(xb().pours) === 2 && n(xb().ratingSum) === 8, JSON.stringify(xb()));
+  await call('PATCH', X1 + '/pours/' + px[0], { rating: 2 }, v1);
+  ok('an edit on the counted pour still moves the sum (5 made 2)', n(xb().ratingSum) === 5 && n(xb().ratingN) === 2 && n(xb().pours) === 2, JSON.stringify(xb()));
+  await call('PATCH', X2 + '/pours/' + px[1], { rating: 1 }, v1);
+  ok('...an edit on an uncounted pour of the same beer moves nothing', n(xb().ratingSum) === 5 && n(xb().pours) === 2);
+  // A member's undo releases the voice the owner's check-in holds.
+  await call('POST', X1 + '/visit/' + XB.id, { visited: false }, v2);
+  ok('undo releases the voice (here a member undoing the owner\'s check-in)', n(xb().checkins) === 1);
+  ok('...and nothing else is re-counted by itself: the second crawl\'s check-in stays uncounted', n(xb().checkins) === 1 && (h.bag('sub').get('trips/' + T2 + '/crawls/' + X2.split('/').pop()).crowd || {})[XB.id] === null);
+  const X4 = await newCrawl(await newTrip('Voice four', v1), [XB], v1);
+  await call('POST', X4 + '/visit/' + XB.id, { visited: true }, v1);
+  ok('...a later check-in takes the voice and counts', n(xb().checkins) === 2);
+  await call('DELETE', X1 + '/pours/' + px[0], undefined, v1);
+  ok('removing the counted pour releases its voice and its rating', n(xb().pours) === 1 && n(xb().ratingSum) === 3);
+  await call('PATCH', X2 + '/pours/' + px[1], { rating: 4 }, v1);
+  ok('...a later edit of another pour of that beer takes the voice', n(xb().pours) === 2 && n(xb().ratingSum) === 7 && n(xb().ratingN) === 2, JSON.stringify(xb()));
+  const T5 = await newTrip('Concurrent', v3);
+  const Y = [await newCrawl(T5, [XB], v3), await newCrawl(T5, [XB], v3), await newCrawl(T5, [XB], v3)];
+  const cBefore = n(xb().checkins), pBefore = n(xb().pours);
+  await Promise.all(Y.map((c) => call('POST', c + '/visit/' + XB.id, { visited: true }, v3)));
+  await Promise.all([1, 2, 3].map(() => call('POST', Y[0] + '/pours', { stopId: XB.id, beer: 'Off-menu lager', rating: 4 }, v3)));
+  ok('concurrent check-ins on three crawls and three pours at once by one account: one of each', n(xb().checkins) === cBefore + 1 && n(xb().pours) === pBefore + 1, JSON.stringify(xb()));
+  const voices = Array.from(h.bag('trip-planner').entries()).filter(([k]) => k.startsWith('crowd-voices/'));
+  const secrets = ['voice1@', 'voice2@', 'voice3@', '@example.com', uidOf('voice1@example.com'), uidOf('voice2@example.com'), uidOf('voice3@example.com'), uidOf('owner@example.com')];
+  const marks = JSON.stringify(Array.from(h.bag('sub').entries()).map(([, v]) => v.crowd));
+  ok('voices are recorded outside the shared document, holding only where the voice is', voices.length > 0 && voices.every(([k, v]) => /^crowd-voices\/[0-9a-f]{40}$/.test(k) && Object.keys(v).sort().join() === 'holder,kind' && /^[cp]:[^/]+\/[^/]+\/[^/]+$/.test(v.holder)));
+  ok('...no uid or email is readable in a voice, its key, a mark or the brewery counters', secrets.every((x) => JSON.stringify(voices).indexOf(x) < 0 && marks.indexOf(x) < 0 && JSON.stringify(brewery(XB.id)).indexOf(x) < 0), secrets.filter((x) => JSON.stringify(voices).indexOf(x) >= 0 || marks.indexOf(x) >= 0).join());
+  ok('...and the voice id is not a plain hash of the uid (it is keyed)', !voices.some(([k]) => k.indexOf(require('crypto').createHash('sha256').update(uidOf('voice1@example.com')).digest('hex').slice(0, 40)) >= 0));
 
   /* ---------- the lifetime passport ---------- */
   // Sarah's own trip, shared with the owner, in Portland; the stranger's

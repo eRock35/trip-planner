@@ -131,7 +131,12 @@ const ok = (n, c, x) => { if (c) { pass++; console.log('PASS  ' + n); } else { f
   ok('the example trip has weather for anyone', r.status === 200 && ['forecast', 'later', 'past'].includes((await r.json()).status));
 
   global.fetch = async (url, opts) => (String(url).includes('met.no') ? new Response('down', { status: 503 }) : realFetch(url, opts));
-  await realFetch(`${B}/api/trips/${trip.id}`, { method: 'PATCH', headers: { ...J, cookie: me }, body: JSON.stringify({ destination: 'Santa Rosa Beach, FL' }) });
+  // Two days from the real today: with the trip's fixed Sep 23-26 dates this
+  // step started answering "past" (before asking MET at all) once that week
+  // was over, and stopped testing what it says it tests.
+  const soon = new Date(Date.now() + 2 * 86400000);
+  const soonText = soon.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  await realFetch(`${B}/api/trips/${trip.id}`, { method: 'PATCH', headers: { ...J, cookie: me }, body: JSON.stringify({ destination: 'Santa Rosa Beach, FL', dateRange: soonText }) });
   global.fetch = async (url, opts) => {
     const u = String(url);
     if (u.includes('nominatim')) return new Response(JSON.stringify(NOMINATIM_SRB), { status: 200 });

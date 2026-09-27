@@ -4214,11 +4214,13 @@
     var v = crawlView, RC = window.RecapCard;
     if (!v || !RC) return;
     var data = RC.cardData(v, { destination: currentTrip && currentTrip.destination });
-    var src = crawlFirstPhoto(v), photo = null, size = "portrait", withPhoto = !!src, file = null, url = null, gen = 0;
+    // The photo is left OFF until they tick it: a picture of people is theirs
+    // to choose to send, not something a share button sends by default.
+    var src = crawlFirstPhoto(v), photo = null, size = "portrait", withPhoto = false, file = null, url = null, gen = 0;
     var canShareFile = function (f) { try { return !!(f && navigator.share && navigator.canShare && navigator.canShare({ files: [f] })); } catch (e) { return false; } };
     var body = '<div class="rc-opts"><div class="seg" role="group" aria-label="Shape of the card">' +
         '<button type="button" data-size="portrait" aria-pressed="true">Portrait</button><button type="button" data-size="wide" aria-pressed="false">Wide</button></div>' +
-        (src ? '<label class="rc-photo"><input type="checkbox" id="rcPhoto" checked>Include a photo from the crawl</label>' : '') + '</div>' +
+        (src ? '<label class="rc-photo"><input type="checkbox" id="rcPhoto">Include a photo from the crawl</label>' : '') + '</div>' +
       '<div class="rc-prev" id="rcPrev"><div class="rc-wait">Drawing the card…</div></div>' +
       '<div class="cr-form-actions"><button type="button" class="btn btn-primary" id="rcShare" disabled>Share</button></div>' +
       '<p class="rc-note">Drawn on this device from the crawl. Nothing is uploaded and no link is made — the picture goes only where you send it.</p>' +
