@@ -59,6 +59,16 @@ const get = (p, headers = {}) => fetch(B + p, { redirect: 'manual', headers });
   const twin = await r.text();
   ok('only the one path (no .json twin)', !(r.status === 200 && twin.includes('applinks')), r.status);
 
+  // "Get the iPhone app" (shared/get-app.js): the link, or null.
+  delete process.env.TESTFLIGHT_URL;
+  r = await get('/ios-app.json');
+  ok('no TestFlight link: 200 with url null, no sign-in', r.status === 200 && JSON.stringify(await r.json()) === JSON.stringify({ name: 'Trip Planner', url: null }), r.status);
+  process.env.TESTFLIGHT_URL = 'https://testflight.apple.com/join/AbCd1234';
+  ok('a TestFlight public link is answered', (await (await get('/ios-app.json')).json()).url === process.env.TESTFLIGHT_URL);
+  process.env.TESTFLIGHT_URL = 'https://evil.example/join/AbCd1234';
+  ok('anything else is null', (await (await get('/ios-app.json')).json()).url === null);
+  delete process.env.TESTFLIGHT_URL;
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

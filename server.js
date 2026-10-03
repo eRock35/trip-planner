@@ -174,6 +174,18 @@ app.get('/.well-known/apple-app-site-association', (req, res) => {
   });
 });
 
+// "Get the iPhone app" (eriks-projects/shared/get-app.js): the bar on an
+// iPhone asks this for the TestFlight public link. It comes from the
+// TESTFLIGHT_URL setting, unset until Apple approves a build for external
+// testing; anything that is not exactly such a link answers null and the bar
+// stays hidden. Above every gate, like the association file.
+const TESTFLIGHT_LINK = /^https:\/\/testflight\.apple\.com\/join\/[A-Za-z0-9]{4,20}$/;
+app.get('/ios-app.json', (req, res) => {
+  const url = String(process.env.TESTFLIGHT_URL || '').trim();
+  res.set('Cache-Control', 'public, max-age=300');
+  res.json({ name: 'Trip Planner', url: TESTFLIGHT_LINK.test(url) ? url : null });
+});
+
 // Every request gets req.user (or null) before any gate runs.
 // Analytics. Mounted BEFORE the gate below: a gated /analytics.js is a 401,
 // so the sign-in page - the page every visitor actually sees - would be the

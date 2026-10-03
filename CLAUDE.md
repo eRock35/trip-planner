@@ -1297,7 +1297,10 @@ part is `/.well-known/apple-app-site-association` in `server.js`, above every
 gate: applinks for everything but `/api/*`, webcredentials for the app, from
 `APPLE_TEAM_ID` read per request (404 when unset; the Team ID is never written
 here). `test/aasa.js` holds it. In the app, Gmail connect does not work yet:
-Google opens in a Safari sheet without the app's cookie (phase 2).
+Google opens in a Safari sheet without the app's cookie (phase 2). `GET /ios-app.json` (also above the gates) answers the TestFlight public
+link from `TESTFLIGHT_URL` for the "Get the iPhone app" bar
+(`public/get-app.js`, synced from `eriks-projects/shared/`), or null, which
+hides the bar. Unset until Apple approves a build for external testing.
 
 ## Commit and PR conventions
 
