@@ -146,6 +146,34 @@ app.get('/healthz', (req, res) => res.status(200).send('ok'));
 app.get('/api/health', (req, res) => res.status(200).send('ok'));
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
 
+// The iPhone app's association file (eriks-projects/mobile/README.md). It is
+// what lets a link to this site open the app (applinks) and lets the app's
+// web view use the passwords saved for this site (webcredentials). Apple
+// fetches it with no cookie and follows no redirect, so it sits above every
+// gate and answers here directly. Everything but /api/* opens in the app.
+//
+// The Team ID is read from APPLE_TEAM_ID on each request and is never written
+// in this public repo. Unset or malformed, the file does not exist (404),
+// so nothing wrong is ever published.
+app.get('/.well-known/apple-app-site-association', (req, res) => {
+  const team = String(process.env.APPLE_TEAM_ID || '').trim();
+  if (!/^[A-Z0-9]{10}$/.test(team)) return res.status(404).json({ error: 'Not found.' });
+  const appID = `${team}.com.strongtechnicalconsulting.trip`;
+  res.set('Cache-Control', 'public, max-age=3600');
+  res.json({
+    applinks: {
+      details: [{
+        appIDs: [appID],
+        components: [
+          { '/': '/api/*', exclude: true, comment: 'The API is never a page.' },
+          { '/': '*' },
+        ],
+      }],
+    },
+    webcredentials: { apps: [appID] },
+  });
+});
+
 // Every request gets req.user (or null) before any gate runs.
 // Analytics. Mounted BEFORE the gate below: a gated /analytics.js is a 401,
 // so the sign-in page - the page every visitor actually sees - would be the

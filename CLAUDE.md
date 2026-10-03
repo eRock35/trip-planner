@@ -1289,6 +1289,16 @@ cron route here awaits its work before answering, and `streamedJson`'s
 heartbeat runs inside the open request. Keep it that way. The full reasoning
 and numbers are in `eriks-projects/DEPLOY.md` -> "Creating a service".
 
+## iPhone app (2026-10-03)
+
+Trip Planner ships as an iPhone app too: a Capacitor shell around the live
+site, built in `eriks-projects/mobile/` (its README is the guide). This repo's
+part is `/.well-known/apple-app-site-association` in `server.js`, above every
+gate: applinks for everything but `/api/*`, webcredentials for the app, from
+`APPLE_TEAM_ID` read per request (404 when unset; the Team ID is never written
+here). `test/aasa.js` holds it. In the app, Gmail connect does not work yet:
+Google opens in a Safari sheet without the app's cookie (phase 2).
+
 ## Commit and PR conventions
 
 **Never put a Claude session link in anything pushed to GitHub.** No
