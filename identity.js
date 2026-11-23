@@ -66,21 +66,59 @@ const MIN_PASSWORD = 10;
  * What a model call costs
  * ------------------------------------------------------------------ */
 
-// Dollars per million tokens, from the Anthropic model table (rates cached
-// 2026-06-24). An unknown model prices as null rather than as zero - a silent
-// zero would make a new model look free on the dashboard, which is exactly the
-// case you would want to notice.
+// Dollars per million tokens. Sources: the Claude API skill's
+// shared/models.md and shared/model-migration.md (bundled 2026-11-23); the
+// older rows were cached 2026-06-24 and are unchanged. An unknown model prices
+// as null rather than as zero - a silent zero would make a new model look free
+// on the dashboard, which is exactly the case you would want to notice.
+//
+// Cache rates are PER MODEL (2026-11-23). They used to be a flat 1.25x write /
+// 0.1x read, which overcharged the newer models' reads by 2-4x: Opus 5.5 and
+// Sonnet 5.5 read at 0.05x input, Fable 5.1/5.2 at 0.025x. A row may give
+//   cacheRead     $/MTok for cache_read_input_tokens
+//   cacheWrite5m  $/MTok for a 5-minute cache write
+//   cacheWrite1h  $/MTok for a 1-hour cache write
+// and anything it leaves out falls back to the standard multipliers below
+// (read 0.1x, 5-minute write 1.25x, 1-hour write 2x - the docs' defaults).
+// `above` is a second rate card for long prompts: Haiku 5.5 bills $0.50/$2.50
+// once the prompt (uncached + cache write + cache read) passes 100K tokens.
 const PRICES = {
+  // models.md: "$8 / $40 per MTok; cache reads $0.20/MTok - 0.025x; 5-minute
+  // cache writes $10, 1-hour $16; batch $4 / $20". Mythos 5.2 is the same
+  // model at the same per-token pricing.
+  'claude-fable-5-2': { input: 8, output: 40, cacheRead: 0.2, cacheWrite5m: 10, cacheWrite1h: 16 },
+  'claude-mythos-5-2': { input: 8, output: 40, cacheRead: 0.2, cacheWrite5m: 10, cacheWrite1h: 16 },
+  // model-migration.md: "$10 / $50 per MTok, 5-minute cache writes $12.50,
+  // 1-hour cache writes $20 ... except cache reads at $0.25 per MTok".
+  'claude-fable-5-1': { input: 10, output: 50, cacheRead: 0.25, cacheWrite5m: 12.5, cacheWrite1h: 20 },
+  'claude-mythos-5-1': { input: 10, output: 50, cacheRead: 0.25, cacheWrite5m: 12.5, cacheWrite1h: 20 },
+  // models.md: Fable 5 / Mythos 5 as Fable 5.1 "except cache reads at $1/MTok".
+  'claude-fable-5': { input: 10, output: 50, cacheRead: 1, cacheWrite5m: 12.5, cacheWrite1h: 20 },
+  'claude-mythos-5': { input: 10, output: 50, cacheRead: 1, cacheWrite5m: 12.5, cacheWrite1h: 20 },
+  // model-migration.md: "$4 / $20 per MTok; 5-minute cache writes $5 and
+  // 1-hour cache writes $8; cache reads $0.20 per MTok (0.05x base input)".
+  'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2, cacheWrite5m: 5, cacheWrite1h: 8 },
+  // models.md: "Opus 4.8's pricing ($5/$25 per MTok)"; standard multipliers.
   'claude-opus-5': { input: 5, output: 25 },
   'claude-opus-4-8': { input: 5, output: 25 },
+  // model-migration.md: "$2 / $10 per MTok input / output, 5-minute cache
+  // writes $2.50, 1-hour cache writes $4 ... cache reads, at $0.10, half
+  // Claude Sonnet 5's rate" - so Sonnet 5 reads at the standard 0.1x ($0.20).
+  'claude-sonnet-5-5': { input: 2, output: 10, cacheRead: 0.1, cacheWrite5m: 2.5, cacheWrite1h: 4 },
   'claude-sonnet-5': { input: 2, output: 10 },
   'claude-sonnet-4-6': { input: 3, output: 15 },
+  // model-migration.md: "$0.10 / $0.50 per MTok input / output when the prompt
+  // is 100K tokens or fewer, and $0.50 / $2.50 when it is longer; cache reads
+  // are 0.1x the input rate, 5-minute cache writes 1.25x, and 1-hour cache
+  // writes 2x" - so the multipliers apply to whichever card the prompt is on.
+  'claude-haiku-5-5': { input: 0.1, output: 0.5, above: { tokens: 100000, input: 0.5, output: 2.5 } },
+  // model-migration.md: "Claude Haiku 4.5 is $1 / $5 at any prompt length".
   'claude-haiku-4-5': { input: 1, output: 5 },
-  'claude-fable-5-1': { input: 10, output: 50 },
 };
 
-// Standard cache multipliers: a write costs 1.25x an input token, a read 0.1x.
-const CACHE_WRITE_MULTIPLIER = 1.25;
+// Standard cache multipliers, for rows that do not give their own rates.
+const CACHE_WRITE_MULTIPLIER = 1.25;      // 5-minute write
+const CACHE_WRITE_1H_MULTIPLIER = 2;      // 1-hour write
 const CACHE_READ_MULTIPLIER = 0.1;
 
 // Web search bills per search, on top of tokens: $10 per 1,000 searches.
@@ -96,30 +134,89 @@ const CACHE_READ_MULTIPLIER = 0.1;
 // the counter, so nothing extra is needed to exclude it.
 const WEB_SEARCH_USD = 0.01;
 
+const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+
+/** Dollars for the TOKENS of one usage block on one model's rates, or null
+ *  when the model is not in the table. No searches, no batch discount. */
+function tokenDollars(model, u) {
+  const row = own(PRICES, model) ? PRICES[model] : null;
+  if (!row || !u) return null;
+  const n = (v) => { const x = Number(v || 0); return Number.isFinite(x) && x > 0 ? x : 0; };
+  const inTok = n(u.input_tokens);
+  const outTok = n(u.output_tokens);
+  const cacheRead = n(u.cache_read_input_tokens);
+  const cacheWrite = n(u.cache_creation_input_tokens);
+  // usage.cache_creation splits the write by TTL (ephemeral_5m_input_tokens /
+  // ephemeral_1h_input_tokens). Without it every write is a 5-minute one, the
+  // default TTL; any part of the total it does not account for is too.
+  const cc = u.cache_creation && typeof u.cache_creation === 'object' ? u.cache_creation : null;
+  const w1h = cc ? Math.min(n(cc.ephemeral_1h_input_tokens), cacheWrite || Infinity) : 0;
+  const w5m = cc ? Math.max(n(cc.ephemeral_5m_input_tokens), cacheWrite - w1h) : cacheWrite;
+  // A long-prompt rate card (Haiku 5.5): the prompt is everything sent,
+  // cached or not.
+  const prompt = inTok + cacheRead + w5m + w1h;
+  const card = row.above && prompt > row.above.tokens ? row.above : row;
+  const rate = (k, mult) => (own(card, k) ? card[k] : card.input * mult);
+  return (
+    inTok * card.input +
+    outTok * card.output +
+    w5m * rate('cacheWrite5m', CACHE_WRITE_MULTIPLIER) +
+    w1h * rate('cacheWrite1h', CACHE_WRITE_1H_MULTIPLIER) +
+    cacheRead * rate('cacheRead', CACHE_READ_MULTIPLIER)
+  ) / 1e6;
+}
+
+/** The advisor tool's own consultations, from usage.iterations. The
+ *  top-level usage fields count the EXECUTOR's tokens only; each
+ *  `advisor_message` entry is a call to the advisor model, billed at that
+ *  model's rates. Other entry types (the executor's own `message` entries,
+ *  compaction, fallback) are not added: the top-level fields already cover
+ *  the executor. */
+function advisorEntries(usage) {
+  const it = usage && Array.isArray(usage.iterations) ? usage.iterations : [];
+  return it.filter((e) => e && e.type === 'advisor_message');
+}
+
 /**
- * @param usage   the `usage` object off an Anthropic response
+ * What one call cost, split into its parts.
+ * @returns {{ usd, executorUsd, advisorUsd, searchUsd, advisor: {calls, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, models} }}
+ *   or null if the executor's model, or any advisor's model, is not in the table.
+ */
+function priceParts(model, usage, batch = false) {
+  if (!usage) return null;
+  const executor = tokenDollars(model, usage);
+  if (executor === null) return null;
+  const adv = { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, models: [] };
+  let advisor = 0;
+  for (const e of advisorEntries(usage)) {
+    const d = tokenDollars(e.model, e);
+    if (d === null) return null;              // never price an unknown advisor as free
+    advisor += d;
+    adv.calls += 1;
+    adv.inputTokens += Number(e.input_tokens || 0);
+    adv.outputTokens += Number(e.output_tokens || 0);
+    adv.cacheReadTokens += Number(e.cache_read_input_tokens || 0);
+    adv.cacheWriteTokens += Number(e.cache_creation_input_tokens || 0);
+    if (!adv.models.includes(e.model)) adv.models.push(e.model);
+  }
+  // The batch discount is on tokens. Searches are not discounted, so they are
+  // added after the halving rather than before it.
+  const half = (x) => (batch ? x / 2 : x);
+  const searchUsd = Number((usage.server_tool_use || {}).web_search_requests || 0) * WEB_SEARCH_USD;
+  const executorUsd = half(executor);
+  const advisorUsd = half(advisor);
+  return { usd: executorUsd + advisorUsd + searchUsd, executorUsd, advisorUsd, searchUsd, advisor: adv };
+}
+
+/**
+ * @param usage   the `usage` object off an Anthropic response (advisor
+ *                consultations in usage.iterations are included)
  * @param batch   true for a Batch API call, which bills at half price
  * @returns dollars, or null if the model is not in the table
  */
 function priceOf(model, usage, batch = false) {
-  const p = PRICES[model];
-  if (!p || !usage) return null;
-  const million = 1e6;
-  const inTok = Number(usage.input_tokens || 0);
-  const outTok = Number(usage.output_tokens || 0);
-  const cacheWrite = Number(usage.cache_creation_input_tokens || 0);
-  const cacheRead = Number(usage.cache_read_input_tokens || 0);
-  const dollars =
-    (inTok * p.input +
-      outTok * p.output +
-      cacheWrite * p.input * CACHE_WRITE_MULTIPLIER +
-      cacheRead * p.input * CACHE_READ_MULTIPLIER) /
-    million;
-  // The batch discount is on tokens. Searches are not discounted, so they are
-  // added after the halving rather than before it.
-  const tokens = batch ? dollars / 2 : dollars;
-  const searches = Number((usage.server_tool_use || {}).web_search_requests || 0);
-  return tokens + searches * WEB_SEARCH_USD;
+  const p = priceParts(model, usage, batch);
+  return p ? p.usd : null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -134,6 +231,32 @@ function priceOf(model, usage, batch = false) {
 // costs: one Opus request with a long document is worth many Haiku ones, and a
 // call-count budget prices them the same.
 const FREE_ALLOWANCE_USD = Number(process.env.FREE_ALLOWANCE_USD || 2);
+
+// A per-person AI grant (Erik, 2026-11-23): owner-approved, on the user record
+// as `aiGrant: { extraUsd, perMinute, perDay, until, by, at, note }`, written
+// only by the landing's /admin/ai (through patchUser). `extraUsd` is credit
+// Erik GIVES - it adds to the allowance, but it is not purchased credit, so it
+// does not make someone a paying customer (spendsOwnMoney, the free tier's
+// daily ceiling and the verify-email rule are unchanged). `perMinute` /
+// `perDay` raise that person's burst limits in the Lab AI guard. `until`
+// ends it, checked on every read; nothing runs on a timer.
+const GRANT_MAX_USD = 500;
+function activeAiGrant(user, at = Date.now()) {
+  const g = user && user.aiGrant;
+  if (!g || typeof g !== 'object') return null;
+  if (g.until) {
+    const end = Date.parse(g.until);
+    if (!Number.isFinite(end) || end <= at) return null;
+  }
+  const num = (v, max) => { const x = Number(v); return Number.isFinite(x) && x > 0 ? Math.min(x, max) : 0; };
+  const out = {
+    extraUsd: num(g.extraUsd, GRANT_MAX_USD),
+    perMinute: Math.floor(num(g.perMinute, 1000)),
+    perDay: Math.floor(num(g.perDay, 100000)),
+    until: g.until || null,
+  };
+  return out.extraUsd || out.perMinute || out.perDay ? out : null;
+}
 
 // Spending is recorded AFTER a call, so the last one allowed can overshoot by
 // its own cost. Bounded, and the alternative - reserving an estimate up front
@@ -171,7 +294,12 @@ function budgetFor(user) {
   // Hopscotch as well. Both are deliberately absent. An admin comp is an
   // `access` grant, which unlocks an app's features and nothing else;
   // membership below is metered like everyone else's.
-  const allowance = FREE_ALLOWANCE_USD + Number(user.toppedUpUsd || 0);
+  //
+  // An owner's AI grant adds its extraUsd here, shown on its own line
+  // (grantedUsd) so nobody mistakes it for money the person paid.
+  const grant = activeAiGrant(user);
+  const grantedUsd = grant ? grant.extraUsd : 0;
+  const allowance = FREE_ALLOWANCE_USD + Number(user.toppedUpUsd || 0) + grantedUsd;
   const spent = Number(user.spentUsd || 0);
   return {
     unlimited: false,
@@ -179,6 +307,8 @@ function budgetFor(user) {
     spentUsd: spent,
     remainingUsd: Math.max(0, allowance - spent),
     toppedUpUsd: Number(user.toppedUpUsd || 0),
+    grantedUsd,
+    grantUntil: grant ? grant.until : null,
     member: isMember(user),
     reason: isMember(user) ? 'member' : 'allowance',
   };
@@ -1137,6 +1267,17 @@ function create(opts) {
       // dashboard should show what ran, but nobody is billed for it.
       byok: Boolean(byok),
     };
+    // The advisor tool's consultations (usage.iterations) are in costUsd
+    // already; the row also says how much of it they were, so the dashboard
+    // can tell an expensive answer from an expensive advisor.
+    const parts = priceParts(model, usage, batch);
+    if (parts && parts.advisor.calls) {
+      row.advisorCalls = parts.advisor.calls;
+      row.advisorModels = parts.advisor.models;
+      row.advisorInputTokens = parts.advisor.inputTokens;
+      row.advisorOutputTokens = parts.advisor.outputTokens;
+      row.advisorUsd = parts.advisorUsd;
+    }
     try { await store.add(USAGE, row); } catch (e) { /* never break the call it measured */ }
     // Charge it to the person, atomically. Without this the ledger would be a
     // sum over an unbounded collection on every request; with a read-modify-
@@ -1992,4 +2133,4 @@ module.exports = {
   isVerified, mustVerifyForFreeAi, drawsOnFreeAllowance, VERIFY_CUTOFF, VERIFY_TTL_SECONDS,
   makeVerifyToken, readVerifyToken, dispatchSignature, dispatchSignatureOk, safeNext, verifyLink,
   maskEmail, verifyEmailBody,
-  webSearchFor, create, priceOf, PRICES, isMember, paysPlatformFee, paidTier, uidFor, makeHash, matches, accessLevel, hasAccess, pendingRequest, budgetFor, FREE_ALLOWANCE_USD, USERS, EVENTS, USAGE, COOKIE, MIN_PASSWORD };
+  webSearchFor, create, priceOf, priceParts, PRICES, activeAiGrant, GRANT_MAX_USD, isMember, paysPlatformFee, paidTier, uidFor, makeHash, matches, accessLevel, hasAccess, pendingRequest, budgetFor, FREE_ALLOWANCE_USD, USERS, EVENTS, USAGE, COOKIE, MIN_PASSWORD };
