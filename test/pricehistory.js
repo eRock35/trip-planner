@@ -72,7 +72,10 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   let r = await call('GET', '/api/trips/demo/watches', undefined, '');
   const flight = r.body[0], hotel = r.body[1];
   ok('the example trip’s watches carry their prices', flight.price && flight.price.points.length === 8 && flight.price.currency === 'USD');
-  ok('...the flight: down $168 since Aug 15, lowest yet', flight.price.trend.delta === -168 && flight.price.trend.since.startsWith('2026-08-15') && flight.price.trend.atLow);
+  // The example's dates move with today (demo.js), so "since" is its first
+  // check as built today - 47 days before day 1, as Aug 15 was before Oct 1.
+  const firstCheck = require('../demo').today().DEMO_WATCHES[0].history[0].at;
+  ok('...the flight: down $168 since its first check, lowest yet', flight.price.trend.delta === -168 && flight.price.trend.since === firstCheck && flight.price.trend.atLow, flight.price.trend.since + ' vs ' + firstCheck);
   ok('...the hotel: a low that is not the latest price', hotel.price.trend.low === 236 && !hotel.price.trend.atLow && hotel.price.trend.last === 238);
 
   const trip = (await call('POST', '/api/trips', { name: 'Costa Rica', destination: 'Tamarindo' })).body;

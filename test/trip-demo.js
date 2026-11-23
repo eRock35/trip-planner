@@ -54,6 +54,32 @@ const jar = (r) => (r.headers.getSetCookie() || []).map((c) => c.split(';')[0]).
   r = await post('/api/trips/' + copy.id + '/lock', {}, user);
   ok('the copy is writable, unlike the example', r.status === 200, String(r.status));
 
+  // The example's dates are relative to today (demo.js), so it is always upcoming.
+  const demo = require('../demo');
+  const DAY = 86400000, todayMs = Date.parse(new Date().toISOString().slice(0, 10));
+  const lead = (Date.parse(trip.dates.start) - todayMs) / DAY;
+  ok('the example is always upcoming: day 1 is 2-8 days away, a Thursday', lead >= demo.MIN_LEAD_DAYS && lead <= demo.MIN_LEAD_DAYS + 6
+     && new Date(trip.dates.start + 'T00:00:00Z').getUTCDay() === 4 && trip.dates.from === 'itinerary' && trip.dates.precision === 'day', trip.dates.start + ' lead ' + lead);
+  const wd = (iso) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' });
+  ok('...five consecutive days, each label naming its own date', trip.days.every((d, i) => Date.parse(d.date) === Date.parse(trip.dates.start) + i * DAY && d.dateLabel === wd(d.date)),
+     trip.days.map((d) => d.date + ' ' + d.dateLabel).join(', '));
+  ok('..."When" says the same dates as the itinerary', JSON.stringify(require('../tripdates').fromText(trip.dateRange, new Date())) === JSON.stringify({ start: trip.dates.start, end: trip.dates.end, precision: 'day' }),
+     trip.dateRange);
+  ok('...and the history before it (chat, watch checks, lock) is in the past', [trip.createdAt, trip.lockedAt, ...msgs.map((m) => m.answeredAt), ...ws.flatMap((w) => w.history.map((x) => x.at))].every((t) => Date.parse(t) < Date.now()));
+  ok('...in the order it was written', Date.parse(trip.createdAt) < Date.parse(msgs[0].askedAt) && Date.parse(ws[0].history[0].at) < Date.parse(ws[0].history[7].at) && Date.parse(trip.lockedAt) < Date.parse(trip.dates.start));
+  // A fixed clock: on the day the example was written (Thu Sep 24, 2026) it
+  // comes out exactly as it was, Oct 1-5 with Aug 15 as the first flight check.
+  const then = demo.build(Date.parse('2026-09-24T12:00:00Z'));
+  ok('on a fixed clock of Sep 24, 2026 it is the original Oct 1-5 trip', then.DEMO_TRIP.dateRange === 'Oct 1-5, 2026' && then.DEMO_TRIP.days[0].dateLabel === 'Thu, Oct 1'
+     && then.DEMO_TRIP.days[4].dateLabel === 'Mon, Oct 5' && then.DEMO_TRIP.bookings[0].when === 'Wed, Sep 30 - 6:05 PM' && then.DEMO_WATCHES[0].history[0].at === '2026-08-15T10:00:00.000Z'
+     && then.DEMO_WATCHES[0].label === 'ATL -> LIS, Oct 1-5, TAP nonstop' && then.DEMO_CRAWL.date === '2026-10-02' && then.DEMO_TRIP.createdAt === '2026-08-14T15:02:11.000Z',
+     then.DEMO_TRIP.dateRange + ' ' + then.DEMO_TRIP.days[0].dateLabel);
+  ok('...and across a year end the range still reads', demo.build(Date.parse('2026-12-24T12:00:00Z')).DEMO_TRIP.dateRange === 'Dec 31, 2026 - Jan 4, 2027');
+  ok('...the weekday plan holds on any day (Sintra is always the Saturday)', [0, 1, 2, 3, 4, 5, 6, 30, 200].every((k) => {
+    const d = demo.build(Date.parse('2026-11-23T08:00:00Z') + k * DAY).DEMO_TRIP.days;
+    return /^Sat,/.test(d[2].dateLabel) && /^Sun,/.test(d[3].dateLabel);
+  }));
+
   r = await fetch(B + '/healthz');
   ok('frame-ancestors is set for the landing page', /frame-ancestors[^;]*strongtechnicalconsulting\.com/.test(r.headers.get('content-security-policy') || ''), r.headers.get('content-security-policy'));
   console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

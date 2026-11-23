@@ -1378,12 +1378,43 @@ font size, no `box-shadow` except `--lift` on something that floats; new
 motion goes inside `prefers-reduced-motion: no-preference`; coloured text is
 `--tint-text` or a `*-text` status colour.
 
-**Noticed, not changed**: the example trip's dates are fixed in `demo.js`
-(Oct 1-5, 2026) and are now past, so live it reads "Back N days", has no
-forecast and its crawl shows a recap. Rolling them forward touches about 40
-dates and the tests that pin them. Screenshots for this redesign used a
+**Noticed, not changed** (fixed since, see "The example trip's dates move
+with today" below): the example trip's dates were fixed in `demo.js`
+(Oct 1-5, 2026) and are now past, so live it read "Back N days", had no
+forecast and its crawl showed a recap. Screenshots for this redesign used a
 clock set to 2026-09-24. Older sections above that say "sidebar" or
 "dark countdown" describe the layout before this.
+
+## The example trip's dates move with today (2026-11-23)
+
+Erik approved making the example always upcoming. `demo.js` no longer holds
+fixed dates: `build(now)` makes the whole example, and `today()` keeps one
+build per UTC day, made by the first request that needs it (no timer; the
+service is billed per request). Server routes read `demo.today().DEMO_*`;
+`DEMO_PACKING` and `DEMO_BUDGET` have no dates and stay constants.
+
+- **Day 1 is the next Thursday at least `MIN_LEAD_DAYS` (2) away**, so 2-8
+  days out: inside the weather's 9-day forecast (`HORIZON_DAYS`), so the
+  Overview draws a forecast with the trip's days outlined and a ticking
+  countdown. ~10 days out would have shown "forecast opens on ..." instead.
+- **The shift is always whole weeks**, so the plan's weekday wording stays
+  true ("Sintra on the Saturday", "Sunday market", fado on the Sunday night).
+  Every label is computed anyway (`calendar()`: `label`, `range`, `month`).
+- Every date keeps its offset from day 1 as written for Oct 1: bookings, the
+  chat's times, watch history (so the sparklines read the same), lock and
+  create times, the crawl (day 2) and its menus' `asOf`. The example rate is
+  dated yesterday. Watch text that named a month or date ("down from $1,010
+  in August", "the Oct 1 flight") is built from the same calendar.
+- The first chat message was "Is early October a good time for Lisbon" with
+  October temperatures; it is now a season-neutral weather and packing answer
+  that points at the Overview forecast, because the example can be in any
+  month.
+- On a fixed clock of 2026-09-24, `build()` gives back the original Oct 1-5
+  trip exactly; `test/trip-demo.js` checks that, the 2-8 day lead, labels
+  matching dates, "When" parsing to the itinerary's dates, a year-end range
+  ("Dec 31, 2026 - Jan 4, 2027") and Saturday/Sunday holding on any day.
+  `test/pricehistory.js` now compares "since" with the example's first check
+  as built today rather than `2026-08-15`.
 
 ## Commit and PR conventions
 

@@ -580,7 +580,7 @@ async function weatherFor(ref, data) {
 // The example trip is served from code, so its place lives in memory.
 let demoGeo;
 app.get(`/api/trips/${demo.DEMO_ID}/weather`, async (req, res) => {
-  const data = demo.DEMO_TRIP;
+  const data = demo.today().DEMO_TRIP;
   try {
     if (demoGeo === undefined) demoGeo = await geocodePolitely(data.destination);
     res.json(await weather.forTrip(demoGeo, tripDates(data)));
@@ -625,7 +625,7 @@ const alsoFrom = (q) => String(q || '').split(',').map(fxLib.code).filter(Boolea
 // is otherwise frozen in September would be the one thing in it that moves.
 app.get(`/api/trips/${demo.DEMO_ID}/rates`, (req, res) => {
   res.set('Cache-Control', 'public, max-age=600');
-  res.json(demo.DEMO_RATES);
+  res.json(demo.today().DEMO_RATES);
 });
 
 app.get('/api/trips/:id/rates', requireLogin, async (req, res) => {
@@ -728,15 +728,17 @@ app.post('/api/trips', requireLogin, async (req, res) => {
 // the sign-in wall used to hide: what the app actually does.
 app.get(`/api/trips/${demo.DEMO_ID}`, (req, res) => {
   res.set('Cache-Control', 'public, max-age=600');
-  res.json(Object.assign({ id: demo.DEMO_ID, demo: true }, demo.DEMO_TRIP, { dates: tripDates(demo.DEMO_TRIP) }));
+  // Its dates move with today (see demo.js), so this is built per UTC day.
+  const t = demo.today().DEMO_TRIP;
+  res.json(Object.assign({ id: demo.DEMO_ID, demo: true }, t, { dates: tripDates(t) }));
 });
 app.get(`/api/trips/${demo.DEMO_ID}/messages`, (req, res) => {
   res.set('Cache-Control', 'public, max-age=600');
-  res.json(demo.DEMO_MESSAGES.map((m, i) => Object.assign({ id: 'demo-' + i }, m)));
+  res.json(demo.today().DEMO_MESSAGES.map((m, i) => Object.assign({ id: 'demo-' + i }, m)));
 });
 app.get(`/api/trips/${demo.DEMO_ID}/watches`, (req, res) => {
   res.set('Cache-Control', 'public, max-age=600');
-  res.json(demo.DEMO_WATCHES.map((w, i) => withPrice(Object.assign({ id: 'demo-' + i }, w))));
+  res.json(demo.today().DEMO_WATCHES.map((w, i) => withPrice(Object.assign({ id: 'demo-' + i }, w))));
 });
 
 // Copy the example into an account. The demo is the best introduction this
@@ -747,15 +749,16 @@ app.get(`/api/trips/${demo.DEMO_ID}/watches`, (req, res) => {
 app.post(`/api/trips/${demo.DEMO_ID}/copy`, requireLogin, async (req, res) => {
   try {
     const now = new Date().toISOString();
+    const ex = demo.today();
     const doc = await db.collection('trips').add({
-      name: demo.DEMO_TRIP.name,
-      destination: demo.DEMO_TRIP.destination,
-      dateRange: demo.DEMO_TRIP.dateRange,
-      notes: demo.DEMO_TRIP.notes,
+      name: ex.DEMO_TRIP.name,
+      destination: ex.DEMO_TRIP.destination,
+      dateRange: ex.DEMO_TRIP.dateRange,
+      notes: ex.DEMO_TRIP.notes,
       // The example's itinerary goes through toStore like any other: written
       // raw, the nested arrays make "Start my own from this" fail with the
       // same INVALID_ARGUMENT that broke Apply.
-      days: schedule.toStore(demo.DEMO_TRIP.days),
+      days: schedule.toStore(ex.DEMO_TRIP.days),
       status: 'planning',
       ownerId: req.user.uid,
       copiedFrom: demo.DEMO_ID,
@@ -764,7 +767,7 @@ app.post(`/api/trips/${demo.DEMO_ID}/copy`, requireLogin, async (req, res) => {
     });
     // The watches come too - they are the part people would not think to
     // recreate, and they are what makes the app do something while you sleep.
-    for (const w of demo.DEMO_WATCHES) {
+    for (const w of ex.DEMO_WATCHES) {
       await doc.collection('watches').add({
         kind: w.kind, label: w.label, criteria: w.criteria, url: w.url,
         intervalHours: w.intervalHours,
@@ -1680,7 +1683,7 @@ async function tripContext(owned) {
 // ---- the example trip, read-only ------------------------------------------
 app.get(`/api/trips/${demo.DEMO_ID}/packing`, (req, res) => res.json({ items: demo.DEMO_PACKING || [] }));
 app.get(`/api/trips/${demo.DEMO_ID}/budget`, (req, res) => res.json(Object.assign({ lines: [], target: null }, demo.DEMO_BUDGET || {}, {
-  booked: bookingsLib.validate(demo.DEMO_TRIP.bookings || []).filter((b) => b.total != null)
+  booked: bookingsLib.validate(demo.today().DEMO_TRIP.bookings || []).filter((b) => b.total != null)
     .map((b) => ({ id: b.id, kind: b.kind, title: b.title, provider: b.provider, total: b.total })),
 })));
 
@@ -2514,7 +2517,8 @@ function optimalOrder(stops, visits) {
 
 // ---- the example trip's crawl, read-only ------------------------------------
 function demoCrawlView() {
-  return crawlView(crawlOut(demo.DEMO_CRAWL.id, demo.DEMO_CRAWL), demo.DEMO_CRAWL_MENUS, [], demo.DEMO_TRIP.days);
+  const ex = demo.today();
+  return crawlView(crawlOut(ex.DEMO_CRAWL.id, ex.DEMO_CRAWL), ex.DEMO_CRAWL_MENUS, [], ex.DEMO_TRIP.days);
 }
 app.get(`/api/trips/${demo.DEMO_ID}/crawls`, (req, res) => {
   res.set('Cache-Control', 'public, max-age=600');
@@ -2522,7 +2526,7 @@ app.get(`/api/trips/${demo.DEMO_ID}/crawls`, (req, res) => {
   res.json({ crawls: [crawlSummary(v)], passport: passportOf([v]), demo: true });
 });
 app.get(`/api/trips/${demo.DEMO_ID}/crawls/:cid`, (req, res) => {
-  if (req.params.cid !== demo.DEMO_CRAWL.id) return res.status(404).json({ error: 'No such crawl.' });
+  if (req.params.cid !== demo.today().DEMO_CRAWL.id) return res.status(404).json({ error: 'No such crawl.' });
   res.set('Cache-Control', 'public, max-age=600');
   res.json(Object.assign(demoCrawlView(), { demo: true }));
 });
