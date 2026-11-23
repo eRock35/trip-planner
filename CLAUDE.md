@@ -1302,6 +1302,89 @@ link from `TESTFLIGHT_URL` for the "Get the iPhone app" bar
 (`public/get-app.js`, synced from `eriks-projects/shared/`), or null, which
 hides the bar. Unset until Apple approves a build for external testing.
 
+## Redesign (2026-11-23)
+
+Erik asked for this app, the football app and Hopscotch to be redesigned "to
+be clearly better", in the lab's look (`lab-notes/redesign-brief.md`, HOA
+Desk's `app.css`). **Design only**: every route, flow, stored shape, the AI
+provider, models, caps and gates are exactly as they were.
+
+**What felt weak or dated before** (rendered at 390 and 1440px):
+
+- A grey page (`#F2F2F7`) with stock iOS blue (`#007AFF`), 18px cards on soft
+  drop shadows: an iOS Settings screen, not this app's own.
+- Signed out, the home was a plane icon and "Sign in to see your trips". The
+  example trip existed, behind a second grey button and a tap.
+- A bare person icon and a bare "+" floating in the top corners, no words.
+- Small capitals everywhere (eyebrows, section headers, tile labels, badges).
+- The Overview led with a blue gradient weather card and a black countdown
+  block; white text at 60-90% opacity on the gradient.
+- A full-width iOS tab bar with 10px labels; on a desktop a left rail whose
+  first four items were smaller than the other five, under an empty grey
+  strip where a top bar should be.
+- Secondary text at 3.4:1 and hints at 2.1:1; green, orange and red used as
+  text colours at 2.2-3.5:1.
+- Many targets under 44px: 30-36px round buttons, 32px links and selects,
+  a 38px send button.
+- More than twenty font sizes (10 to 56px).
+
+**What changed** (`public/index.html`, `login.html`, the manifest colours):
+
+- **Tokens.** White page, true black in dark; `--shadow` is now a 1px
+  hairline (`0 0 0 1px var(--line)`), so every card and list carries a line
+  instead of a shadow. `--lift` is the one real shadow, for what floats (pill
+  bar, composer, toast, the crawl's live card). 12px cards, 10px inputs, pill
+  buttons. Five type sizes (13, 15, 16, 20, 28 and up for display).
+- **One accent**: `#0A5BD9`, the blue of the compass icon. `--tint` is a
+  fill under white text; `--tint-text` is the same blue as text and links
+  (`#7DB4FF` in dark, where the fill is `#2468E0`). Use `--tint-text` for any
+  coloured text. Status text uses `--ok-text`, `--bad-text`, `--warn-text`;
+  `--green`, `--orange`, `--red` are for fills and dots only.
+- **Top bar**: the app's name (links home) and buttons with words: "Sign in"
+  or "Account", "New trip" on a desktop, "Trips" back inside a trip. `route()`
+  sets `body.in-trip`; `renderAuthBar()` sets `body.signed-in` and the label.
+- **Sections**: on a phone a floating pill (Overview, Itinerary, Chat,
+  Packing, More), icons with the name on the current one; the fifth button
+  names the section when it is one under More. Past 900px the same nine
+  buttons are a row of words under the top bar with an underline. **The nav
+  no longer has `dk-tabbar`**, so the shared `desktop.css` rail does not
+  apply; `desktop.css` itself is untouched (it is a synced copy) and is now
+  loaded *before* the page's own styles so the page has the last word.
+- **Home**: signed in, "Your trips" with a full-size New trip button and the
+  trips as a hairline list (a grid of hairline cards on a desktop). Signed
+  out, a centred headline, two buttons, and **the example trip drawn on the
+  page** from the public `/api/trips/demo` routes (name, dates, counts, the
+  first two days), one tap from opening. No model call, nothing private.
+  `/login?new=1` opens the sign-in page ready to register.
+- **Overview**: weather and countdown are plain hairline cards (no gradient,
+  no black block). Crawl and Watch tiles are always there, as the way in when
+  empty. A "Details" pill sits beside Share.
+- The composer floats above the pill bar in the same shape.
+
+**Taps from the trips home**: new trip 1; open a trip 1; account 1; example
+trip 1 (signed out); itinerary, chat, packing 2 (trip, then the bar); budget,
+crawls, watches, memories 2 (trip, then its Overview tile); details 2; AI
+credit 2. Scanning a receipt or adding a watch is 3 (2 from the trip).
+
+**Measured** in headless Chrome at 390, 320 and 1440px, both themes, 28
+screens and sheets: no text under 4.5:1 (lowest 5.07 light, 5.08 dark), no control
+under 44px, nothing sideways. States the fake data
+cannot reach were not measured: the crawl's live card, the receipt and
+statement cards, Memories with photos, the Gmail and admin sheets. `test/design.js` holds the structure (tokens,
+type sizes, nav, task paths, the signed-out page).
+
+**Rules for the next change**: no gradients, no capitals as a style, no new
+font size, no `box-shadow` except `--lift` on something that floats; new
+motion goes inside `prefers-reduced-motion: no-preference`; coloured text is
+`--tint-text` or a `*-text` status colour.
+
+**Noticed, not changed**: the example trip's dates are fixed in `demo.js`
+(Oct 1-5, 2026) and are now past, so live it reads "Back N days", has no
+forecast and its crawl shows a recap. Rolling them forward touches about 40
+dates and the tests that pin them. Screenshots for this redesign used a
+clock set to 2026-09-24. Older sections above that say "sidebar" or
+"dark countdown" describe the layout before this.
+
 ## Commit and PR conventions
 
 **Never put a Claude session link in anything pushed to GitHub.** No
