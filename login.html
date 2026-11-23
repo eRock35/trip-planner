@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>Sign in · Trip Planner</title>
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F2F2F7">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -14,73 +14,72 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <style>
+  /* The same look as the app: white page, hairlines, one accent, pill buttons.
+     Text colours measured at 4.5:1 or better in both themes. */
   :root{
     color-scheme: light dark;
-    --bg:#F2F2F7; --card:#FFFFFF; --fill:rgba(120,120,128,0.12);
-    --label:#000; --label-2:rgba(60,60,67,0.6); --label-3:rgba(60,60,67,0.4); --sep:rgba(60,60,67,0.24);
-    --tint:#007AFF; --red:#FF3B30; --green:#34C759;
-    --shadow:0 1px 2px rgba(0,0,0,.04), 0 10px 24px rgba(0,0,0,.06);
+    --bg:#FFFFFF; --card:#FFFFFF; --fill:#F2F2F4;
+    --label:#000; --label-2:#636366; --label-3:#6E6E73; --line:#E5E5EA; --ctl:#C7C7CC;
+    --tint:#0A5BD9; --tint-text:#0A5BD9; --bad-text:#B3261E;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
-      --bg:#000; --card:#1C1C1E; --fill:rgba(120,120,128,0.24);
-      --label:#fff; --label-2:rgba(235,235,245,0.6); --label-3:rgba(235,235,245,0.4); --sep:rgba(84,84,88,0.6);
-      --tint:#0A84FF; --red:#FF453A; --green:#32D74B;
-      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 24px rgba(0,0,0,.45);
+      --bg:#000; --card:#000; --fill:#1C1C1E;
+      --label:#fff; --label-2:#A1A1A6; --label-3:#8E8E93; --line:#2C2C2E; --ctl:#48484A;
+      --tint:#2468E0; --tint-text:#7DB4FF; --bad-text:#FF8A80;
     }
   }
   :root[data-theme="dark"]{
-    --bg:#000; --card:#1C1C1E; --fill:rgba(120,120,128,0.24);
-    --label:#fff; --label-2:rgba(235,235,245,0.6); --label-3:rgba(235,235,245,0.4); --sep:rgba(84,84,88,0.6);
-    --tint:#0A84FF; --red:#FF453A; --green:#32D74B;
-    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 24px rgba(0,0,0,.45);
+    --bg:#000; --card:#000; --fill:#1C1C1E;
+    --label:#fff; --label-2:#A1A1A6; --label-3:#8E8E93; --line:#2C2C2E; --ctl:#48484A;
+    --tint:#2468E0; --tint-text:#7DB4FF; --bad-text:#FF8A80;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   body{
     margin:0; min-height:100dvh; background:var(--bg); color:var(--label);
-    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,"Segoe UI",Roboto,"Helvetica Neue",Helvetica,Arial,sans-serif;
     display:flex; align-items:center; justify-content:center;
-    padding:calc(env(safe-area-inset-top,0px) + 32px) 16px calc(env(safe-area-inset-bottom,0px) + 24px);
+    padding:calc(env(safe-area-inset-top,0px) + 32px) 20px calc(env(safe-area-inset-bottom,0px) + 24px);
     -webkit-font-smoothing:antialiased; touch-action:manipulation; overscroll-behavior-y:none;
   }
-  .wrap{width:100%; max-width:400px;}
-  .hero{text-align:center; margin-bottom:22px;}
-  .hero .mark{width:72px; height:72px; border-radius:18px; margin:0 auto 14px; display:block; box-shadow:var(--shadow);}
-  .hero .eyebrow{font-size:13px; font-weight:600; color:var(--tint); text-transform:uppercase; letter-spacing:.02em; margin:0 0 4px;}
-  .hero h1{font-size:28px; font-weight:700; letter-spacing:-.02em; margin:0; line-height:1.15;}
-  .hero p{margin:6px 0 0; color:var(--label-2); font-size:15px;}
+  .wrap{width:100%; max-width:380px;}
+  .hero{text-align:center; margin-bottom:32px;}
+  .hero .mark{width:56px; height:56px; border-radius:14px; margin:0 auto 20px; display:block;}
+  .hero .eyebrow{font-size:13px; font-weight:500; color:var(--label-2); margin:0 0 4px;}
+  .hero h1{font-size:28px; font-weight:700; letter-spacing:-.03em; margin:0; line-height:1.15;}
+  .hero p{margin:8px 0 0; color:var(--label-2); font-size:15px;}
   button{font:inherit; -webkit-user-select:none; user-select:none;}
   .primary{
-    width:100%; border:none; border-radius:14px; background:var(--tint); color:#fff;
-    font-size:17px; font-weight:600; min-height:50px; padding:12px; cursor:pointer;
-    display:flex; align-items:center; justify-content:center; gap:8px; transition:transform .12s, opacity .12s;
+    width:100%; border:none; border-radius:999px; background:var(--tint); color:#fff;
+    font-size:16px; font-weight:600; min-height:48px; padding:10px 20px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:8px;
   }
-  .primary:active{transform:scale(.97);}
   .primary:disabled{opacity:.5;}
   .primary svg{width:22px; height:22px;}
   .linkish{
-    width:100%; border:none; background:none; color:var(--tint);
-    font-size:15px; font-weight:600; min-height:44px; padding:10px 4px; cursor:pointer;
+    width:100%; border:none; background:none; color:var(--tint-text);
+    font-size:15px; font-weight:500; min-height:44px; padding:10px 4px; cursor:pointer; border-radius:999px;
   }
-  .divider{display:flex; align-items:center; gap:10px; color:var(--label-3); font-size:13px; margin:14px 0;}
-  .divider::before,.divider::after{content:""; flex:1; height:1px; background:var(--sep);}
-  .form{background:var(--card); border-radius:16px; box-shadow:var(--shadow); overflow:hidden; margin-bottom:14px;}
-  .field{position:relative; padding:10px 16px 12px;}
-  .field + .field::before{content:""; position:absolute; left:16px; right:0; top:0; height:1px; background:var(--sep);}
-  .field[hidden] + .field::before{display:none;}
-  label{display:block; font-size:13px; color:var(--label-2); margin:0 0 4px;}
-  .field:focus-within label{color:var(--tint);}
+  .divider{display:flex; align-items:center; gap:12px; color:var(--label-2); font-size:13px; margin:16px 0;}
+  .divider::before,.divider::after{content:""; flex:1; height:1px; background:var(--line);}
+  .form{display:flex; flex-direction:column; gap:16px; margin-bottom:16px;}
+  label{display:block; font-size:13px; font-weight:500; color:var(--label-2); margin:0 0 6px;}
   input{
-    width:100%; min-height:32px; padding:4px 0; border:none; background:transparent; color:var(--label);
-    font:inherit; font-size:17px; outline:none; border-radius:0; -webkit-appearance:none; appearance:none;
+    width:100%; min-height:48px; padding:0 14px; border:1px solid var(--ctl); background:var(--card); color:var(--label);
+    font:inherit; font-size:16px; border-radius:10px; -webkit-appearance:none; appearance:none;
   }
-  input::placeholder{color:var(--label-3);}
-  .status{min-height:1.3em; font-size:14px; color:var(--label-2); text-align:center; margin-top:14px; line-height:1.4;}
-  .status.error{color:var(--red);}
+  input:focus{outline:2px solid var(--tint-text); outline-offset:1px;}
+  input::placeholder{color:var(--label-3); opacity:1;}
+  .status{min-height:1.3em; font-size:15px; color:var(--label-2); text-align:center; margin-top:16px; line-height:1.4;}
+  .status.error{color:var(--bad-text);}
   #pwBlock[hidden], [hidden]{display:none !important;}
-  .hint{font-size:13px; color:var(--label-2); margin:0 4px 12px;}
-  .links{display:flex; flex-direction:column; gap:0; margin-top:4px;}
-  @media (prefers-reduced-motion: reduce){ *{transition-duration:.01ms !important;} }
+  .hint{font-size:13px; color:var(--label-2); margin:-8px 2px 16px;}
+  .links{display:flex; flex-direction:column; gap:0; margin-top:8px;}
+  .back{display:flex; align-items:center; justify-content:center; min-height:44px; margin-top:8px; color:var(--label-2); font-size:13px; text-decoration:none;}
+  @media (prefers-reduced-motion: no-preference){
+    .primary,.linkish{transition:transform .14s ease, opacity .14s ease, background-color .16s ease;}
+    .primary:active{transform:scale(.98);}
+  }
 </style>
   <!-- Analytics. Serves an inert file unless GA_MEASUREMENT_ID is set on
        the service, so local runs and browser tests send nothing. -->
@@ -89,14 +88,14 @@
 <body>
   <div class="wrap">
     <div class="hero">
-      <img class="mark" src="/apple-touch-icon.png" alt="" width="72" height="72">
+      <img class="mark" src="/icon.svg" alt="" width="56" height="56">
       <p class="eyebrow">Trip Planner</p>
-      <h1>Welcome back</h1>
+      <h1 id="title">Welcome back</h1>
       <p>Research, plan and watch prices in one place.</p>
     </div>
 
     <button class="primary" id="faceBtn" hidden>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9.5v1M15 9.5v1M12 9.5v3.5h-1M9 15.5c.8.8 1.8 1.2 3 1.2s2.2-.4 3-1.2"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9.5v1M15 9.5v1M12 9.5v3.5h-1M9 15.5c.8.8 1.8 1.2 3 1.2s2.2-.4 3-1.2"/></svg>
       Sign in with Face ID
     </button>
     <div class="divider" id="divider" hidden>or</div>
@@ -126,6 +125,7 @@
       <button class="linkish" id="toggleMode">Need an account? Create one</button>
     </div>
     <div class="status" id="status"></div>
+    <a class="back" href="/">Back to Trip Planner and the example trip</a>
   </div>
 
 <script>
@@ -223,6 +223,7 @@
     nameRow.hidden = !registering;
     pwHint.hidden = !registering;
     pwBtn.textContent = registering ? 'Create account' : 'Sign in';
+    document.getElementById('title').textContent = registering ? 'Create your account' : 'Welcome back';
     toggleMode.textContent = registering
       ? 'Already have an account? Sign in'
       : 'Need an account? Create one';
@@ -236,6 +237,8 @@
     showPw.hidden = true;
     applyMode();
   });
+  // "Create a free account" on the home page lands here ready to register.
+  if (/[?&]new=1\b/.test(location.search)) registering = true;
   applyMode();
 
   function submitPassword(){
