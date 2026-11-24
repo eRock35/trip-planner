@@ -71,6 +71,8 @@ need it.
     lastCheckedAt, lastResult, history}`. `history` is capped at 20 entries.
 - `control/watch-cron` — single doc, `{lastRunAt, checked}` from the most
   recent batch run.
+- `assistant-tokens/<sha256 of the token>` — `{id, uid, label, hash,
+  createdAt, lastUsedAt}`. See "Assistant access".
 
 ## Sign-in: open registration, metered AI
 
@@ -1523,6 +1525,81 @@ on: `usage` rows where `advisorCalls` is set, `advisorUsd` against `costUsd`.
 **Not known until it runs:** how often the models actually consult (Haiku
 may under- or over-call; the docs warn the consult rate is the fragile part),
 and whether the plans are better. Both are reasons it ships off.
+
+## Assistant access: a read-only token (2026-11-24)
+
+Erik approved this on 2026-11-24 so his texting assistant (Atlas, on his own
+VM) can answer "what's my hotel in Lisbon?" or "when do we land?" from his
+trips. Anyone signed in can use it: Account -> **Assistant access**.
+`assistant.js` holds the token and the summary's shape, `server.js` the
+routes, `test/assistant-token.js` the tests.
+
+**A token is a bearer secret, so the shape is narrow on purpose.**
+
+- **Made in the Account sheet**, by a session: `GET/POST
+  /api/account/assistant-tokens`, `DELETE /api/account/assistant-tokens/:id`.
+  Writes go through `identityLib.sameOriginOnly` (the shared rule: JSON from
+  this site's own page). At most **three** per account, counted and written
+  in one transaction. A token cannot make, list or revoke tokens.
+- **Shown once.** `tp_ro_` + 32 random bytes (base64url). Stored at
+  `assistant-tokens/<sha256(token)>` as `{id, uid, label, hash, createdAt,
+  lastUsedAt}` - the token itself is nowhere. `id` is a random public id for
+  the list and for Revoke, so the hash never reaches the browser. The page
+  keeps the new token in memory only and drops it when the sheet closes.
+  Listing is one equality query on `uid`: **no new index**, no new secret,
+  nothing to bind.
+- **Read only, under `/api/assistant/v1/`**, with `Authorization: Bearer
+  tp_ro_...`: `GET trips` and `GET trips/:id`. Anything that is not a GET is
+  a **405** before the token is looked at; any other path is a 404 in JSON.
+  There is no write route. Do not add one: a write needs a person's tap.
+- **It sees what the account sees signed in, by the same code.** The list is
+  `visibleTrips()`, which the page's `GET /api/trips` also calls; a trip is
+  `loadOwnedTrip()`. So own trips, plus trips shared to a **confirmed**
+  address; someone else's trip is the usual 404; the account is read from
+  the shared record on every request, so a disabled or deleted account's
+  tokens stop. Never give these routes their own access rule.
+- **The summary is `assistant.summary()`**: name, place, dates, status, the
+  itinerary (`days[].items[]` as `{time, title}`), bookings (`type, name,
+  provider, date, start, end, address`, `flightNumber` on flights - read from
+  the title, best effort, bookings have no field for it), packing counts and
+  budget totals per currency (never converted). **Deliberately absent:** the
+  full confirmation number (`maskConfirmation`: last four, and nothing at all
+  of one that is four characters or shorter), manage-booking links (often a
+  sign-in by themselves), booking notes and trip notes (door codes live
+  there), phone numbers, what one booking cost, every email address (no
+  `sharing`, no `sharedBy`), chat, watches, crawls, photos.
+- **The two kinds of sign-in never cross.** The read API is mounted above
+  `identity.mount`, before any session cookie is read, and looks only at the
+  header; nothing below it reads that header. A session on
+  `/api/assistant/*` is a 401; the token on `/api/trips*` is a 401.
+  `req.user` is set from the token for that request only, in the shape
+  `loadOwnedTrip` reads, and every route in the block answers.
+- **Wrong is one answer.** Missing, malformed, unknown, revoked, account
+  gone: `401 {"error":"Unauthorized."}`, byte for byte the same. The stored
+  hash is compared with `timingSafeEqual`. Thirty wrong tokens from one
+  address in fifteen minutes and that address gets 429s.
+- **Limits per token**: 60 a minute, 2,000 a day (`ASSISTANT_PER_MINUTE`,
+  `ASSISTANT_PER_DAY` override them), a 429 with `Retry-After`. In memory,
+  **per instance**, like the login limits: a second instance doubles them.
+- **Logged**: `[assistant] {"token":"<public id>","path":...,"status":...}`
+  per use, and `created` / `revoked`. Never the token, its hash, or whose it
+  is. `lastUsedAt` is written at most once per five minutes per token,
+  awaited (see "Billed per request"), with `update()` so a token revoked at
+  that instant is not written back.
+
+**What it does not do**, said plainly: changing the account's password does
+not revoke tokens (revoke them in the sheet); deleting the account leaves
+the token records behind, dead (the account check refuses them) - the
+shared account module does the deleting and knows nothing of this
+collection; there is no expiry.
+
+**Privacy page.** `strongtechnicalconsulting.com/privacy#trip`
+(`eriks-projects/site/privacy.html`) should say that an account can create
+read-only assistant tokens, what one can read, and that only a hash is kept.
+
+**Atlas** reads it with a small `trip` helper (`trip list`, `trip show
+<id>`) that lives with Atlas, not here. The token is in
+`~/.config/lab-secrets/trip-assistant.env` on the VM.
 
 ## Commit and PR conventions
 

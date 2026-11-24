@@ -28,6 +28,7 @@ const crawlMenu = require('./crawlmenu');
 const breweriesLib = require('./breweries');
 const crowdLib = require('./crowd');
 const lifetimeLib = require('./lifetime');
+const assistantLib = require('./assistant');
 
 const PORT = process.env.PORT || 8080;
 const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'metal-celerity-236019';
@@ -194,6 +195,124 @@ app.get('/ios-app.json', (req, res) => {
 // GA_MEASUREMENT_ID is set on the service.
 analytics.mount(app, 'trip-planner');
 
+// ---------------------------------------------------------------------------
+// Assistant access: the read-only API (2026-11-24). See assistant.js and
+// "Assistant access" in CLAUDE.md.
+//
+// Mounted HERE, above the shared account's middleware, on purpose: nothing
+// has read a session cookie yet, so a session cannot be what lets a request
+// in. The only credential these routes know is `Authorization: Bearer
+// tp_ro_...`. And nothing below this block ever reads that header, so the
+// token opens none of the session's routes - it cannot write, chat, spend,
+// or reach a photo.
+//
+// Every path under /api/assistant ends in this block: a GET that matches no
+// route is a 404 in JSON, and anything that is not a GET is a 405 before the
+// token is even looked at. There is no write route to find.
+// ---------------------------------------------------------------------------
+const assistantTokens = () => db.collection('assistant-tokens');
+const ASSISTANT_TRIP_ID = /^[A-Za-z0-9_-]{1,64}$/;
+// Per token, per instance. An assistant answering texts asks a few times a
+// minute at most; these are far above that and far below a scrape.
+const assistantPerMinute = assistantLib.limiter({ max: Number(process.env.ASSISTANT_PER_MINUTE) || assistantLib.PER_MINUTE, windowMs: 60 * 1000 });
+const assistantPerDay = assistantLib.limiter({ max: Number(process.env.ASSISTANT_PER_DAY) || assistantLib.PER_DAY, windowMs: 24 * 60 * 60 * 1000 });
+// Wrong tokens, per address: each well-formed guess costs a database read.
+const assistantBadByIp = identityLib.createLimiter({ max: 30, windowMs: 15 * 60 * 1000 });
+
+/** One answer for every way a token can be wrong - missing, malformed,
+ *  unknown, revoked, its account gone or disabled - so the API says nothing
+ *  about which. */
+function assistantDenied(req, res) {
+  assistantBadByIp.hit(identityLib.clientIp(req));
+  res.set('WWW-Authenticate', 'Bearer');
+  return res.status(401).json({ error: 'Unauthorized.' });
+}
+
+async function requireAssistantToken(req, res, next) {
+  try {
+    if (assistantBadByIp.blocked(identityLib.clientIp(req))) {
+      res.set('Retry-After', '900');
+      return res.status(429).json({ error: 'Too many requests.' });
+    }
+    const token = assistantLib.bearer(req);
+    if (!token) return assistantDenied(req, res);
+    const ref = assistantTokens().doc(assistantLib.docIdFor(token));
+    const snap = await ref.get();
+    const record = snap.exists ? snap.data() : null;
+    if (!assistantLib.matches(record, token) || !record.uid) return assistantDenied(req, res);
+    // The account as it is NOW, from the shared record - the same one a
+    // session is checked against. Deleted or disabled, and its tokens stop.
+    const account = await identityStore.store.get('users', record.uid).catch(() => null);
+    if (!account || account.disabled) return assistantDenied(req, res);
+
+    const wait = assistantPerMinute.take(record.id) || assistantPerDay.take(record.id);
+    // Uses are logged by the token's public id - never the token, its hash,
+    // or whose it is.
+    res.on('finish', () => console.log('[assistant] ' + JSON.stringify({ token: record.id, path: req.path, status: res.statusCode })));
+    if (wait) {
+      res.set('Retry-After', String(wait));
+      return res.status(429).json({ error: 'Too many requests. Try again later.' });
+    }
+
+    const now = Date.now();
+    if (!record.lastUsedAt || now - Date.parse(record.lastUsedAt) > assistantLib.TOUCH_EVERY_MS) {
+      // Awaited: this service is billed per request and does nothing after
+      // the response. update(), not a merge-set, so a token revoked this
+      // instant is not written back into existence.
+      await ref.update({ lastUsedAt: new Date(now).toISOString() }).catch(() => {});
+    }
+    // req.user for the rest of THIS request only, in the shape the trip
+    // access checks read (loadOwnedTrip, memberMayOpen). The password hash
+    // never rides along. Every route below answers; none calls next().
+    const user = { id: record.uid, uid: record.uid, via: 'assistant-token', ...account };
+    delete user.password;
+    req.user = user;
+    next();
+  } catch (err) {
+    console.error('assistant token check', err && err.message);
+    res.status(500).json({ error: 'Something went wrong.' });
+  }
+}
+
+app.use('/api/assistant', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  if (req.method !== 'GET') {
+    res.set('Allow', 'GET');
+    return res.status(405).json({ error: 'This API is read-only.' });
+  }
+  next();
+}, requireAssistantToken);
+
+// The trips this account can see - exactly the signed-in list (visibleTrips).
+app.get('/api/assistant/v1/trips', async (req, res) => {
+  try {
+    res.json({ trips: (await visibleTrips(req.user)).map(assistantLib.listRow) });
+  } catch (err) {
+    console.error('GET assistant trips', err && err.message);
+    res.status(500).json({ error: 'Could not load trips.' });
+  }
+});
+
+// One trip's summary. Access is loadOwnedTrip's - owner, or a member with a
+// confirmed address; anyone else's trip is the same 404 as one that does not
+// exist. The example trip is not anyone's, so it is a 404 here too.
+app.get('/api/assistant/v1/trips/:id', async (req, res) => {
+  try {
+    if (!ASSISTANT_TRIP_ID.test(req.params.id) || req.params.id === demo.DEMO_ID) return res.status(404).json({ error: 'Trip not found.' });
+    const owned = await loadOwnedTrip(req, res);
+    if (!owned) return;
+    const [packing, budget] = await Promise.all([rows(packingCol(owned.ref)), budgetView(owned)]);
+    res.json(assistantLib.summary(
+      tripOut(owned.doc.id, owned.data), owned.role,
+      bookingsLib.validate(owned.data.bookings || []), packing, budget));
+  } catch (err) {
+    console.error('GET assistant trip', err && err.message);
+    res.status(500).json({ error: 'Could not load that trip.' });
+  }
+});
+
+app.use('/api/assistant', (req, res) => res.status(404).json({ error: 'Not found.' }));
+
 // The shared account, mounted at /api/auth - where this app's pages already
 // post - so register, login, logout, password and the Face ID routes keep
 // their URLs. It is registered BEFORE accounts.mount, so identity wins every
@@ -320,6 +439,66 @@ identity.mount(app);
 app.use(attachProfile);
 // Every Anthropic call through this client is now priced and recorded.
 identity.meter(anthropic);
+
+// ---------------------------------------------------------------------------
+// Assistant access: making and revoking tokens (2026-11-24). A signed-in
+// session only, and every write held to the shared same-origin rule (JSON
+// from this site's own page) - a token cannot mint or revoke tokens, because
+// nothing here reads one. The read API these tokens open is near the top of
+// this file.
+// ---------------------------------------------------------------------------
+async function assistantTokensOf(uid) {
+  const snap = await assistantTokens().where('uid', '==', uid).get();
+  return snap.docs.map((d) => ({ ref: d.ref, data: d.data() }))
+    .sort((a, b) => String(a.data.createdAt || '').localeCompare(String(b.data.createdAt || '')));
+}
+
+app.get('/api/account/assistant-tokens', requireLogin, async (req, res) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    const list = await assistantTokensOf(req.user.uid);
+    res.json({ tokens: list.map((t) => assistantLib.listed(t.data)), max: assistantLib.MAX_TOKENS });
+  } catch (err) {
+    console.error('GET assistant-tokens', err && err.message);
+    res.status(500).json({ error: 'Could not load your tokens.' });
+  }
+});
+
+app.post('/api/account/assistant-tokens', identityLib.sameOriginOnly, requireLogin, async (req, res) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    const uid = req.user.uid;
+    const made = assistantLib.mint(uid, (req.body || {}).label);
+    // Counted and written together, so two taps at once cannot make a fourth.
+    const full = await db.runTransaction(async (t) => {
+      const have = await t.get(assistantTokens().where('uid', '==', uid));
+      if (have.size >= assistantLib.MAX_TOKENS) return true;
+      t.create(assistantTokens().doc(made.docId), made.record);
+      return false;
+    });
+    if (full) return res.status(409).json({ error: `You can have ${assistantLib.MAX_TOKENS} tokens. Revoke one to make another.` });
+    console.log('[assistant] ' + JSON.stringify({ token: made.record.id, event: 'created' }));
+    // The only time the token itself leaves the server. It is not stored.
+    res.json({ token: made.token, created: assistantLib.listed(made.record) });
+  } catch (err) {
+    console.error('POST assistant-tokens', err && err.message);
+    res.status(500).json({ error: 'Could not create a token.' });
+  }
+});
+
+app.delete('/api/account/assistant-tokens/:tid', identityLib.sameOriginOnly, requireLogin, async (req, res) => {
+  try {
+    const mine = (await assistantTokensOf(req.user.uid)).find((t) => t.data.id === req.params.tid);
+    // Someone else's id and one that never existed are the same answer.
+    if (!mine) return res.status(404).json({ error: 'No such token.' });
+    await mine.ref.delete();
+    console.log('[assistant] ' + JSON.stringify({ token: mine.data.id, event: 'revoked' }));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE assistant-tokens', err && err.message);
+    res.status(500).json({ error: 'Could not revoke that token.' });
+  }
+});
 
 // The admin reset door, moved onto the identity record because that is where
 // the password lives now. Registered before accounts.mount so these win over
@@ -673,27 +852,36 @@ function tripSummary(id, data, uid) {
   };
 }
 
+/** Every trip this account can see: its own, and - once its address is
+ *  confirmed - the ones shared to it. The ONE definition of "your trips":
+ *  the page's list and the assistant token's list both call it, so the token
+ *  can never see a trip the signed-in page would not show.
+ *
+ *  Two queries rather than one: Firestore cannot OR an equality on ownerId
+ *  with array-contains on memberIds. The shared one has no orderBy so it
+ *  needs no composite index; the merge sorts both. The shared half only for
+ *  a confirmed address (memberMayOpen): the page says why the list may be
+ *  missing trips shared with you. */
+async function visibleTrips(user) {
+  const memberOk = memberMayOpen(user);
+  const [mine, shared] = await Promise.all([
+    db.collection('trips').where('ownerId', '==', user.uid).orderBy('updatedAt', 'desc').limit(100).get(),
+    memberOk ? db.collection('trips').where('memberIds', 'array-contains', user.uid).limit(100).get() : { docs: [] },
+  ]);
+  const seen = new Set();
+  const all = [];
+  for (const d of mine.docs.concat(shared.docs)) {
+    if (seen.has(d.id) || !roleIn(d.data(), user.uid, memberOk)) continue;
+    seen.add(d.id);
+    all.push(tripSummary(d.id, d.data(), user.uid));
+  }
+  all.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  return all;
+}
+
 app.get('/api/trips', requireLogin, async (req, res) => {
   try {
-    // Two queries rather than one: Firestore cannot OR an equality on
-    // ownerId with array-contains on memberIds. The shared one has no
-    // orderBy so it needs no composite index; the merge sorts both.
-    // The shared half only for a confirmed address (memberMayOpen): the page
-    // says why the list may be missing trips shared with you.
-    const memberOk = memberMayOpen(req.user);
-    const [mine, shared] = await Promise.all([
-      db.collection('trips').where('ownerId', '==', req.user.uid).orderBy('updatedAt', 'desc').limit(100).get(),
-      memberOk ? db.collection('trips').where('memberIds', 'array-contains', req.user.uid).limit(100).get() : { docs: [] },
-    ]);
-    const seen = new Set();
-    const all = [];
-    for (const d of mine.docs.concat(shared.docs)) {
-      if (seen.has(d.id) || !roleIn(d.data(), req.user.uid, memberOk)) continue;
-      seen.add(d.id);
-      all.push(tripSummary(d.id, d.data(), req.user.uid));
-    }
-    all.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
-    res.json(all);
+    res.json(await visibleTrips(req.user));
   } catch (err) {
     console.error('GET /api/trips', err);
     res.status(500).json({ error: 'Failed to load trips.' });

@@ -1004,6 +1004,20 @@
   .btn-danger { background: var(--fill); color: var(--bad-text); }
   .btn-plain { color: var(--tint-text); }
   .btn-sm { min-height: 44px; font-size: 15px; padding: 0 16px; border-radius: 999px; }
+  /* Assistant access (Account sheet). The token is the one thing here in a
+     fixed-width face: it is copied, not read. */
+  #sh-assistant .sheet-msg { text-align: left; padding: 0 2px 14px; }
+  #sh-assistant .row-sub { white-space: normal; overflow: visible; text-overflow: clip; }
+  #sh-assistant .row { cursor: default; }
+  #sh-assistant .row:active { background: none; }
+  #sh-assistant .btn-sm { flex: 0 0 auto; }
+  .as-new { border-radius: 12px; box-shadow: var(--shadow); padding: 14px 16px 16px; margin-bottom: 14px; }
+  .as-new-h { font-size: 16px; font-weight: 600; }
+  .as-new-sub { font-size: 15px; color: var(--label-2); margin: 2px 0 10px; line-height: 1.4; }
+  .as-token { display: block; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 15px; line-height: 1.45; background: var(--fill); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; overflow-wrap: anywhere; word-break: break-all; -webkit-user-select: all; user-select: all; }
+  .as-empty { font-size: 15px; color: var(--label-2); padding: 14px 16px; }
+  #asList { margin-bottom: 14px; }
+  #asCreateBtn { margin-top: 14px; }
   .credit-options .btn { color: var(--label); }
   .status.error, .composer-status.error, .mem-errs { color: var(--bad-text); }
   .status.ok, .proposed.done.ok .pc-done, .cr-verdict.good { color: var(--ok-text); }
@@ -1607,6 +1621,23 @@
     <div class="status" id="pwStatus"></div>
   </div>
 
+  <div id="sh-assistant">
+    <p class="sheet-msg">A token lets an assistant you run, such as a texting helper on your own computer, read your trips: names, dates, the itinerary, bookings, and packing and budget totals. It can only read. Confirmation numbers are hidden except the last four.</p>
+    <div class="as-new" id="asNew" hidden>
+      <div class="as-new-h">Copy your token now</div>
+      <p class="as-new-sub">This is the only time it is shown. Keep it somewhere private, like a password.</p>
+      <code class="as-token" id="asToken"></code>
+      <button type="button" class="btn btn-primary" id="asCopyBtn">Copy token</button>
+    </div>
+    <div class="list" id="asList"></div>
+    <div class="form">
+      <div class="field"><label for="asLabel">Name for a new token</label><input id="asLabel" type="text" maxlength="40" placeholder="Atlas" autocomplete="off" autocapitalize="words" enterkeyhint="done"></div>
+    </div>
+    <button type="button" class="btn btn-primary" id="asCreateBtn">Create token</button>
+    <p class="form-note" id="asNote"></p>
+    <div class="status" id="asStatus" role="status"></div>
+  </div>
+
   <div id="sh-credit">
     <p class="sheet-msg" id="creditMeter"></p>
     <div id="creditBody"></div>
@@ -1841,6 +1872,7 @@
       openCreditSheet
     ));
     list.appendChild(accountRow("Change password", me && me.mustChangePassword ? "You're using a temporary password" : "", openPasswordSheet));
+    list.appendChild(accountRow("Assistant access", "Read-only tokens for your own assistant", openAssistantSheet));
     if (gmailState.available) {
       list.appendChild(accountRow(
         "Find trips in Gmail",
@@ -2165,6 +2197,99 @@
     }
     btn.disabled = false;
   });
+
+  /* ---------- Assistant access: read-only tokens ----------
+   * Made here, shown once, listed by name. The server keeps only a hash, so
+   * the token on screen after Create is the only copy there will ever be -
+   * closing the sheet drops it from the page too. */
+  var asTokens = [], asMax = 3, asFresh = "";
+  function asWhen(iso) {
+    var t = Date.parse(iso || "");
+    if (!isFinite(t)) return "";
+    var mins = Math.round((Date.now() - t) / 60000);
+    if (mins < 2) return "just now";
+    if (mins < 60) return mins + " min ago";
+    if (mins < 60 * 24) return Math.round(mins / 60) + " hr ago";
+    return new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+  function drawAssistant() {
+    var list = $("asList"); list.innerHTML = "";
+    if (!asTokens.length) list.innerHTML = '<div class="as-empty">No tokens yet.</div>';
+    asTokens.forEach(function (t) {
+      var row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML = '<div class="row-main"><div class="row-title">' + escapeHtml(t.label) + '</div>' +
+        '<div class="row-sub">Created ' + escapeHtml(asWhen(t.createdAt)) + ' \u00b7 ' + (t.lastUsedAt ? 'last used ' + escapeHtml(asWhen(t.lastUsedAt)) : 'never used') + '</div></div>' +
+        '<button type="button" class="btn btn-danger btn-sm" aria-label="Revoke ' + escapeHtml(t.label) + '">Revoke</button>';
+      row.querySelector("button").addEventListener("click", function () { revokeAssistant(t); });
+      list.appendChild(row);
+    });
+    var full = asTokens.length >= asMax;
+    $("asCreateBtn").disabled = full; $("asLabel").disabled = full;
+    $("asNote").textContent = full
+      ? "You have " + asMax + " tokens, which is the most an account can hold. Revoke one to make another."
+      : "Up to " + asMax + " tokens. Revoke one and it stops working at once.";
+    $("asNew").hidden = !asFresh;
+    $("asToken").textContent = asFresh;
+  }
+  async function loadAssistant() {
+    try {
+      var r = await fetch("/api/account/assistant-tokens");
+      var d = await r.json();
+      if (!r.ok) throw new Error(d.error || "failed");
+      asTokens = d.tokens || []; asMax = d.max || 3;
+      drawAssistant();
+    } catch (e) { setStatus($("asStatus"), "Couldn't load your tokens.", "error"); }
+  }
+  function openAssistantSheet() {
+    asFresh = ""; $("asLabel").value = "";
+    setStatus($("asStatus"), "");
+    drawAssistant();
+    openSheet({ title: "Assistant access", body: $("sh-assistant"), onClose: function () { asFresh = ""; $("asToken").textContent = ""; } });
+    loadAssistant();
+  }
+  $("asCreateBtn").addEventListener("click", async function () {
+    var btn = $("asCreateBtn"), st = $("asStatus");
+    btn.disabled = true; setStatus(st, "Creating\u2026");
+    try {
+      var r = await fetch("/api/account/assistant-tokens", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: $("asLabel").value || "" })
+      });
+      var d = await r.json();
+      if (!r.ok) throw new Error(d.error || "failed");
+      asFresh = d.token; asTokens.push(d.created); $("asLabel").value = "";
+      setStatus(st, "");
+      drawAssistant();
+      $("asNew").scrollIntoView({ block: "nearest" });
+    } catch (e) {
+      setStatus(st, (e && e.message) || "Couldn't create a token.", "error");
+      btn.disabled = asTokens.length >= asMax;
+    }
+  });
+  $("asCopyBtn").addEventListener("click", async function () {
+    try { await navigator.clipboard.writeText(asFresh); toast("Token copied"); }
+    catch (e) {
+      // No clipboard permission: select it so a long-press copies it.
+      var sel = window.getSelection(), range = document.createRange();
+      range.selectNodeContents($("asToken")); sel.removeAllRanges(); sel.addRange(range);
+      toast("Press and hold to copy");
+    }
+  });
+  async function revokeAssistant(t) {
+    var st = $("asStatus");
+    if (!window.confirm("Revoke \u201c" + t.label + "\u201d? Anything using it stops working at once.")) return;
+    setStatus(st, "Revoking\u2026");
+    try {
+      var r = await fetch("/api/account/assistant-tokens/" + encodeURIComponent(t.id), { method: "DELETE", headers: { "Content-Type": "application/json" } });
+      var d = await r.json();
+      if (!r.ok && r.status !== 404) throw new Error(d.error || "failed");
+      asTokens = asTokens.filter(function (x) { return x.id !== t.id; });
+      setStatus(st, "");
+      drawAssistant();
+      toast("Token revoked");
+    } catch (e) { setStatus(st, (e && e.message) || "Couldn't revoke that token.", "error"); }
+  }
 
   aiRequestBtn.addEventListener("click", openCreditSheet);
   $("aiSendBtn").addEventListener("click", async function () {
