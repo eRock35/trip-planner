@@ -71,6 +71,8 @@ const settle = () => new Promise((r) => setTimeout(r, 150));   // metering is fi
 const PLANNING = 'Draft a day-by-day itinerary for our four days';
 const SIMPLE = 'where should we eat';
 const types = (p) => (p.tools || []).map((t) => t.type || t.name);
+// Chat carries the conversation so far (2026-11-24): compare a request with only its newest turn.
+const lastOnly = (p) => ({ ...p, messages: p.messages.slice(-1) });
 const hasAdvisor = (p) => (p.tools || []).some((t) => t.name === 'advisor' || t.type === advisor.TOOL_TYPE);
 
 (async () => {
@@ -115,7 +117,11 @@ const hasAdvisor = (p) => (p.tools || []).some((t) => t.name === 'advisor' || t.
     process.env.TRIP_ADVISOR = v;
     t = await ask(owner, ownerTrip, PLANNING);
     ok(`TRIP_ADVISOR=${JSON.stringify(v)} is off, byte for byte`,
-      t.calls.length === 1 && t.calls[0].args === 1 && JSON.stringify(t.calls[0].params) === JSON.stringify(offOwner.params));
+      // Chat sends the conversation so far since 2026-11-24, so a later ask on the
+      // same trip carries more turns; everything else must match exactly.
+      t.calls.length === 1 && t.calls[0].args === 1
+        && JSON.stringify({ ...t.calls[0].params, messages: t.calls[0].params.messages.slice(-1) })
+          === JSON.stringify({ ...offOwner.params, messages: offOwner.params.messages.slice(-1) }));
   }
 
   /* ---------- on: a planning ask carries the advisor ---------- */
@@ -138,7 +144,7 @@ const hasAdvisor = (p) => (p.tools || []).some((t) => t.name === 'advisor' || t.
     system: c.params.system.slice(0, -advisor.PROMPT.length),
     tools: c.params.tools.filter((x) => x.name !== 'advisor'),
   });
-  ok('...and nothing else about the request moved', JSON.stringify(stripped) === JSON.stringify(offOwner.params));
+  ok('...and nothing else about the request moved', JSON.stringify(lastOnly(stripped)) === JSON.stringify(lastOnly(offOwner.params)));
 
   t = await ask(free, freeTrip, PLANNING);
   c = t.calls[0];
@@ -232,7 +238,7 @@ const hasAdvisor = (p) => (p.tools || []).some((t) => t.name === 'advisor' || t.
   ok('a 400 with the advisor: asked again, once', t.calls.length === 2, String(t.calls.length));
   ok('...the first try carried the advisor', hasAdvisor(t.calls[0].params) && t.calls[0].args === 2);
   ok('...the second is the plain request, no tool, no header',
-    t.calls[1].args === 1 && JSON.stringify(t.calls[1].params) === JSON.stringify(offOwner.params));
+    t.calls[1].args === 1 && JSON.stringify(lastOnly(t.calls[1].params)) === JSON.stringify(lastOnly(offOwner.params)));
   ok('...and the person gets their answer', t.status === 200 && t.body.answer === 'Answered anyway.' && !t.body.error,
     JSON.stringify(t.body).slice(0, 120));
   ok('...with the log line', warned.includes('[advisor] unavailable (400); answered without it'), JSON.stringify(warned));
@@ -270,7 +276,8 @@ const hasAdvisor = (p) => (p.tools || []).some((t) => t.name === 'advisor' || t.
   t = await ask(owner, ownerTrip, PLANNING);
   ok('a paused turn continues', t.calls.length === 2, String(t.calls.length));
   ok('...with the tool and the header on the continuation too',
-    hasAdvisor(t.calls[1].params) && t.calls[1].args === 2 && t.calls[1].params.messages.length === 2);
+    hasAdvisor(t.calls[1].params) && t.calls[1].args === 2
+      && t.calls[1].params.messages.length === t.calls[0].params.messages.length + 1);
 
   /* ---------- their own key pays for their own advisor ---------- */
   const member = jar(await post('/api/auth/register', { email: 'byok@example.com', password: 'a-long-password-3' }));

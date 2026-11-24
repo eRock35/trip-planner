@@ -1479,8 +1479,9 @@ Advisor (Beta)"). A guessed one is a 400, so change them only from the docs:
   write (1.25x) only pays back on a second read.
 
 Opus 5.5's advice comes back encrypted (`advisor_redacted_result`); nothing
-here reads it. Chat sends one user message per turn and no history, so no
-advisor block is ever replayed.
+here reads it. Chat sends earlier turns as plain stored text (see "Chat
+remembers the conversation"), never the raw content blocks, so no advisor
+block is ever replayed.
 
 **It can never be why a message fails.** If the advised request throws (a 400
 for the beta, a refused pairing, a 5xx), `completeAdvised` asks again once,
@@ -1600,6 +1601,30 @@ read-only assistant tokens, what one can read, and that only a hash is kept.
 **Atlas** reads it with a small `trip` helper (`trip list`, `trip show
 <id>`) that lives with Atlas, not here. The token is in
 `~/.config/lab-secrets/trip-assistant.env` on the VM.
+
+## Chat remembers the conversation (2026-11-24)
+
+Erik's screenshot: "Plan the days" got an answer offering to add bookings,
+then "No let's add it" got "I'm not sure what you'd like to add", and the
+first answer read as shards (", and" on a line by itself).
+
+- **Every turn used to go to the model alone.** The stored messages were only
+  ever drawn, never sent. Now `chat-history.js` `toMessages()` sends the last
+  `MAX_TURNS` (8) answered turns as plain user/assistant text (answers
+  clipped to 2,500 characters), each assistant turn noting any proposal it
+  made and whether it was applied, discarded or is still waiting. The prompt
+  says to act on "yes / add it / do that" with the right tool rather than ask.
+  Loaded before the stream starts; a failed read just means no history.
+- **A searched answer is one piece of writing.** Web search returns the text
+  split around every citation; it was joined with a blank line between
+  blocks. `joinText()` joins a block that carries a citation (or follows one)
+  directly, keeps other blocks as paragraphs, and drops a short "I'll check
+  ..." written before the first search when the answer follows it. The prompt
+  also says not to narrate the search.
+- Tests: `test/chat-history.js` (the pure parts and the route: a follow-up
+  carries the turn before it, another trip never sees it). The advisor
+  suite's "byte for byte" checks now compare the newest turn, since a later
+  ask on the same trip carries more history.
 
 ## Commit and PR conventions
 

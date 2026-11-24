@@ -19,6 +19,7 @@ const budgetLib = require('./budget');
 const weatherLib = require('./weather');
 const fxLib = require('./fx');
 const priceHistory = require('./pricehistory');
+const chatHistory = require('./chat-history');
 const receipts = require('./receipts');
 const statement = require('./statement');
 const photostore = require('./photostore');
@@ -1227,6 +1228,17 @@ app.post('/api/trips/:id/chat', requireLogin, identity.requireBudget, identity.r
     // "correcting" an itinerary nobody asked it to touch.
     const trip = tripOut(owned.doc.id, owned.data);
 
+    // The conversation so far (chat-history.js): without it every turn stood
+    // alone, and "yes, add it" had nothing to refer to.
+    let earlier = [];
+    try {
+      const snap = await tripRef.collection('messages').orderBy('askedAt', 'desc')
+        .limit(chatHistory.MAX_TURNS).get();
+      earlier = snap.docs.map((d) => d.data()).reverse();
+    } catch (e) {
+      console.error('chat history unavailable:', e.message);
+    }
+
     // Past this line nothing can fail with a status code, so start the drip.
     send = streamedJson(res);
 
@@ -1235,6 +1247,9 @@ app.post('/api/trips/:id/chat', requireLogin, identity.requireBudget, identity.r
       (trip.destination ? ', to ' + trip.destination : '') +
       (trip.dateRange ? ', ' + trip.dateRange : '') + '. ' +
       (trip.notes ? 'Notes so far: ' + trip.notes + '. ' : '') +
+      'Earlier turns of this conversation are included: when the user says "yes", "add it", "do that" or ' +
+      'similar, act on what you last offered - call the right tool with it - instead of asking what they mean. ' +
+      'Answer directly: do not narrate what you are about to search or check. Write in short paragraphs and lists. ' +
       'Use web search for current info - flights, hotels, activities, weather, prices. Be specific and concrete, ' +
       'never invent a price or availability - say so if you cannot verify something. If the user asks you to ' +
       'draft or change the day-by-day itinerary, call the propose_schedule_change tool with the COMPLETE days ' +
@@ -1262,13 +1277,13 @@ app.post('/api/trips/:id/chat', requireLogin, identity.requireBudget, identity.r
       max_tokens: 8192,
       system: systemPrompt,
       tools: [plan.webSearch, SCHEDULE_TOOL, bookingsLib.TOOL],
-      messages: [{ role: 'user', content: question }],
+      messages: chatHistory.toMessages(earlier, question),
     }, req.user, question, plan);
 
-    const textBlocks = response.content.filter((b) => b.type === 'text');
     const toolBlock = response.content.find((b) => b.type === 'tool_use' && b.name === 'propose_schedule_change');
 
-    let answer = textBlocks.map((b) => b.text).join('\n\n');
+    // One piece of writing, not a shard per citation (chat-history.js).
+    let answer = chatHistory.joinText(response.content);
     let proposedChange = null;
     if (toolBlock && toolBlock.input && Array.isArray(toolBlock.input.days) && toolBlock.input.days.length) {
       proposedChange = {
