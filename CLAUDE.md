@@ -279,7 +279,9 @@ button that leads to a 400 is worse than a proposal never made. `apply`
 returns the saved days and the page draws those rather than the proposal, so
 what you see is what a reload will show.
 
-Runs on `claude-sonnet-5` (tool use + web search).
+Runs on `claude-sonnet-5` (tool use + web search). Since 2026-11-24 a planning ask can
+also consult an advisor model, behind a switch that is off: see "The advisor
+on trip chat".
 
 ### What became of a proposal is stored, not remembered (2026-09-23)
 
@@ -1415,6 +1417,112 @@ service is billed per request). Server routes read `demo.today().DEMO_*`;
   ("Dec 31, 2026 - Jan 4, 2027") and Saturday/Sunday holding on any day.
   `test/pricehistory.js` now compares "since" with the example's first check
   as built today rather than `2026-08-15`.
+
+## The advisor on trip chat (2026-11-24)
+
+Erik approved adding Anthropic's advisor tool to the trip assistant on
+2026-11-23. **It is built and switched off.** Nothing changes until
+`TRIP_ADVISOR` is set on the service. `advisor.js` holds the tool and the
+gate, `completeAdvised()` in `server.js` the call, `test/trip-advisor.js` the
+tests.
+
+**What it does.** Chat's own model (the "executor": Haiku 4.5 free, Sonnet 5
+paid, exactly as `MODEL_TIERS` says) is unchanged. On a planning ask the
+request also offers an `advisor` tool; when the model calls it, Anthropic
+runs Opus 5.5 over the whole conversation (search results included) and
+hands its advice back inside the same request. The model decides whether to
+call it - the API has no way to force or schedule it - so two things keep a
+plain question from paying for one:
+
+- **A gate in code.** `advisor.isPlanningAsk(question)`: only a question that
+  reads like drafting or reshaping the itinerary, or choosing between
+  options, carries the tool at all. "Where should we eat" is sent exactly as
+  before, with no tool and no header.
+- **A sentence in the prompt**, added only with the tool: consult once before
+  committing to a multi-day plan, a rebalanced schedule or a trade-off; not
+  for a simple question, a fact or a bookings update; never mention it.
+
+**The switch** (a Cloud Run env var, read on every request):
+
+| `TRIP_ADVISOR` | |
+|---|---|
+| unset, or anything else | off: every request is byte for byte what it was |
+| `1` | on for everyone, planning asks only |
+| `paid` | on for the paid tier only (owner, members, own key) |
+
+Set it to turn on, remove it to turn off; no code deploy either way.
+
+**The exact strings**, all from the Claude API docs (the advisor tool page;
+the claude-api skill's `shared/tool-use-concepts.md`, "Server-Side Tools:
+Advisor (Beta)"). A guessed one is a 400, so change them only from the docs:
+
+- tool `{type: 'advisor_20260301', name: 'advisor', model: 'claude-opus-5-5',
+  max_uses: 2, max_tokens: 2048}`, added after the three existing tools;
+- beta `advisor-tool-2026-03-01`, sent as the `anthropic-beta` header through
+  the SDK's per-request options: `client.messages.create(body, {headers})`.
+  **Not `client.beta.messages.create`**: `identity.meter()` wraps
+  `client.messages.create`, and a call that does not go through it is not
+  priced or charged. If the shared meter ever wraps the beta namespace, this
+  can move;
+- `max_uses` is per **turn** and the API enforces it (a turn can span several
+  requests after a `pause_turn`); past it the model gets an error block and
+  carries on. `max_tokens` caps one consultation's output, thinking included
+  (minimum 1024). The request's own `max_tokens` (8192) does not bound the
+  advisor;
+- Opus 5.5 is a valid advisor for both executors in the docs' pairing table.
+  Change `MODEL_TIERS` and check that table: e.g. a Fable 5.2 executor
+  accepts only Fable/Mythos 5.2 advisors. A bad pair is a 400 (answered
+  without the advisor, below), so nothing breaks, but nothing is advised;
+- no `caching` on the tool: most advised turns consult once, and a cache
+  write (1.25x) only pays back on a second read.
+
+Opus 5.5's advice comes back encrypted (`advisor_redacted_result`); nothing
+here reads it. Chat sends one user message per turn and no history, so no
+advisor block is ever replayed.
+
+**It can never be why a message fails.** If the advised request throws (a 400
+for the beta, a refused pairing, a 5xx), `completeAdvised` asks again once,
+from the original request, with no tool and no header, and logs
+`[advisor] unavailable (<status>); answered without it`. A 401 or 429 is not
+retried: the plain request would fail the same way. A consultation that
+fails inside a 200 (`advisor_tool_result_error`: `overloaded`, `unavailable`
+...) needs no retry - the model already carried on - and logs the same line
+with the error code. Grep the service log for `[advisor]`.
+
+**Money.** No new gate, and none skipped: chat is still behind
+`requireLogin, requireBudget, requireDailyCap`, which refuse before any call.
+(This app has no monthly provider cap; the per-person budget is the control,
+and the free tier's daily ceiling is still unset.) The metered client charges
+each response's whole `usage`; `identity.js` `priceParts` prices every
+`usage.iterations` entry of type `advisor_message` at its own `model`'s rates
+on top of the executor's top-level tokens, and the usage row carries
+`advisorCalls`, `advisorModels`, advisor tokens and `advisorUsd`. So a
+consultation lands on the same person's budget as the answer, and a member on
+their own key pays for their own advisor (recorded, not charged). As with any
+call, the budget is checked before the turn, not during it: the turn that
+crosses the line completes.
+
+**What one itinerary turn costs: an estimate, not a measurement.** No real
+call was made (nothing here may spend). Token counts are assumptions for
+"draft a 5-day itinerary" with web search; dollars are `priceParts` on the
+price table (Sonnet 5 $2/$10, Haiku 4.5 $1/$5, Opus 5.5 $4/$20 per million
+tokens, $0.01 a search). A consultation costs twice: the advisor reads the
+whole transcript, then the executor reads it again with the advice.
+
+| One itinerary turn | Paid (Sonnet 5, 5 searches) | Free (Haiku 4.5, 3 searches) |
+|---|---|---|
+| Without the advisor | 25,000 in / 3,500 out: **$0.135** | 18,000 in / 3,500 out: **$0.066** |
+| One consultation (typical) | advisor 15,000 in / 1,200 out = $0.084; executor +16,200 in = $0.033: **$0.252** | advisor 11,000 in / 1,200 out = $0.068; executor +12,200 in = $0.013: **$0.146** |
+| Two, each at the 2,048 cap (the ceiling) | advisor $0.210, executor +$0.075: **$0.420** | advisor $0.178, executor +$0.029: **$0.273** |
+
+So an advised planning turn is roughly 1.9x (paid) to 2.2x (free), about 3x
+at the ceiling. On the free $2 that is about 13 advised itinerary turns
+instead of about 30. Replace these with real numbers after the first week
+on: `usage` rows where `advisorCalls` is set, `advisorUsd` against `costUsd`.
+
+**Not known until it runs:** how often the models actually consult (Haiku
+may under- or over-call; the docs warn the consult rate is the fragile part),
+and whether the plans are better. Both are reasons it ships off.
 
 ## Commit and PR conventions
 

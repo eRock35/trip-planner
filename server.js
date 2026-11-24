@@ -12,6 +12,7 @@ const analytics = require('./analytics');
 const schedule = require('./schedule');
 const { tripDates } = require('./tripdates');
 const bookingsLib = require('./bookings');
+const advisor = require('./advisor');
 const ideasLib = require('./ideas');
 const packingLib = require('./packing');
 const budgetLib = require('./budget');
@@ -1066,13 +1067,15 @@ app.post('/api/trips/:id/chat', requireLogin, identity.requireBudget, identity.r
     // Sonnet. planFor also hands back the web-search tool version this model
     // accepts - Haiku 400s on the newer one, so they must move together.
     const plan = identityLib.planFor(req.user, MODEL_TIERS);
-    const response = await completeTurn({
+    // completeAdvised is completeTurn unless TRIP_ADVISOR is on AND this is a
+    // planning ask - then the same request also offers the advisor tool.
+    const response = await completeAdvised({
       model: plan.model,
       max_tokens: 8192,
       system: systemPrompt,
       tools: [plan.webSearch, SCHEDULE_TOOL, bookingsLib.TOOL],
       messages: [{ role: 'user', content: question }],
-    }, req.user);
+    }, req.user, question, plan);
 
     const textBlocks = response.content.filter((b) => b.type === 'text');
     const toolBlock = response.content.find((b) => b.type === 'tool_use' && b.name === 'propose_schedule_change');
@@ -3297,14 +3300,53 @@ function clientFor(user, fallback) {
 /** `fallback` is the client to use when the user has no key of their own:
  *  the app's (charged to whoever is signed in) unless a caller with nobody
  *  signed in - the sweep - hands one charged to the right person. */
-async function completeTurn(params, user, fallback) {
+async function completeTurn(params, user, fallback, requestOptions) {
   const client = await clientFor(user, fallback);
   const messages = params.messages.slice();
   let response;
   for (let i = 0; i <= MAX_TURN_CONTINUATIONS; i++) {
-    response = await client.messages.create(Object.assign({}, params, { messages }));
+    const body = Object.assign({}, params, { messages });
+    // One argument unless a caller hands options over, so every call that
+    // does not is exactly the call it was before the advisor existed.
+    response = requestOptions
+      ? await client.messages.create(body, requestOptions)
+      : await client.messages.create(body);
     if (response.stop_reason !== 'pause_turn') break;
     messages.push({ role: 'assistant', content: response.content });
+  }
+  return response;
+}
+
+/**
+ * Trip chat's turn, with the advisor tool when it is switched on and the
+ * question is planning work (advisor.js; CLAUDE.md "The advisor on trip
+ * chat"). Otherwise it IS completeTurn, with the request untouched.
+ *
+ * The advisor must never be why a message fails. If the advised request
+ * throws - the beta refused with a 400, a pairing the API does not accept -
+ * the whole turn is asked again, once, from the original request with no
+ * advisor in it. From the start rather than from where it stopped: a history
+ * holding advisor blocks is refused without the tool and the beta header.
+ *
+ * Metering needs nothing here. Both attempts go through the metered client,
+ * which charges each response's whole `usage` - `iterations` included, so a
+ * consultation is priced at the advisor model's own rates (identity.js
+ * priceParts) and lands on the same person's budget as the answer.
+ */
+async function completeAdvised(params, user, question, plan) {
+  if (!advisor.wanted(question, plan)) return completeTurn(params, user);
+  let response;
+  try {
+    response = await completeTurn(advisor.withAdvisor(params), user, undefined, advisor.REQUEST_OPTIONS);
+  } catch (err) {
+    if (!advisor.shouldFallBack(err)) throw err;
+    console.warn('[advisor] unavailable (' + advisor.errorCode(err) + '); answered without it');
+    return completeTurn(params, user);
+  }
+  // A consultation that failed inside a 200: the model already carried on
+  // without that advice, so there is nothing to retry - only to say so.
+  for (const code of advisor.consultErrors(response)) {
+    console.warn('[advisor] unavailable (' + code + '); answered without it');
   }
   return response;
 }
